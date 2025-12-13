@@ -1,0 +1,64 @@
+{
+  "name": "my-package",
+  "version": "0.0.1",
+  "description": "A JavaScript/TypeScript package template for AI-driven development",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:file-size": "node scripts/check-file-size.mjs",
+    "check": "npm run lint && npm run format:check && npm run check:file-size",
+    "prepare": "husky || true",
+    "changeset": "changeset",
+    "changeset:version": "node scripts/changeset-version.mjs",
+    "changeset:publish": "changeset publish",
+    "changeset:status": "changeset status --since=origin/main"
+  },
+  "keywords": [
+    "template",
+    "javascript",
+    "typescript",
+    "ai-driven"
+  ],
+  "author": "",
+  "license": "Unlicense",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/link-foundation/js-ai-driven-development-pipeline-template"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.6.2",
+    "test-anywhere": "^0.8.48"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs}": [
+      "eslint --fix --max-warnings 0",
+      "prettier --write",
+      "prettier --check"
+    ],
+    "*.md": [
+      "prettier --write",
+      "prettier --check"
+    ]
+  }
+}
