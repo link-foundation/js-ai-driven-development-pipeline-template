@@ -124,6 +124,10 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install dependencies (Bun)
+        if: matrix.runtime == 'bun'
+        run: bun install
+
       - name: Run tests (Bun)
         if: matrix.runtime == 'bun'
         run: bun test
