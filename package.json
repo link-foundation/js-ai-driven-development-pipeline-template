@@ -1,6 +1,6 @@
 {
   "name": "my-package",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A JavaScript/TypeScript package template for AI-driven development",
   "type": "module",
   "main": "src/index.js",
