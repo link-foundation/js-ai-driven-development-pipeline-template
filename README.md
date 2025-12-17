@@ -144,6 +144,7 @@ Customize ESLint in `eslint.config.js`. Current configuration:
 - No console restrictions (common in CLI tools)
 - Strict equality enforcement
 - Async/await best practices
+- **Strict unused variables rule**: No exceptions - all unused variables, arguments, and caught errors must be removed (no `_` prefix exceptions)
 
 ### Prettier Options
 
