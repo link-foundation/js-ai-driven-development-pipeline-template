@@ -4,27 +4,22 @@
   "description": "A JavaScript/TypeScript package template for AI-driven development",
   "package_manager": "npm",
   "configuration_files": {
-    "build_and_development": [
-      "package.json",
-      "bunfig.toml",
-      "deno.json"
-    ],
-    "code_quality": [
-      "eslint.config.js",
-      ".prettierrc",
-      ".prettierignore"
-    ],
-    "git_hooks": [
-      ".husky/pre-commit"
-    ],
-    "changesets": [
-      ".changeset/config.json"
-    ]
+    "build_and_development": ["package.json", "bunfig.toml", "deno.json"],
+    "code_quality": ["eslint.config.js", ".prettierrc", ".prettierignore"],
+    "git_hooks": [".husky/pre-commit"],
+    "changesets": [".changeset/config.json"]
   },
   "github_workflows": {
     "release.yml": {
       "triggers": ["push to main", "pull_request", "workflow_dispatch"],
-      "jobs": ["changeset-check", "lint", "test", "release", "instant-release", "changeset-pr"],
+      "jobs": [
+        "changeset-check",
+        "lint",
+        "test",
+        "release",
+        "instant-release",
+        "changeset-pr"
+      ],
       "test_matrix": "3 runtimes x 3 OS = 9 combinations"
     }
   },

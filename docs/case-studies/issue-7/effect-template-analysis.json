@@ -21,15 +21,9 @@
       "pnpm-lock.yaml",
       ".gitignore"
     ],
-    "documentation": [
-      "AGENTS.md"
-    ],
-    "editor_config": [
-      ".vscode/settings.json"
-    ],
-    "changesets": [
-      ".changeset/config.json"
-    ]
+    "documentation": ["AGENTS.md"],
+    "editor_config": [".vscode/settings.json"],
+    "changesets": [".changeset/config.json"]
   },
   "github_workflows": {
     "check.yml": {
@@ -41,7 +35,11 @@
     "release.yml": {
       "triggers": ["push to main"],
       "purpose": "Automated versioning and npm publishing via Changesets",
-      "permissions": ["contents: write", "id-token: write", "pull-requests: write"]
+      "permissions": [
+        "contents: write",
+        "id-token: write",
+        "pull-requests: write"
+      ]
     },
     "snapshot.yml": {
       "triggers": ["pull_request", "workflow_dispatch"],
@@ -51,7 +49,11 @@
   "custom_github_actions": {
     ".github/actions/setup/action.yml": {
       "purpose": "Standard setup and dependency installation",
-      "steps": ["pnpm installation", "Node.js setup with caching", "dependency installation"],
+      "steps": [
+        "pnpm installation",
+        "Node.js setup with caching",
+        "dependency installation"
+      ],
       "default_node_version": "20.16.0"
     }
   },
@@ -163,14 +165,8 @@
       "@effect/sql",
       "@effect/workflow"
     ],
-    "typescript_utilities": [
-      "ts-morph",
-      "ts-pattern"
-    ],
-    "testing": [
-      "vitest",
-      "@effect/vitest"
-    ],
+    "typescript_utilities": ["ts-morph", "ts-pattern"],
+    "testing": ["vitest", "@effect/vitest"],
     "linting": [
       "eslint",
       "@biomejs/biome",

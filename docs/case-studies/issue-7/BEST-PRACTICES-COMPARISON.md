@@ -10,22 +10,22 @@ This document compares best practices from [ProverCoderAI/effect-template](https
 
 ## Summary of Findings
 
-| Category | effect-template | Our Repository | Gap Analysis |
-|----------|-----------------|----------------|--------------|
-| TypeScript Support | Full TypeScript with strict config | JavaScript with .d.ts definitions | **Missing** |
-| Build Tool | Vite | None (direct execution) | **Missing** |
-| Test Framework | Vitest with coverage | test-anywhere (cross-runtime) | Different approach |
-| Code Duplication | jscpd | None | **Missing** |
-| Linting | ESLint + Biome | ESLint + Prettier | Partial |
-| Formatting | Biome (disabled) + dprint | Prettier | Present |
-| Type Checking | tsc --noEmit | None | **Missing** |
-| Coverage Thresholds | 100% for core, 10% global | None | **Missing** |
-| CI Workflows | 3 separate workflows | 1 combined workflow | Different approach |
-| Custom Actions | Setup action with caching | Inline setup | **Missing** |
-| VS Code Config | Comprehensive settings | None | **Missing** |
-| Nix Environment | flake.nix | None | **Missing** |
-| AI Agent Documentation | AGENTS.md | CLAUDE.md | Present (different) |
-| Package Snapshots | pkg-pr-new for PRs | None | **Missing** |
+| Category               | effect-template                    | Our Repository                    | Gap Analysis        |
+| ---------------------- | ---------------------------------- | --------------------------------- | ------------------- |
+| TypeScript Support     | Full TypeScript with strict config | JavaScript with .d.ts definitions | **Missing**         |
+| Build Tool             | Vite                               | None (direct execution)           | **Missing**         |
+| Test Framework         | Vitest with coverage               | test-anywhere (cross-runtime)     | Different approach  |
+| Code Duplication       | jscpd                              | None                              | **Missing**         |
+| Linting                | ESLint + Biome                     | ESLint + Prettier                 | Partial             |
+| Formatting             | Biome (disabled) + dprint          | Prettier                          | Present             |
+| Type Checking          | tsc --noEmit                       | None                              | **Missing**         |
+| Coverage Thresholds    | 100% for core, 10% global          | None                              | **Missing**         |
+| CI Workflows           | 3 separate workflows               | 1 combined workflow               | Different approach  |
+| Custom Actions         | Setup action with caching          | Inline setup                      | **Missing**         |
+| VS Code Config         | Comprehensive settings             | None                              | **Missing**         |
+| Nix Environment        | flake.nix                          | None                              | **Missing**         |
+| AI Agent Documentation | AGENTS.md                          | CLAUDE.md                         | Present (different) |
+| Package Snapshots      | pkg-pr-new for PRs                 | None                              | **Missing**         |
 
 ---
 
@@ -34,6 +34,7 @@ This document compares best practices from [ProverCoderAI/effect-template](https
 ### 1. TypeScript Configuration
 
 #### effect-template
+
 ```json
 {
   "strict": true,
@@ -52,6 +53,7 @@ This document compares best practices from [ProverCoderAI/effect-template](https
 ```
 
 #### Our Repository
+
 - Uses JavaScript with TypeScript definition files (.d.ts)
 - No tsconfig.json
 - No type checking in CI
@@ -63,7 +65,9 @@ This document compares best practices from [ProverCoderAI/effect-template](https
 ### 2. Code Duplication Detection (jscpd)
 
 #### effect-template
+
 Has `.jscpd.json` configuration:
+
 ```json
 {
   "threshold": 0,
@@ -74,6 +78,7 @@ Has `.jscpd.json` configuration:
 ```
 
 #### Our Repository
+
 - No code duplication detection
 
 **Recommendation:** Add jscpd for detecting copy-paste code. This helps maintain DRY principles and reduces technical debt. See [jscpd documentation](https://github.com/kucherenko/jscpd).
@@ -83,21 +88,24 @@ Has `.jscpd.json` configuration:
 ### 3. ESLint Configuration Differences
 
 #### effect-template - Advanced Rules
-| Rule Category | Setting |
-|---------------|---------|
-| Max cyclomatic complexity | 8 |
-| Max lines per function | 50 |
-| Max lines per file | 300 |
-| Max function parameters | 5 |
-| Max nesting depth | 4 |
+
+| Rule Category             | Setting |
+| ------------------------- | ------- |
+| Max cyclomatic complexity | 8       |
+| Max lines per function    | 50      |
+| Max lines per file        | 300     |
+| Max function parameters   | 5       |
+| Max nesting depth         | 4       |
 
 Additional plugins:
+
 - sonarjs (code quality)
 - unicorn (modern JS patterns)
 - vitest (test-specific rules)
 - import/simple-import-sort (import organization)
 
 #### Our Repository
+
 - Basic ESLint with Prettier integration
 - No complexity limits
 - No file/function size limits
@@ -109,13 +117,16 @@ Additional plugins:
 ### 4. Build Tool (Vite)
 
 #### effect-template
+
 Uses Vite for:
+
 - TypeScript compilation
 - Library mode building
 - Source maps generation
-- Path alias resolution (@/* -> src/*)
+- Path alias resolution (@/_ -> src/_)
 
 #### Our Repository
+
 - Direct file execution (no build step)
 - Works well for current JavaScript approach
 
@@ -126,6 +137,7 @@ Uses Vite for:
 ### 5. Test Coverage Configuration
 
 #### effect-template (Vitest)
+
 ```javascript
 {
   coverage: {
@@ -149,6 +161,7 @@ Uses Vite for:
 ```
 
 #### Our Repository
+
 - No coverage configuration
 - Uses test-anywhere for cross-runtime testing
 
@@ -159,11 +172,13 @@ Uses Vite for:
 ### 6. CI/CD Workflow Separation
 
 #### effect-template - 3 Workflows
+
 1. **check.yml** - Build, types, lint, test (on PRs and main)
 2. **release.yml** - Versioning and npm publishing (on main push)
 3. **snapshot.yml** - Package snapshots for PRs
 
 #### Our Repository - 1 Combined Workflow
+
 - **release.yml** - All jobs in one file
 
 **Recommendation:** The combined approach works well and reduces complexity. The separation in effect-template supports different permissions models.
@@ -173,12 +188,15 @@ Uses Vite for:
 ### 7. Custom GitHub Actions
 
 #### effect-template
+
 Has `.github/actions/setup/action.yml`:
+
 - Reusable setup action
 - pnpm installation with caching
 - Node.js setup with specified version
 
 #### Our Repository
+
 - Inline setup in workflow
 
 **Recommendation:** Consider extracting common setup steps into a reusable action for consistency and easier maintenance.
@@ -188,7 +206,9 @@ Has `.github/actions/setup/action.yml`:
 ### 8. VS Code Configuration
 
 #### effect-template
+
 Has `.vscode/settings.json` with:
+
 - TypeScript SDK path
 - Format on save
 - ESLint validation for multiple file types
@@ -196,6 +216,7 @@ Has `.vscode/settings.json` with:
 - Import module specifier preferences
 
 #### Our Repository
+
 - No VS Code configuration
 
 **Recommendation:** Add `.vscode/settings.json` for consistent developer experience across the team.
@@ -205,12 +226,15 @@ Has `.vscode/settings.json` with:
 ### 9. Package Snapshots (pkg-pr-new)
 
 #### effect-template
+
 Uses `pkg-pr-new` in snapshot workflow to create installable package versions for each PR:
+
 ```bash
 pnpx pkg-pr-new@0.0.24 publish --pnpm --comment=off
 ```
 
 #### Our Repository
+
 - No PR package snapshots
 
 **Recommendation:** Consider adding package snapshots for PRs to allow testing changes before merging.
@@ -220,13 +244,16 @@ pnpx pkg-pr-new@0.0.24 publish --pnpm --comment=off
 ### 10. Nix Development Environment
 
 #### effect-template
+
 Has `flake.nix` providing:
+
 - Reproducible development environment
 - Node.js 22
 - corepack
 - Python 3 (for node-gyp)
 
 #### Our Repository
+
 - No Nix configuration
 
 **Recommendation:** Nix flakes provide reproducible development environments. Consider if your team uses Nix.
@@ -236,12 +263,15 @@ Has `flake.nix` providing:
 ### 11. Biome Linter/Formatter
 
 #### effect-template
+
 Has `biome.json` (currently disabled):
+
 - Modern, fast alternative to ESLint + Prettier
 - Written in Rust for performance
 - Gaining adoption in 2025
 
 #### Our Repository
+
 - Uses ESLint + Prettier (stable, well-supported)
 
 **Recommendation:** Current approach is fine. Biome is emerging but ESLint + Prettier is still industry standard. See [Biome vs ESLint comparison](https://betterstack.com/community/guides/scaling-nodejs/biome-eslint/).
@@ -251,7 +281,9 @@ Has `biome.json` (currently disabled):
 ### 12. AI Agent Documentation (AGENTS.md)
 
 #### effect-template
+
 Comprehensive `AGENTS.md` with:
+
 - Architectural principles (Functional Core, Imperative Shell)
 - Type safety requirements
 - Monadic composition patterns
@@ -259,7 +291,9 @@ Comprehensive `AGENTS.md` with:
 - Proof obligations
 
 #### Our Repository
+
 Has `CLAUDE.md` for Claude Code:
+
 - Issue-solving workflow
 - CI guidelines
 - Collaboration practices
@@ -271,17 +305,20 @@ Has `CLAUDE.md` for Claude Code:
 ## Best Practices Missing in Our Repository
 
 ### High Priority (Recommended to Add)
+
 1. **Code duplication detection** - Add jscpd configuration
 2. **ESLint complexity rules** - Add max-complexity, max-lines-per-function, max-params
 3. **VS Code settings** - Add .vscode/settings.json for team consistency
 4. **Reusable GitHub Action** - Extract setup steps to custom action
 
 ### Medium Priority (Consider Adding)
+
 5. **Test coverage thresholds** - Add coverage configuration with minimum thresholds
 6. **Type checking script** - Add `npm run typecheck` if using TypeScript
 7. **Package snapshots** - Add pkg-pr-new for PR testing
 
 ### Lower Priority (Optional)
+
 8. **TypeScript migration** - Full TypeScript with strict config
 9. **Vite build tool** - For TypeScript compilation
 10. **Nix environment** - For reproducible development
