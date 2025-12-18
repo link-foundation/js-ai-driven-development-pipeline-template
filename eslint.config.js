@@ -69,7 +69,7 @@ export default [
       ],
       'max-params': ['warn', 6], // Maximum function parameters - slightly more lenient than strict 5
       'max-statements': ['warn', 60], // Maximum statements per function - reasonable limit for orchestration functions
-      'max-lines': ['warn', 1500], // Maximum lines per file - counts all lines including blank lines and comments
+      'max-lines': ['error', 1500], // Maximum lines per file - counts all lines including blank lines and comments
     },
   },
   {
