@@ -4,3 +4,4 @@ dist
 *.min.js
 package-lock.json
 .eslintcache
+CLAUDE.md
