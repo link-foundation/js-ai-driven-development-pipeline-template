@@ -90,6 +90,9 @@ jobs:
       - name: Check file size limit
         run: npm run check:file-size
 
+      - name: Check code duplication
+        run: npm run check:duplication
+
   # Test matrix: 3 runtimes (Node.js, Bun, Deno) x 3 OS (Ubuntu, macOS, Windows)
   test:
     name: Test (${{ matrix.runtime }} on ${{ matrix.os }})
