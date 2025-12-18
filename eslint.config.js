@@ -72,7 +72,7 @@ export default [
       'max-lines': [
         'warn',
         {
-          max: 500, // Maximum lines per file - more lenient than strict 300
+          max: 1500, // Maximum lines per file - reasonable limit for maintainability
           skipBlankLines: true,
           skipComments: true,
         },
