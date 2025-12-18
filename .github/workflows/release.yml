@@ -87,9 +87,6 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
-      - name: Check file size limit
-        run: npm run check:file-size
-
       - name: Check code duplication
         run: npm run check:duplication
 

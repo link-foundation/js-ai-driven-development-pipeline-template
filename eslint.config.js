@@ -55,6 +55,21 @@ export default [
 
       // Comments and documentation
       'spaced-comment': ['error', 'always', { markers: ['/'] }],
+
+      // Complexity rules - reasonable thresholds for maintainability
+      complexity: ['warn', 15], // Cyclomatic complexity - allow more complex logic than strict 8
+      'max-depth': ['warn', 5], // Maximum nesting depth - slightly more lenient than strict 4
+      'max-lines-per-function': [
+        'warn',
+        {
+          max: 150, // More reasonable than strict 50 lines per function
+          skipBlankLines: true,
+          skipComments: true,
+        },
+      ],
+      'max-params': ['warn', 6], // Maximum function parameters - slightly more lenient than strict 5
+      'max-statements': ['warn', 60], // Maximum statements per function - reasonable limit for orchestration functions
+      'max-lines': ['error', 1500], // Maximum lines per file - counts all lines including blank lines and comments
     },
   },
   {

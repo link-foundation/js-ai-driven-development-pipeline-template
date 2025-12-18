@@ -159,16 +159,15 @@ Configured in `.prettierrc`:
 
 ## Scripts Reference
 
-| Script                    | Description                                |
-| ------------------------- | ------------------------------------------ |
-| `npm test`                | Run tests with Node.js                     |
-| `npm run lint`            | Check code with ESLint                     |
-| `npm run lint:fix`        | Fix ESLint issues automatically            |
-| `npm run format`          | Format code with Prettier                  |
-| `npm run format:check`    | Check formatting without changing files    |
-| `npm run check`           | Run all checks (lint + format + file size) |
-| `npm run check:file-size` | Ensure files don't exceed 1000 lines       |
-| `npm run changeset`       | Create a new changeset                     |
+| Script                 | Description                             |
+| ---------------------- | --------------------------------------- |
+| `npm test`             | Run tests with Node.js                  |
+| `npm run lint`         | Check code with ESLint                  |
+| `npm run lint:fix`     | Fix ESLint issues automatically         |
+| `npm run format`       | Format code with Prettier               |
+| `npm run format:check` | Check formatting without changing files |
+| `npm run check`        | Run all checks (lint + format)          |
+| `npm run changeset`    | Create a new changeset                  |
 
 ## Contributing
 
