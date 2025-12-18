@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+### Patch Changes
+
+- e9703b9: Add ESLint complexity rules with reasonable thresholds
+
 ## 0.1.3
 
 ### Patch Changes
