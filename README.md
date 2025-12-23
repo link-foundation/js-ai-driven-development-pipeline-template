@@ -19,6 +19,7 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 3. Update `package.json` with your package name and description
 4. Update the `PACKAGE_NAME` constant in these scripts:
    - `scripts/validate-changeset.mjs`
+   - `scripts/merge-changesets.mjs`
    - `scripts/publish-to-npm.mjs`
    - `scripts/format-release-notes.mjs`
    - `scripts/create-manual-changeset.mjs`
@@ -120,10 +121,23 @@ Two manual release modes are available via GitHub Actions:
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) provides:
 
-1. **Changeset check**: Validates PR has exactly one changeset
+1. **Changeset check**: Validates PR has exactly one changeset (added by that PR)
 2. **Lint & format**: Ensures code quality standards
 3. **Test matrix**: 3 runtimes × 3 OS = 9 test combinations
-4. **Release**: Automated versioning and npm publishing
+4. **Changeset merge**: Combines multiple pending changesets at release time
+5. **Release**: Automated versioning and npm publishing
+
+#### Robust Changeset Handling
+
+The CI/CD pipeline is designed to handle concurrent PRs gracefully:
+
+- **PR Validation**: Only validates changesets **added by the current PR**, not pre-existing ones from other merged PRs. This prevents false failures when multiple PRs merge before a release cycle completes.
+
+- **Release-time Merging**: If multiple changesets exist when releasing, they are automatically merged into a single changeset with:
+  - The highest version bump type (major > minor > patch)
+  - All descriptions preserved in chronological order
+
+This design decouples PR validation from the need to pull changes from the default branch, reducing conflicts and ensuring that even if CI/CD fails, all unpublished changesets will still get published when the error is resolved.
 
 ## Configuration
 
