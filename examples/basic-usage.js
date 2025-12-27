@@ -3,8 +3,8 @@
  * Demonstrates how to use the package
  *
  * Run with any runtime:
- * - Node.js: node examples/basic-usage.js
  * - Bun: bun examples/basic-usage.js
+ * - Node.js: node examples/basic-usage.js
  * - Deno: deno run examples/basic-usage.js
  */
 
