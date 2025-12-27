@@ -4,11 +4,11 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 
 ## Features
 
-- **Multi-runtime support**: Works with Node.js, Bun, and Deno
+- **Multi-runtime support**: Works with Bun, Node.js, and Deno
 - **Universal testing**: Uses [test-anywhere](https://github.com/link-foundation/test-anywhere) for cross-runtime tests
 - **Automated releases**: Changesets-based versioning with GitHub Actions
 - **Code quality**: ESLint + Prettier with pre-commit hooks via Husky
-- **Package manager agnostic**: Works with npm, yarn, bun, deno, and pnpm
+- **Package manager agnostic**: Works with bun, npm, yarn, pnpm, and deno
 
 ## Quick Start
 
@@ -23,30 +23,30 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
    - `scripts/publish-to-npm.mjs`
    - `scripts/format-release-notes.mjs`
    - `scripts/create-manual-changeset.mjs`
-5. Install dependencies: `npm install`
+5. Install dependencies: `bun install`
 6. Start developing!
 
 ### Development
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Run tests
-npm test
+bun test
 
 # Or with other runtimes:
-bun test
+npm test
 deno test --allow-read
 
 # Lint code
-npm run lint
+bun run lint
 
 # Format code
-npm run format
+bun run format
 
 # Check all (lint + format + file size)
-npm run check
+bun run check
 ```
 
 ## Project Structure
@@ -75,8 +75,8 @@ npm run check
 
 This template is designed to work seamlessly with all major JavaScript runtimes:
 
-- **Node.js**: Primary runtime, uses built-in test runner (`node --test`)
-- **Bun**: Fast alternative runtime with native test support (`bun test`)
+- **Bun**: Primary runtime with highest performance, uses native test support (`bun test`)
+- **Node.js**: Alternative runtime, uses built-in test runner (`node --test`)
 - **Deno**: Secure runtime with built-in TypeScript support (`deno test`)
 
 The [test-anywhere](https://github.com/link-foundation/test-anywhere) framework provides a unified testing API that works identically across all runtimes.
@@ -85,9 +85,9 @@ The [test-anywhere](https://github.com/link-foundation/test-anywhere) framework 
 
 While `package.json` is the source of truth for dependencies, the template supports:
 
-- **npm**: Default, generates `package-lock.json`
+- **bun**: Primary choice, uses `bun.lockb`
+- **npm**: Uses `package-lock.json`
 - **yarn**: Uses `yarn.lock`
-- **bun**: Uses `bun.lockb`
 - **pnpm**: Uses `pnpm-lock.yaml`
 - **deno**: Uses `deno.json` for configuration
 
@@ -104,7 +104,7 @@ Note: `package-lock.json` is not committed by default to allow any package manag
 
 The release workflow uses [Changesets](https://github.com/changesets/changesets) for version management:
 
-1. **Creating a changeset**: Run `npm run changeset` to document changes
+1. **Creating a changeset**: Run `bun run changeset` to document changes
 2. **PR validation**: CI checks for valid changeset in each PR
 3. **Automated versioning**: Merging to `main` triggers version bump
 4. **npm publishing**: Automated via OIDC trusted publishing (no tokens needed)
@@ -175,20 +175,20 @@ Configured in `.prettierrc`:
 
 | Script                 | Description                             |
 | ---------------------- | --------------------------------------- |
-| `npm test`             | Run tests with Node.js                  |
-| `npm run lint`         | Check code with ESLint                  |
-| `npm run lint:fix`     | Fix ESLint issues automatically         |
-| `npm run format`       | Format code with Prettier               |
-| `npm run format:check` | Check formatting without changing files |
-| `npm run check`        | Run all checks (lint + format)          |
-| `npm run changeset`    | Create a new changeset                  |
+| `bun test`             | Run tests with Bun                      |
+| `bun run lint`         | Check code with ESLint                  |
+| `bun run lint:fix`     | Fix ESLint issues automatically         |
+| `bun run format`       | Format code with Prettier               |
+| `bun run format:check` | Check formatting without changing files |
+| `bun run check`        | Run all checks (lint + format)          |
+| `bun run changeset`    | Create a new changeset                  |
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes
-4. Create a changeset: `npm run changeset`
+4. Create a changeset: `bun run changeset`
 5. Commit your changes (pre-commit hooks will run automatically)
 6. Push and create a Pull Request
 
