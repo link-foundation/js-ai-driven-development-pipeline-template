@@ -2,18 +2,34 @@
 
 /**
  * Publish to npm using OIDC trusted publishing
- * Usage: node scripts/publish-to-npm.mjs [--should-pull]
+ * Usage: node scripts/publish-to-npm.mjs [--should-pull] [--js-root <path>]
  *   should_pull: Optional flag to pull latest changes before publishing (for release job)
  *
  * IMPORTANT: Update the PACKAGE_NAME constant below to match your package.json
+ *
+ * Configuration:
+ * - CLI: --js-root <path> to explicitly set JavaScript root
+ * - Environment: JS_ROOT=<path>
  *
  * Uses link-foundation libraries:
  * - use-m: Dynamic package loading without package.json dependencies
  * - command-stream: Modern shell command execution with streaming support
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
+ *
+ * Addresses issues documented in:
+ * - Issue #21: Supporting both single and multi-language repository structures
+ * - Reference: link-assistant/agent PR #112 (--legacy-peer-deps fix)
+ * - Reference: link-assistant/agent PR #114 (configurable package root)
  */
 
 import { readFileSync, appendFileSync } from 'fs';
+
+import {
+  getJsRoot,
+  getPackageJsonPath,
+  needsCd,
+  parseJsRootConfig,
+} from './js-paths.mjs';
 
 // TODO: Update this to match your package name in package.json
 const PACKAGE_NAME = 'my-package';
@@ -30,16 +46,32 @@ const { makeConfig } = await use('lino-arguments');
 // Parse CLI arguments using lino-arguments
 const config = makeConfig({
   yargs: ({ yargs, getenv }) =>
-    yargs.option('should-pull', {
-      type: 'boolean',
-      default: getenv('SHOULD_PULL', false),
-      describe: 'Pull latest changes before publishing',
-    }),
+    yargs
+      .option('should-pull', {
+        type: 'boolean',
+        default: getenv('SHOULD_PULL', false),
+        describe: 'Pull latest changes before publishing',
+      })
+      .option('js-root', {
+        type: 'string',
+        default: getenv('JS_ROOT', ''),
+        describe:
+          'JavaScript package root directory (auto-detected if not specified)',
+      }),
 });
 
-const { shouldPull } = config;
+const { shouldPull, jsRoot: jsRootArg } = config;
+
+// Get JavaScript package root (auto-detect or use explicit config)
+const jsRootConfig = jsRootArg || parseJsRootConfig();
+const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
+
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
+
+// Store the original working directory to restore after cd commands
+// IMPORTANT: command-stream's cd is a virtual command that calls process.chdir()
+const originalCwd = process.cwd();
 
 /**
  * Sleep for specified milliseconds
@@ -69,7 +101,8 @@ async function main() {
     }
 
     // Get current version
-    const packageJson = JSON.parse(readFileSync('./package.json', 'utf8'));
+    const packageJsonPath = getPackageJsonPath({ jsRoot });
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
     const currentVersion = packageJson.version;
     console.log(`Current version to publish: ${currentVersion}`);
 
@@ -101,7 +134,14 @@ async function main() {
     for (let i = 1; i <= MAX_RETRIES; i++) {
       console.log(`Publish attempt ${i} of ${MAX_RETRIES}...`);
       try {
-        await $`npm run changeset:publish`;
+        // Run changeset:publish from the js directory where package.json with this script exists
+        // IMPORTANT: cd is a virtual command that calls process.chdir(), so we restore after
+        if (needsCd({ jsRoot })) {
+          await $`cd ${jsRoot} && npm run changeset:publish`;
+          process.chdir(originalCwd);
+        } else {
+          await $`npm run changeset:publish`;
+        }
         setOutput('published', 'true');
         setOutput('published_version', currentVersion);
         console.log(
@@ -109,6 +149,10 @@ async function main() {
         );
         return;
       } catch (error) {
+        // Restore cwd on error before retry
+        if (needsCd({ jsRoot })) {
+          process.chdir(originalCwd);
+        }
         if (i < MAX_RETRIES) {
           console.log(
             `Publish failed: ${error.message}, waiting ${RETRY_DELAY / 1000}s before retry...`
@@ -121,6 +165,8 @@ async function main() {
     console.error(`\u274C Failed to publish after ${MAX_RETRIES} attempts`);
     process.exit(1);
   } catch (error) {
+    // Restore cwd on error
+    process.chdir(originalCwd);
     console.error('Error:', error.message);
     process.exit(1);
   }
