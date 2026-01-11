@@ -323,3 +323,62 @@ Update repository documentation to explain:
 - How scripts auto-detect repository structure
 - How to configure for different project layouts
 - Known limitations and workarounds
+
+### 5. Prevent False Positives in CI/CD (Based on Issue #115/PR #116)
+
+**Problem**: The `changeset publish` command exits with code 0 even when packages fail to publish. The `command-stream` library doesn't throw exceptions on non-zero exit codes. This can result in false positive CI/CD statuses where failures are reported as successes.
+
+**Best Practice**: Implement multi-layer failure detection:
+
+1. **Output pattern matching** - Scan command output for failure patterns:
+
+   ```javascript
+   const FAILURE_PATTERNS = [
+     'packages failed to publish',
+     'error occurred while publishing',
+     'npm error code E',
+     'npm error 404',
+     'npm error 401',
+     'npm error 403',
+     'Access token expired',
+     'ENEEDAUTH',
+   ];
+
+   function detectPublishFailure(output) {
+     const lowerOutput = output.toLowerCase();
+     for (const pattern of FAILURE_PATTERNS) {
+       if (lowerOutput.includes(pattern.toLowerCase())) {
+         return pattern;
+       }
+     }
+     return null;
+   }
+   ```
+
+2. **Exit code checking** - Check the exit code even though `changeset` may return 0 on failure:
+
+   ```javascript
+   if (result.code !== 0) {
+     throw new Error(`Publish failed with exit code ${result.code}`);
+   }
+   ```
+
+3. **Post-publish verification** - Verify the package is actually on npm:
+
+   ```javascript
+   async function verifyPublished(packageName, version) {
+     const result = await $`npm view "${packageName}@${version}" version`.run({
+       capture: true,
+     });
+     return result.code === 0 && result.stdout.trim().includes(version);
+   }
+   ```
+
+4. **Use `.run({ capture: true })`** - Capture command output for analysis instead of just running and assuming success.
+
+**Related References**:
+
+- [Issue #115](https://github.com/link-assistant/agent/issues/115) - Error was treated as success
+- [PR #116](https://github.com/link-assistant/agent/pull/116) - fix: Add publish verification and failure detection to prevent false positives
+- [Changesets Issue #1621](https://github.com/changesets/changesets/issues/1621) - Git tag failure isn't handled
+- [Changesets Issue #1280](https://github.com/changesets/changesets/issues/1280) - Action succeeds but package is never published
