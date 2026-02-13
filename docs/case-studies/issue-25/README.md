@@ -1,8 +1,8 @@
 # Case Study: Implementing Best Practices from hive-mind (Issue #25)
 
-**Date**: 2026-02-13
+**Date**: 2026-02-14 (Updated)
 **Issue**: [#25](https://github.com/link-foundation/js-ai-driven-development-pipeline-template/issues/25)
-**Status**: Analysis Complete - Implementing changes
+**Status**: Complete - Detailed comparison added
 
 ---
 
@@ -156,12 +156,13 @@ if: "!cancelled() && needs.release.result == 'success'"
 
 ## Data Files
 
-| File                                                             | Description                                |
-| ---------------------------------------------------------------- | ------------------------------------------ |
-| [data/hive-mind-file-tree.txt](./data/hive-mind-file-tree.txt)   | Complete file tree of hive-mind repository |
-| [data/template-file-tree.txt](./data/template-file-tree.txt)     | Complete file tree of this template        |
-| [data/issue-1274-case-study.md](./data/issue-1274-case-study.md) | Case study for issue #1274                 |
-| [data/issue-1278-case-study.md](./data/issue-1278-case-study.md) | Case study for issue #1278                 |
+| File                                                             | Description                                             |
+| ---------------------------------------------------------------- | ------------------------------------------------------- |
+| [DETAILED-COMPARISON.md](./DETAILED-COMPARISON.md)               | **Comprehensive comparison of ALL scripts and configs** |
+| [data/hive-mind-file-tree.txt](./data/hive-mind-file-tree.txt)   | Complete file tree of hive-mind repository              |
+| [data/template-file-tree.txt](./data/template-file-tree.txt)     | Complete file tree of this template                     |
+| [data/issue-1274-case-study.md](./data/issue-1274-case-study.md) | Case study for issue #1274                              |
+| [data/issue-1278-case-study.md](./data/issue-1278-case-study.md) | Case study for issue #1278                              |
 
 ---
 

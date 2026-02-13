@@ -19,7 +19,7 @@ This template implements the following best practices from the [hive-mind](https
 
 ### 1. File Size Limits
 
-**Maximum of 1000 lines per code file** (enforced via ESLint `max-lines` rule).
+**Maximum of 1500 lines per code file** (enforced via ESLint `max-lines` rule).
 
 This constraint benefits both AI and human developers:
 
@@ -91,10 +91,12 @@ concurrency:
   cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 ```
 
-This ensures:
+This configuration (implemented in this template) ensures:
 
-- **Main branch**: Newer runs cancel older runs, preventing blocking
+- **Main branch**: Newer runs cancel older runs, preventing blocking (Issue #1274 fix)
 - **PR branches**: Runs are queued to preserve check history
+
+See [DETAILED-COMPARISON.md](./case-studies/issue-25/DETAILED-COMPARISON.md) for the full analysis of best practices from both repositories.
 
 #### Fresh Merge Simulation
 
