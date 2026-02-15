@@ -185,12 +185,26 @@ Configured in `.prettierrc`:
 
 ## Contributing
 
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed contribution guidelines.
+
+Quick steps:
+
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes
 4. Create a changeset: `bun run changeset`
 5. Commit your changes (pre-commit hooks will run automatically)
 6. Push and create a Pull Request
+
+## Best Practices
+
+This template implements CI/CD best practices for AI-driven development. See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) for details on:
+
+- File size limits for AI readability
+- Automated formatting and linting
+- Multi-runtime and cross-platform testing
+- Changeset-based versioning
+- Concurrency control for CI/CD pipelines
 
 ## License
 
