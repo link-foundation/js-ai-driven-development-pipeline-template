@@ -16,5 +16,8 @@ https://127.0.0.1
 https://example\.com
 http://example\.com
 
-# npm package pages may be temporarily unavailable
-# https://www.npmjs.com/package/.*
+# npm.js returns 403 to link checkers (bot protection)
+https://www\.npmjs\.com
+
+# Medium.com returns 403 to link checkers (bot protection)
+https://medium\.com

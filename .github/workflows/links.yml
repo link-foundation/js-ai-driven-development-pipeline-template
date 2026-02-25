@@ -33,11 +33,15 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           # Check all Markdown and HTML files
+          # Exclude case-studies directory - these are research documents from
+          # external repos with references to files and issues that don't exist
+          # in this repository (similar exclusion pattern as eslint.config.js)
           args: >-
             --verbose
             --no-progress
             --cache
             --max-cache-age 1d
+            --exclude-path docs/case-studies
             './**/*.md'
             './**/*.html'
           # Don't fail the workflow immediately - we want to check web archive first
