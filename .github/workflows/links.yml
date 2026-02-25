@@ -1,0 +1,72 @@
+name: Broken Link Checker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.md'
+      - '**.html'
+      - '.github/workflows/links.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.md'
+      - '**.html'
+      - '.github/workflows/links.yml'
+  schedule:
+    # Run weekly on Monday at 09:00 UTC to catch links that break over time
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  link-checker:
+    name: Check Links
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links with lychee
+        id: lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # Check all Markdown and HTML files
+          args: >-
+            --verbose
+            --no-progress
+            --cache
+            --max-cache-age 1d
+            --format markdown
+            --output lychee/out.md
+            './**/*.md'
+            './**/*.html'
+          # Don't fail the workflow immediately - we want to check web archive first
+          fail: false
+          # Write a job summary
+          jobSummary: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check broken links against Web Archive
+        if: steps.lychee.outputs.exit_code != 0
+        id: webarchive
+        run: node scripts/check-web-archive.mjs
+        env:
+          LYCHEE_OUTPUT: lychee/out.md
+
+      - name: Create issue for broken links (scheduled runs only)
+        if: github.event_name == 'schedule' && steps.lychee.outputs.exit_code != 0
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: 'Broken Link Report'
+          content-filepath: ./lychee/out.md
+          labels: 'broken-links, automated issue'
+
+      - name: Fail if broken links found and no web archive fallback
+        if: steps.lychee.outputs.exit_code != 0 && steps.webarchive.outputs.all_archived != 'true'
+        run: |
+          echo "::error::Broken links found that have no Web Archive fallback."
+          echo "Please review lychee/out.md for details and web archive suggestions."
+          exit 1
