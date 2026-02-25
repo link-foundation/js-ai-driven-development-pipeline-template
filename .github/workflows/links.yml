@@ -38,6 +38,8 @@ jobs:
             --no-progress
             --cache
             --max-cache-age 1d
+            --max-retries 3
+            --timeout 30
             --exclude-path docs/case-studies
             './**/*.md'
             './**/*.html'
