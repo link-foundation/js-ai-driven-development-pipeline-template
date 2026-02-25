@@ -38,12 +38,12 @@ jobs:
             --no-progress
             --cache
             --max-cache-age 1d
-            --format markdown
-            --output lychee/out.md
             './**/*.md'
             './**/*.html'
           # Don't fail the workflow immediately - we want to check web archive first
           fail: false
+          # Output file for broken links report (used by check-web-archive.mjs)
+          output: lychee/out.md
           # Write a job summary
           jobSummary: true
         env:
