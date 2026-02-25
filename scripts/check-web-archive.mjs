@@ -203,10 +203,14 @@ async function main() {
       console.log('');
     }
 
-    // Print GitHub Actions annotations as suggestions
+    // Print GitHub Actions annotations as suggestions (one per link)
     for (const { url, archiveUrl, date } of withArchive) {
       console.log(
-        `::notice::Broken link has Web Archive version (${date}). Consider replacing: ${url} → ${archiveUrl}`
+        `::notice title=Broken link - Web Archive available (${date})::` +
+          `Broken link detected: ${url}\n` +
+          `A Web Archive snapshot from ${date} is available.\n` +
+          `Suggested fix: replace the broken link with the archived version:\n` +
+          `  ${archiveUrl}`
       );
     }
   }
@@ -220,9 +224,17 @@ async function main() {
     }
     console.log('');
 
-    // Print GitHub Actions annotations as errors
+    // Print GitHub Actions annotations as errors (one per link)
     for (const url of withoutArchive) {
-      console.log(`::error::Broken link with no Web Archive fallback: ${url}`);
+      console.log(
+        `::error title=Broken link - No Web Archive fallback::` +
+          `Broken link detected: ${url}\n` +
+          `No archived version was found in the Wayback Machine.\n` +
+          `How to fix:\n` +
+          `  1. Find an updated URL for the same or equivalent content and replace the link.\n` +
+          `  2. Remove the link if the content is no longer relevant.\n` +
+          `  3. Add the URL to .lycheeignore if it is a known false positive (e.g. localhost, example.com).`
+      );
     }
   }
 
@@ -234,12 +246,12 @@ async function main() {
       '\nAction required: Fix or remove the broken links listed above.'
     );
     console.log(
-      'For links with Web Archive versions, you can replace them with archive.org URLs.'
+      'For links with Web Archive versions, you can replace them with the suggested archive.org URLs.'
     );
     process.exit(1);
   } else {
     console.log(
-      '\nAll broken links have Web Archive versions. Consider replacing them with archive.org URLs.'
+      '\nAll broken links have Web Archive versions. Consider replacing them with the suggested archive.org URLs.'
     );
     process.exit(0);
   }
