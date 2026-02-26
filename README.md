@@ -9,6 +9,7 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 - **Automated releases**: Changesets-based versioning with GitHub Actions
 - **Code quality**: ESLint + Prettier with pre-commit hooks via Husky
 - **Package manager agnostic**: Works with bun, npm, yarn, pnpm, and deno
+- **Broken link checks**: Automated link validation with [lychee](https://github.com/lycheeverse/lychee-action) and Web Archive fallback suggestions
 
 ## Quick Start
 
@@ -124,8 +125,9 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) provides:
 1. **Changeset check**: Validates PR has exactly one changeset (added by that PR)
 2. **Lint & format**: Ensures code quality standards
 3. **Test matrix**: 3 runtimes × 3 OS = 9 test combinations
-4. **Changeset merge**: Combines multiple pending changesets at release time
-5. **Release**: Automated versioning and npm publishing
+4. **Broken link checks**: Validates all links in Markdown/HTML files, checks Web Archive for broken links
+5. **Changeset merge**: Combines multiple pending changesets at release time
+6. **Release**: Automated versioning and npm publishing
 
 #### Robust Changeset Handling
 
@@ -138,6 +140,20 @@ The CI/CD pipeline is designed to handle concurrent PRs gracefully:
   - All descriptions preserved in chronological order
 
 This design decouples PR validation from the need to pull changes from the default branch, reducing conflicts and ensuring that even if CI/CD fails, all unpublished changesets will still get published when the error is resolved.
+
+### Broken Link Checker
+
+The link checker workflow (`.github/workflows/links.yml`) validates all links in Markdown and HTML files:
+
+1. **Detection**: Uses [lychee](https://github.com/lycheeverse/lychee-action) to scan all `*.md` and `*.html` files
+2. **Web Archive fallback**: For any broken links found, automatically checks the [Wayback Machine](https://web.archive.org) for archived versions
+3. **Actionable suggestions**: Reports one of three outcomes for each broken link:
+   - **Archived**: Suggests the Web Archive URL as a replacement
+   - **Not archived**: Clearly reports the link is unrecoverable
+4. **Scheduled checks**: Runs weekly to catch links that break over time (even if no files changed)
+5. **Issue creation**: On scheduled runs, creates a GitHub Issue with the full broken links report
+
+Add regex patterns to `.lycheeignore` to exclude URLs from checks (e.g., local dev URLs, example.com, known rate-limited sites).
 
 ## Configuration
 

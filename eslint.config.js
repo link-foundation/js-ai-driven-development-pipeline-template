@@ -22,6 +22,7 @@ export default [
         __filename: 'readonly',
         // Node.js 18+ globals
         fetch: 'readonly',
+        AbortController: 'readonly',
         // Runtime-specific globals
         Bun: 'readonly',
         Deno: 'readonly',
