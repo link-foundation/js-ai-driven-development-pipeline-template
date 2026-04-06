@@ -99,7 +99,7 @@ Note: `package-lock.json` is not committed by default to allow any package manag
 - **ESLint**: Configured with recommended rules + Prettier integration
 - **Prettier**: Consistent code formatting
 - **Husky + lint-staged**: Pre-commit hooks ensure code quality
-- **File size limit**: Scripts must stay under 1000 lines for maintainability
+- **File size limit**: Files must stay under 1500 lines for maintainability (enforced via ESLint and CI)
 
 ### Release Workflow
 
@@ -120,14 +120,28 @@ Two manual release modes are available via GitHub Actions:
 
 ### CI/CD Pipeline
 
-The GitHub Actions workflow (`.github/workflows/release.yml`) provides:
+The GitHub Actions workflow (`.github/workflows/release.yml`) implements a fast-fail pipeline:
 
-1. **Changeset check**: Validates PR has exactly one changeset (added by that PR)
-2. **Lint & format**: Ensures code quality standards
-3. **Test matrix**: 3 runtimes × 3 OS = 9 test combinations
-4. **Broken link checks**: Validates all links in Markdown/HTML files, checks Web Archive for broken links
-5. **Changeset merge**: Combines multiple pending changesets at release time
-6. **Release**: Automated versioning and npm publishing
+**Fast checks** (~7-30s each, run first for fastest feedback):
+
+1. **Test compilation**: Syntax-checks all `.mjs` files with `node --check`
+2. **Lint, format & secrets scan**: ESLint, Prettier, jscpd, and [secretlint](https://github.com/secretlint/secretlint) for credential leak detection
+3. **File line limits**: Enforces 1500-line limit on `.mjs` files and `release.yml`
+4. **Changeset check**: Validates PR has exactly one changeset (added by that PR)
+5. **Version check**: Blocks manual version changes in `package.json`
+6. **Documentation validation**: Checks doc file sizes and required files
+
+**Slow checks** (only run after all fast checks pass):
+
+7. **Test matrix**: 3 runtimes × 3 OS = 9 test combinations
+8. **Broken link checks**: Validates all links in Markdown/HTML files (separate workflow)
+
+**Release** (on merge to main):
+
+9. **Changeset merge**: Combines multiple pending changesets at release time
+10. **Release**: Automated versioning and npm publishing
+
+See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) for detailed explanations of each practice.
 
 #### Robust Changeset Handling
 

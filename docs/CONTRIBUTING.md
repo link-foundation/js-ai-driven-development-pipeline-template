@@ -15,7 +15,7 @@
 
 ### File Size Limits
 
-**Maximum 1000 lines per file** (enforced via ESLint).
+**Maximum 1500 lines per file** (enforced via ESLint `max-lines` rule and CI `check-file-line-limits` job).
 
 This benefits both AI and human developers by ensuring files remain readable and maintainable.
 
@@ -152,8 +152,11 @@ Include:
 
 All PRs must pass:
 
+- [ ] Test compilation (syntax check)
+- [ ] Lint, format, and secrets scan
+- [ ] File line limits check
 - [ ] Changeset validation (for code changes)
-- [ ] Lint and format check
+- [ ] Documentation validation (when docs change)
 - [ ] Tests on all platforms (Ubuntu, macOS, Windows)
 - [ ] Tests on all runtimes (Node.js, Bun, Deno)
 
