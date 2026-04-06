@@ -107,17 +107,73 @@ Before running checks on PRs, the workflow:
 3. Runs checks against the merged state
 
 This prevents "stale merge preview" issues where checks pass on outdated code.
+The simulation logic is extracted to `scripts/simulate-fresh-merge.sh` for reuse across jobs.
+
+### 9. Fast-Fail Job Ordering
+
+**Run fast checks before slow checks** to give the fastest possible feedback:
+
+```
+Fast checks (~7-30s each):     Slow checks (~1-10 min each):
+├── test-compilation           └── test matrix (3 runtimes x 3 OS)
+├── lint (format + ESLint)
+└── check-file-line-limits
+```
+
+Slow test matrix only runs after all fast checks pass. This dramatically reduces feedback time for AI solvers — a syntax error is caught in ~7 seconds instead of waiting for the full test matrix.
+
+### 10. File Line Limits in CI
+
+In addition to the ESLint `max-lines` rule (which only covers source files), a separate CI check enforces the 1500-line limit on:
+
+- All `.mjs` files (including scripts)
+- `.github/workflows/release.yml` (to prevent workflow bloat)
+
+This is enforced by `scripts/check-file-line-limits.sh`.
+
+### 11. Secrets Detection
+
+Automated scanning for accidental credential leaks using [secretlint](https://github.com/secretlint/secretlint):
+
+- Runs in the lint job to catch secrets before code reaches review
+- Configured via `.secretlintrc.json` with recommended rules
+- Prevents API tokens, passwords, and private keys from being committed
+
+### 12. Documentation Validation
+
+Documentation files are validated in CI just like code:
+
+- File size limits (2500 lines for docs)
+- Required files check (README.md, CHANGELOG.md, CONTRIBUTING.md, BEST-PRACTICES.md)
+- Only runs when documentation files change
+
+### 13. Proper Cancellation Propagation
+
+Use `!cancelled()` instead of `always()` in job conditions (hive-mind issue #1278):
+
+```yaml
+# Bad - always() prevents cancellation from propagating
+if: always() && needs.lint.result == 'success'
+
+# Good - !cancelled() allows cancellation to propagate
+if: !cancelled() && needs.lint.result == 'success'
+```
+
+When a workflow run is cancelled, `always()` still evaluates to `true`, causing dependent jobs to run unnecessarily. `!cancelled()` properly stops the chain.
 
 ## Quality Enforcement Strategy
 
 The template implements a defense-in-depth approach:
 
 ```
-Developer Machine    ->    CI/CD Pipeline    ->    Release
-├── Pre-commit hooks      ├── Format check        ├── All checks pass
-├── Local tests           ├── Lint/analyze        ├── Version bump
-└── IDE integration       ├── Full test suite     ├── Changelog update
-                          ├── Build validation    └── Publish package
+Developer Machine    ->    CI/CD Pipeline               ->    Release
+├── Pre-commit hooks      ├── Fast checks (~7-30s)           ├── All checks pass
+├── Local tests           │   ├── test-compilation           ├── Version bump
+└── IDE integration       │   ├── lint + secrets scan        ├── Changelog update
+                          │   └── file line limits           └── Publish package
+                          ├── Slow checks (~1-10 min)
+                          │   └── test matrix (9 combos)
+                          ├── Documentation validation
                           └── Changeset verify
 ```
 
@@ -126,6 +182,8 @@ Each layer catches different issues, ensuring no problematic code reaches produc
 ## References
 
 - [Code Architecture Principles](https://github.com/link-foundation/code-architecture-principles)
+- [hive-mind CI/CD Best Practices](https://github.com/link-assistant/hive-mind/blob/main/docs/CI-CD-BEST-PRACTICES.md)
 - [hive-mind CI/CD Case Studies](https://github.com/link-assistant/hive-mind/tree/main/docs/case-studies)
 - [Issue #1274 Analysis](./case-studies/issue-25/data/issue-1274-case-study.md) - Concurrency blocking
 - [Issue #1278 Analysis](./case-studies/issue-25/data/issue-1278-case-study.md) - always() cancellation prevention
+- [Issue #29 Analysis](./case-studies/issue-29/README.md) - CI/CD best practices alignment

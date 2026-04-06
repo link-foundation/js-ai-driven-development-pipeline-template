@@ -67,6 +67,46 @@ jobs:
           GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/detect-code-changes.mjs
 
+  # === FAST CHECKS - run before slow tests for fastest feedback ===
+  # See: hive-mind CI/CD best practices principle #5 (fast-fail job ordering)
+
+  # Syntax check all .mjs files with node --check (~7s)
+  test-compilation:
+    name: Test Compilation
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: |
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.mjs-changed == 'true' ||
+      needs.detect-changes.outputs.js-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check .mjs syntax
+        run: bash scripts/check-mjs-syntax.sh
+
+  # Enforce 1500-line limit on .mjs files and release.yml
+  check-file-line-limits:
+    name: Check File Line Limits
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: |
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.mjs-changed == 'true' ||
+      needs.detect-changes.outputs.js-changed == 'true' ||
+      needs.detect-changes.outputs.workflow-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Simulate fresh merge with base branch (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bash scripts/simulate-fresh-merge.sh
+
+      - name: Check file line limits
+        run: bash scripts/check-file-line-limits.sh
+
   # === VERSION CHANGE CHECK ===
   # Prohibit manual version changes in package.json - versions should only be changed by CI/CD
   version-check:
@@ -148,50 +188,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: |
-          echo "=== Synchronizing PR with latest $BASE_REF ==="
-          echo "This prevents stale merge preview issues (see docs/case-studies/issue-23)"
-          echo ""
-
-          # Configure git for merge
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-
-          # Fetch the latest base branch
-          echo "Fetching latest $BASE_REF..."
-          git fetch origin "$BASE_REF"
-
-          # Get current and base branch info
-          CURRENT_SHA=$(git rev-parse HEAD)
-          BASE_SHA=$(git rev-parse "origin/$BASE_REF")
-
-          echo "Current checkout (merge preview): $CURRENT_SHA"
-          echo "Latest base branch ($BASE_REF): $BASE_SHA"
-          echo ""
-
-          # Check if base branch has new commits not in the merge preview
-          BEHIND_COUNT=$(git rev-list --count HEAD..origin/$BASE_REF)
-
-          if [ "$BEHIND_COUNT" -eq 0 ]; then
-            echo "Merge preview is up-to-date with $BASE_REF. No simulation needed."
-          else
-            echo "Base branch has $BEHIND_COUNT new commit(s) since PR was opened/synced."
-            echo "Simulating fresh merge to validate actual merge result..."
-            echo ""
-
-            # Attempt to merge the latest base branch
-            if git merge origin/$BASE_REF --no-edit; then
-              echo ""
-              echo "Fresh merge simulation successful!"
-              echo "Checks will now run against the up-to-date merged state."
-            else
-              echo ""
-              echo "::error::Merge conflict detected! PR needs to be rebased/updated before it can be merged."
-              echo "The PR branch is out of sync with $BASE_REF and cannot be automatically merged."
-              exit 1
-            fi
-          fi
-          echo ""
+        run: bash scripts/simulate-fresh-merge.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -210,15 +207,33 @@ jobs:
       - name: Check code duplication
         run: npm run check:duplication
 
+      - name: Check for secrets
+        run: npx secretlint "**/*"
+
   # Test matrix: 3 runtimes (Node.js, Bun, Deno) x 3 OS (Ubuntu, macOS, Windows)
   # IMPORTANT: Tests must validate the ACTUAL merge result, not a stale merge preview.
   # See docs/case-studies/issue-23 for why this is critical.
+  # Fast-fail: slow test matrix only runs after fast checks pass (hive-mind principle #5)
   test:
     name: Test (${{ matrix.runtime }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: [detect-changes, changeset-check]
+    needs:
+      [
+        detect-changes,
+        changeset-check,
+        test-compilation,
+        lint,
+        check-file-line-limits,
+      ]
+    # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
     # Run if: push event, OR changeset-check succeeded, OR changeset-check was skipped (docs-only PR)
-    if: always() && (github.event_name == 'push' || needs.changeset-check.result == 'success' || needs.changeset-check.result == 'skipped')
+    # AND all fast checks passed (or were skipped for irrelevant changes)
+    if: |
+      !cancelled() &&
+      (github.event_name == 'push' || needs.changeset-check.result == 'success' || needs.changeset-check.result == 'skipped') &&
+      (needs.test-compilation.result == 'success' || needs.test-compilation.result == 'skipped') &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+      (needs.check-file-line-limits.result == 'success' || needs.check-file-line-limits.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -235,50 +250,7 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         shell: bash
-        run: |
-          echo "=== Synchronizing PR with latest $BASE_REF ==="
-          echo "This prevents stale merge preview issues (see docs/case-studies/issue-23)"
-          echo ""
-
-          # Configure git for merge
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-
-          # Fetch the latest base branch
-          echo "Fetching latest $BASE_REF..."
-          git fetch origin "$BASE_REF"
-
-          # Get current and base branch info
-          CURRENT_SHA=$(git rev-parse HEAD)
-          BASE_SHA=$(git rev-parse "origin/$BASE_REF")
-
-          echo "Current checkout (merge preview): $CURRENT_SHA"
-          echo "Latest base branch ($BASE_REF): $BASE_SHA"
-          echo ""
-
-          # Check if base branch has new commits not in the merge preview
-          BEHIND_COUNT=$(git rev-list --count HEAD..origin/$BASE_REF)
-
-          if [ "$BEHIND_COUNT" -eq 0 ]; then
-            echo "Merge preview is up-to-date with $BASE_REF. No simulation needed."
-          else
-            echo "Base branch has $BEHIND_COUNT new commit(s) since PR was opened/synced."
-            echo "Simulating fresh merge to validate actual merge result..."
-            echo ""
-
-            # Attempt to merge the latest base branch
-            if git merge origin/$BASE_REF --no-edit; then
-              echo ""
-              echo "Fresh merge simulation successful!"
-              echo "Checks will now run against the up-to-date merged state."
-            else
-              echo ""
-              echo "::error::Merge conflict detected! PR needs to be rebased/updated before it can be merged."
-              echo "The PR branch is out of sync with $BASE_REF and cannot be automatically merged."
-              exit 1
-            fi
-          fi
-          echo ""
+        run: bash scripts/simulate-fresh-merge.sh
 
       - name: Setup Node.js
         if: matrix.runtime == 'node'
@@ -318,13 +290,77 @@ jobs:
         if: matrix.runtime == 'deno'
         run: deno test --allow-read
 
+  # === DOCUMENTATION VALIDATION ===
+  # Validate documentation files when docs change (hive-mind principle #12)
+  validate-docs:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: |
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.docs-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check documentation file sizes
+        run: |
+          LIMIT=2500
+          FAILURES=()
+
+          echo "Checking that documentation files are under ${LIMIT} lines..."
+
+          while IFS= read -r -d '' file; do
+            line_count=$(wc -l < "$file")
+            if [ "$line_count" -gt "$LIMIT" ]; then
+              echo "ERROR: $file has $line_count lines (limit: ${LIMIT})"
+              echo "::error file=$file::Documentation file has $line_count lines (limit: ${LIMIT})"
+              FAILURES+=("$file")
+            fi
+          done < <(find docs -name "*.md" -type f -print0 2>/dev/null)
+
+          if [ "${#FAILURES[@]}" -gt 0 ]; then
+            echo "The following docs exceed the ${LIMIT} line limit:"
+            printf '  %s\n' "${FAILURES[@]}"
+            exit 1
+          else
+            echo "All documentation files are within the ${LIMIT} line limit."
+          fi
+
+      - name: Check required documentation files exist
+        run: |
+          REQUIRED_FILES=(
+            "docs/BEST-PRACTICES.md"
+            "docs/CONTRIBUTING.md"
+            "README.md"
+            "CHANGELOG.md"
+          )
+
+          MISSING=()
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "ERROR: Required documentation file missing: $file"
+              MISSING+=("$file")
+            else
+              echo "Found: $file"
+            fi
+          done
+
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            echo ""
+            echo "Missing required documentation files:"
+            printf '  %s\n' "${MISSING[@]}"
+            exit 1
+          else
+            echo "All required documentation files present."
+          fi
+
   # Release - only runs on main after tests pass (for push events)
   release:
     name: Release
     needs: [lint, test]
-    # Use always() to ensure this job runs even if changeset-check was skipped
+    # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
     # This is needed because lint/test jobs have a transitive dependency on changeset-check
-    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint.result == 'success' && needs.test.result == 'success'
+    if: !cancelled() && github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint.result == 'success' && needs.test.result == 'success'
     runs-on: ubuntu-latest
     # Permissions required for npm OIDC trusted publishing
     permissions:
