@@ -360,7 +360,12 @@ jobs:
     needs: [lint, test]
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
     # This is needed because lint/test jobs have a transitive dependency on changeset-check
-    if: !cancelled() && github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint.result == 'success' && needs.test.result == 'success'
+    if: |
+      !cancelled() &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.lint.result == 'success' &&
+      needs.test.result == 'success'
     runs-on: ubuntu-latest
     # Permissions required for npm OIDC trusted publishing
     permissions:
