@@ -97,6 +97,8 @@ jobs:
       needs.detect-changes.outputs.workflow-changed == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -208,7 +210,7 @@ jobs:
         run: npm run check:duplication
 
       - name: Check for secrets
-        run: npx secretlint "**/*"
+        run: npx --yes -p secretlint -p @secretlint/secretlint-rule-preset-recommend secretlint "**/*"
 
   # Test matrix: 3 runtimes (Node.js, Bun, Deno) x 3 OS (Ubuntu, macOS, Windows)
   # IMPORTANT: Tests must validate the ACTUAL merge result, not a stale merge preview.
