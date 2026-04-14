@@ -1,6 +1,6 @@
 {
   "name": "my-package",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A JavaScript/TypeScript package template for AI-driven development",
   "type": "module",
   "main": "src/index.js",
@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
