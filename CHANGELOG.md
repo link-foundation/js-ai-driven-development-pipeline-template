@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+
+### Patch Changes
+
+- 6916409: Use per-commit diff instead of full-PR diff for CI change detection
+
 ## 0.7.0
 
 ### Minor Changes
