@@ -1,48 +1,30 @@
 #!/usr/bin/env node
 
-/**
- * Detect code changes for CI/CD pipeline
- *
- * This script detects what types of files have changed between two commits
- * and outputs the results for use in GitHub Actions workflow conditions.
- *
- * Key behavior:
- * - For PRs: compares PR head against base branch
- * - For pushes: compares HEAD against HEAD^
- * - Excludes certain folders and file types from "code changes" detection
- *
- * Excluded from code changes (don't require changesets):
- * - Markdown files (*.md) in any folder
- * - .changeset/ folder (changeset metadata)
- * - docs/ folder (documentation)
- * - experiments/ folder (experimental scripts)
- * - examples/ folder (example scripts)
- *
- * Usage:
- *   node scripts/detect-code-changes.mjs
- *
- * Environment variables (set by GitHub Actions):
- *   - GITHUB_EVENT_NAME: 'pull_request' or 'push'
- *   - GITHUB_BASE_SHA: Base commit SHA for PR
- *   - GITHUB_HEAD_SHA: Head commit SHA for PR
- *
- * Outputs (written to GITHUB_OUTPUT):
- *   - mjs: 'true' if any .mjs files changed
- *   - js: 'true' if any .js files changed
- *   - package: 'true' if package.json changed
- *   - docs: 'true' if any .md files changed
- *   - workflow: 'true' if any .github/workflows/ files changed
- *   - any-code-changed: 'true' if any code files changed (excludes docs, changesets, experiments, examples)
- */
+// Detect code changes for CI/CD pipeline
+//
+// Detects what types of files changed in the latest commit and outputs
+// results for use in GitHub Actions workflow conditions.
+//
+// For PRs: GitHub Actions checks out a synthetic merge commit, so we
+// compare HEAD^2^ to HEAD^2 (the PR head's per-commit diff).
+// For pushes: compares HEAD^ to HEAD.
+// This ensures a commit touching only non-code files skips tests,
+// even when earlier commits in the same PR changed code.
+//
+// Excluded from code changes (don't require changesets):
+// - Markdown files in any folder
+// - .changeset/ folder (changeset metadata)
+// - docs/ folder (documentation)
+// - experiments/ folder (experimental scripts)
+// - examples/ folder (example scripts)
+//
+// Outputs (written to GITHUB_OUTPUT):
+//   mjs-changed, js-changed, package-changed, docs-changed,
+//   workflow-changed, any-code-changed
 
 import { execSync } from 'child_process';
 import { appendFileSync } from 'fs';
 
-/**
- * Execute a shell command and return trimmed output
- * @param {string} command - The command to execute
- * @returns {string} - The trimmed command output
- */
 function exec(command) {
   try {
     return execSync(command, { encoding: 'utf-8' }).trim();
@@ -53,11 +35,6 @@ function exec(command) {
   }
 }
 
-/**
- * Write output to GitHub Actions output file
- * @param {string} name - Output name
- * @param {string} value - Output value
- */
 function setOutput(name, value) {
   const outputFile = process.env.GITHUB_OUTPUT;
   if (outputFile) {
@@ -66,60 +43,50 @@ function setOutput(name, value) {
   console.log(`${name}=${value}`);
 }
 
-/**
- * Get the list of changed files between two commits
- * @returns {string[]} Array of changed file paths
- */
+function isMergeCommit() {
+  const parentCount = exec('git cat-file -p HEAD')
+    .split('\n')
+    .filter((line) => line.startsWith('parent ')).length;
+  return parentCount > 1;
+}
+
 function getChangedFiles() {
-  const eventName = process.env.GITHUB_EVENT_NAME || 'local';
-
-  if (eventName === 'pull_request') {
-    const baseSha = process.env.GITHUB_BASE_SHA;
-    const headSha = process.env.GITHUB_HEAD_SHA;
-
-    if (baseSha && headSha) {
-      console.log(`Comparing PR: ${baseSha}...${headSha}`);
-      try {
-        // Ensure we have the base commit
-        try {
-          execSync(`git cat-file -e ${baseSha}`, { stdio: 'ignore' });
-        } catch {
-          console.log('Base commit not available locally, attempting fetch...');
-          execSync(`git fetch origin ${baseSha}`, { stdio: 'inherit' });
-        }
-        const output = exec(`git diff --name-only ${baseSha} ${headSha}`);
-        return output ? output.split('\n').filter(Boolean) : [];
-      } catch (error) {
-        console.error(`Git diff failed: ${error.message}`);
-      }
+  // GitHub Actions checks out a synthetic merge commit for pull_request
+  // events: HEAD is the merge commit, HEAD^ is the base branch, HEAD^2
+  // is the actual PR head. To get the per-commit diff (what the latest
+  // push actually changed), we compare HEAD^2^ to HEAD^2.
+  // For push events, HEAD is the real commit, so HEAD^ to HEAD works.
+  if (isMergeCommit()) {
+    console.log('Merge commit detected (pull_request event)');
+    console.log('Comparing HEAD^2^ to HEAD^2 (per-commit diff of PR head)');
+    try {
+      const output = exec('git diff --name-only HEAD^2^ HEAD^2');
+      return output ? output.split('\n').filter(Boolean) : [];
+    } catch {
+      console.log(
+        'HEAD^2^ not available (first commit in PR), listing files in HEAD^2'
+      );
+      const output = exec('git diff --name-only HEAD^ HEAD^2');
+      return output ? output.split('\n').filter(Boolean) : [];
     }
   }
 
-  // For push events or fallback
   console.log('Comparing HEAD^ to HEAD');
   try {
     const output = exec('git diff --name-only HEAD^ HEAD');
     return output ? output.split('\n').filter(Boolean) : [];
   } catch {
-    // If HEAD^ doesn't exist (first commit), list all files in HEAD
     console.log('HEAD^ not available, listing all files in HEAD');
     const output = exec('git ls-tree --name-only -r HEAD');
     return output ? output.split('\n').filter(Boolean) : [];
   }
 }
 
-/**
- * Check if a file should be excluded from code changes detection
- * @param {string} filePath - The file path to check
- * @returns {boolean} True if the file should be excluded
- */
 function isExcludedFromCodeChanges(filePath) {
-  // Exclude markdown files in any folder
   if (filePath.endsWith('.md')) {
     return true;
   }
 
-  // Exclude specific folders from code changes
   const excludedFolders = ['.changeset/', 'docs/', 'experiments/', 'examples/'];
 
   for (const folder of excludedFolders) {
@@ -131,9 +98,6 @@ function isExcludedFromCodeChanges(filePath) {
   return false;
 }
 
-/**
- * Main function to detect changes
- */
 function detectChanges() {
   console.log('Detecting file changes for CI/CD...\n');
 
@@ -147,29 +111,23 @@ function detectChanges() {
   }
   console.log('');
 
-  // Detect .mjs file changes
   const mjsChanged = changedFiles.some((file) => file.endsWith('.mjs'));
   setOutput('mjs-changed', mjsChanged ? 'true' : 'false');
 
-  // Detect .js file changes
   const jsChanged = changedFiles.some((file) => file.endsWith('.js'));
   setOutput('js-changed', jsChanged ? 'true' : 'false');
 
-  // Detect package.json changes
   const packageChanged = changedFiles.some((file) => file === 'package.json');
   setOutput('package-changed', packageChanged ? 'true' : 'false');
 
-  // Detect documentation changes (any .md file)
   const docsChanged = changedFiles.some((file) => file.endsWith('.md'));
   setOutput('docs-changed', docsChanged ? 'true' : 'false');
 
-  // Detect workflow changes
   const workflowChanged = changedFiles.some((file) =>
     file.startsWith('.github/workflows/')
   );
   setOutput('workflow-changed', workflowChanged ? 'true' : 'false');
 
-  // Detect code changes (excluding docs, changesets, experiments, examples folders, and markdown files)
   const codeChangedFiles = changedFiles.filter(
     (file) => !isExcludedFromCodeChanges(file)
   );
@@ -182,10 +140,11 @@ function detectChanges() {
   }
   console.log('');
 
-  // Check if any code files changed (.mjs, .js, .json, .yml, .yaml, or workflow files)
   const codePattern = /\.(mjs|js|json|yml|yaml)$|\.github\/workflows\//;
-  const codeChanged = codeChangedFiles.some((file) => codePattern.test(file));
-  setOutput('any-code-changed', codeChanged ? 'true' : 'false');
+  const anyCodeChanged = codeChangedFiles.some((file) =>
+    codePattern.test(file)
+  );
+  setOutput('any-code-changed', anyCodeChanged ? 'true' : 'false');
 
   console.log('\nChange detection completed.');
 }
