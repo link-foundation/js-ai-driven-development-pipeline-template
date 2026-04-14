@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3
+
+### Patch Changes
+
+- ae2cc9a: Add self-healing release mechanism that checks npm registry for unpublished versions
+
 ## 0.7.2
 
 ### Patch Changes
