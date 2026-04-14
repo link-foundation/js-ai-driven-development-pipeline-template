@@ -21,3 +21,6 @@ https://www\.npmjs\.com
 
 # Medium.com returns 403 to link checkers (bot protection)
 https://medium\.com
+
+# Web Archive returns 502 to link checkers (bot protection)
+https://web\.archive\.org
