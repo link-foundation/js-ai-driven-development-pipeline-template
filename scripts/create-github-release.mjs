@@ -2,9 +2,10 @@
 
 /**
  * Create GitHub Release from CHANGELOG.md
- * Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository>
+ * Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>]
  *   release-version: Version number (e.g., 1.0.0)
  *   repository: GitHub repository (e.g., owner/repo)
+ *   tag-prefix: Prefix for the git tag (default: "v", use "js-v" for multi-language repos)
  *
  * Uses link-foundation libraries:
  * - use-m: Dynamic package loading without package.json dependencies
@@ -37,20 +38,26 @@ const config = makeConfig({
         type: 'string',
         default: getenv('REPOSITORY', ''),
         describe: 'GitHub repository (e.g., owner/repo)',
+      })
+      .option('tag-prefix', {
+        type: 'string',
+        default: getenv('TAG_PREFIX', 'v'),
+        describe:
+          'Prefix for the git tag (e.g., "js-v" for multi-language repos)',
       }),
 });
 
-const { releaseVersion: version, repository } = config;
+const { releaseVersion: version, repository, tagPrefix } = config;
 
 if (!version || !repository) {
   console.error('Error: Missing required arguments');
   console.error(
-    'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository>'
+    'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>]'
   );
   process.exit(1);
 }
 
-const tag = `v${version}`;
+const tag = `${tagPrefix}${version}`;
 
 console.log(`Creating GitHub release for ${tag}...`);
 
@@ -78,7 +85,7 @@ try {
   // (Previously caused apostrophes like "didn't" to appear as "didn'''" in releases)
   const payload = JSON.stringify({
     tag_name: tag,
-    name: version,
+    name: tag,
     body: releaseNotes,
   });
 
