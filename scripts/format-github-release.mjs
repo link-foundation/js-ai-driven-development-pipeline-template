@@ -2,10 +2,11 @@
 
 /**
  * Format GitHub release notes using the format-release-notes.mjs script
- * Usage: node scripts/format-github-release.mjs --release-version <version> --repository <repository> --commit-sha <commit_sha>
+ * Usage: node scripts/format-github-release.mjs --release-version <version> --repository <repository> --commit-sha <commit_sha> [--tag-prefix <prefix>]
  *   release-version: Version number (e.g., 1.0.0)
  *   repository: GitHub repository (e.g., owner/repo)
  *   commit_sha: Commit SHA for PR detection
+ *   tag-prefix: Prefix for the git tag (default: "v", use "js-v" for multi-language repos)
  *
  * Uses link-foundation libraries:
  * - use-m: Dynamic package loading without package.json dependencies
@@ -41,20 +42,26 @@ const config = makeConfig({
         type: 'string',
         default: getenv('COMMIT_SHA', ''),
         describe: 'Commit SHA for PR detection',
+      })
+      .option('tag-prefix', {
+        type: 'string',
+        default: getenv('TAG_PREFIX', 'v'),
+        describe:
+          'Prefix for the git tag (e.g., "js-v" for multi-language repos)',
       }),
 });
 
-const { releaseVersion: version, repository, commitSha } = config;
+const { releaseVersion: version, repository, commitSha, tagPrefix } = config;
 
 if (!version || !repository || !commitSha) {
   console.error('Error: Missing required arguments');
   console.error(
-    'Usage: node scripts/format-github-release.mjs --release-version <version> --repository <repository> --commit-sha <commit_sha>'
+    'Usage: node scripts/format-github-release.mjs --release-version <version> --repository <repository> --commit-sha <commit_sha> [--tag-prefix <prefix>]'
   );
   process.exit(1);
 }
 
-const tag = `v${version}`;
+const tag = `${tagPrefix}${version}`;
 
 try {
   // Get the release ID for this version
