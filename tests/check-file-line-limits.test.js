@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -36,10 +37,11 @@ function createFixture(files) {
   return root;
 }
 
-function runLineLimitCheck(root) {
+function runLineLimitCheck(root, env) {
   return spawnSync('bash', [scriptPath], {
     cwd: root,
     encoding: 'utf8',
+    env,
   });
 }
 
@@ -99,6 +101,38 @@ describe('check-file-line-limits.sh', () => {
           'The following files exceed the 1500 line limit:'
         );
         expect(result.stdout).toContain('  ./src/too-large.mjs');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('normalizes padded wc output from BSD-like environments', () => {
+      const root = createFixture({
+        'src/near-limit.mjs': 1351,
+      });
+      const binPath = path.join(root, 'bin');
+      const fakeWcPath = path.join(binPath, 'wc');
+
+      try {
+        mkdirSync(binPath, { recursive: true });
+        writeFileSync(
+          fakeWcPath,
+          `#!/bin/sh
+awk 'END { printf "    %d\\n", NR }'
+`
+        );
+        chmodSync(fakeWcPath, 0o755);
+
+        const result = runLineLimitCheck(root, {
+          ...process.env,
+          PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
+        });
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain(
+          'WARNING: ./src/near-limit.mjs has 1351 lines'
+        );
+        expect(result.stdout).not.toContain('has     1351 lines');
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

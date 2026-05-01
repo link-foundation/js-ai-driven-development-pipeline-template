@@ -18,7 +18,7 @@ WARNINGS=()
 echo "Checking that all .mjs files are under ${LIMIT} lines..."
 
 while IFS= read -r -d '' file; do
-  line_count=$(wc -l < "$file")
+  line_count=$(wc -l < "$file" | tr -d '[:space:]')
   echo "$file: $line_count lines"
   if [ "$line_count" -gt "$LIMIT" ]; then
     echo "ERROR: $file has $line_count lines (limit: ${LIMIT})"
@@ -35,7 +35,7 @@ echo ""
 echo "Checking that .github/workflows/release.yml is under ${LIMIT} lines..."
 RELEASE_YML=".github/workflows/release.yml"
 if [ -f "$RELEASE_YML" ]; then
-  line_count=$(wc -l < "$RELEASE_YML")
+  line_count=$(wc -l < "$RELEASE_YML" | tr -d '[:space:]')
   echo "$RELEASE_YML: $line_count lines"
   if [ "$line_count" -gt "$LIMIT" ]; then
     echo "ERROR: $RELEASE_YML has $line_count lines (limit: ${LIMIT})"
