@@ -7,8 +7,6 @@
  * - Add shields.io NPM version badge
  * - Format nicely with proper markdown
  *
- * IMPORTANT: Update the PACKAGE_NAME constant below to match your package.json
- *
  * PR Detection Logic:
  * 1. Extract commit hash from changelog entry (if present)
  * 2. Fall back to --commit-sha argument (passed from workflow)
@@ -23,8 +21,8 @@
  * Note: Uses --release-version instead of --version to avoid conflict with yargs' built-in --version flag.
  */
 
-// TODO: Update this to match your package name in package.json
-const PACKAGE_NAME = 'my-package';
+import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+import { readPackageInfo } from './package-info.mjs';
 
 // Load use-m dynamically
 const { use } = eval(
@@ -59,6 +57,12 @@ const config = makeConfig({
         type: 'string',
         default: getenv('COMMIT_SHA', ''),
         describe: 'Commit SHA for PR detection',
+      })
+      .option('js-root', {
+        type: 'string',
+        default: getenv('JS_ROOT', ''),
+        describe:
+          'JavaScript package root directory (auto-detected if not specified)',
       }),
 });
 
@@ -66,6 +70,9 @@ const releaseId = config.releaseId;
 const version = config.releaseVersion;
 const repository = config.repository;
 const passedCommitSha = config.commitSha;
+const jsRootConfig = config.jsRoot || parseJsRootConfig();
+const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
+const { name: packageName } = readPackageInfo({ jsRoot });
 
 if (!releaseId || !version || !repository) {
   console.error(
@@ -190,7 +197,7 @@ try {
 
   // Build formatted release notes
   const versionWithoutV = version.replace(/^v/, '');
-  const npmBadge = `[![npm version](https://img.shields.io/badge/npm-${versionWithoutV}-blue.svg)](https://www.npmjs.com/package/${PACKAGE_NAME}/v/${versionWithoutV})`;
+  const npmBadge = `[![npm version](https://img.shields.io/badge/npm-${versionWithoutV}-blue.svg)](https://www.npmjs.com/package/${packageName}/v/${versionWithoutV})`;
 
   let formattedBody = `${cleanDescription}`;
 

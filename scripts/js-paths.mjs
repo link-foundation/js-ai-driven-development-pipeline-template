@@ -23,8 +23,8 @@
  *   - Environment: JS_ROOT=<path>
  */
 
-import { existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Cache for detected paths (computed once per process)
 let cachedJsRoot = null;
