@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+### Patch Changes
+
+- f0c69af: Normalize language-prefixed release tags before building npm shields.io badge URLs.
+
 ## 0.8.0
 
 ### Minor Changes
