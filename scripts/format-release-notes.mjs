@@ -23,6 +23,11 @@
  * Note: Uses --release-version instead of --version to avoid conflict with yargs' built-in --version flag.
  */
 
+import {
+  buildNpmVersionBadge,
+  normalizeReleaseVersionForBadge,
+} from './format-release-notes-helpers.mjs';
+
 // TODO: Update this to match your package name in package.json
 const PACKAGE_NAME = 'my-package';
 
@@ -189,8 +194,8 @@ try {
   }
 
   // Build formatted release notes
-  const versionWithoutV = version.replace(/^v/, '');
-  const npmBadge = `[![npm version](https://img.shields.io/badge/npm-${versionWithoutV}-blue.svg)](https://www.npmjs.com/package/${PACKAGE_NAME}/v/${versionWithoutV})`;
+  const versionWithoutV = normalizeReleaseVersionForBadge(version);
+  const npmBadge = buildNpmVersionBadge(PACKAGE_NAME, version);
 
   let formattedBody = `${cleanDescription}`;
 
