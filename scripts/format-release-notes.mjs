@@ -23,6 +23,10 @@
 
 import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
 import { readPackageInfo } from './package-info.mjs';
+import {
+  buildNpmVersionBadge,
+  normalizeReleaseVersionForBadge,
+} from './format-release-notes-helpers.mjs';
 
 // Load use-m dynamically
 const { use } = eval(
@@ -196,8 +200,8 @@ try {
   }
 
   // Build formatted release notes
-  const versionWithoutV = version.replace(/^v/, '');
-  const npmBadge = `[![npm version](https://img.shields.io/badge/npm-${versionWithoutV}-blue.svg)](https://www.npmjs.com/package/${packageName}/v/${versionWithoutV})`;
+  const versionWithoutV = normalizeReleaseVersionForBadge(version);
+  const npmBadge = buildNpmVersionBadge(packageName, version);
 
   let formattedBody = `${cleanDescription}`;
 
