@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2
+
+### Patch Changes
+
+- d179bb7: Add warning annotations for files approaching the CI file line limit.
+
 ## 0.8.1
 
 ### Patch Changes
