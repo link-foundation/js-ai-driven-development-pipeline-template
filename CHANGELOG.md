@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3
+
+### Patch Changes
+
+- bdaa4b7: Derive release script package names from package.json instead of template placeholders.
+
 ## 0.8.2
 
 ### Patch Changes
