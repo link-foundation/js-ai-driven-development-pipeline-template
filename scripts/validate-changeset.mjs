@@ -8,17 +8,17 @@
  * - Uses git diff to compare PR head against base branch
  * - Validates that the PR adds exactly one changeset with proper format
  * - Falls back to checking all changesets for local development
- *
- * IMPORTANT: Update the package name below to match your package.json
  */
 
 import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
-// TODO: Update this to match your package name in package.json
-const PACKAGE_NAME = 'my-package';
-const CHANGESET_DIR = '.changeset';
+import { getChangesetDir, getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+import {
+  getChangesetVersionTypeRegex,
+  readPackageInfo,
+} from './package-info.mjs';
 
 /**
  * Ensure a git commit is available locally, fetching if necessary
@@ -40,10 +40,14 @@ function ensureCommitAvailable(sha) {
 /**
  * Parse git diff output and extract added changeset files
  * @param {string} diffOutput Output from git diff --name-status
+ * @param {string} changesetDir Path to the changeset directory
  * @returns {string[]} Array of added changeset file names
  */
-function parseAddedChangesets(diffOutput) {
+function parseAddedChangesets(diffOutput, changesetDir) {
   const addedChangesets = [];
+  const changesetGitPath = changesetDir
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '');
   for (const line of diffOutput.trim().split('\n')) {
     if (!line) {
       continue;
@@ -51,11 +55,11 @@ function parseAddedChangesets(diffOutput) {
     const [status, filePath] = line.split('\t');
     if (
       status === 'A' &&
-      filePath.startsWith(`${CHANGESET_DIR}/`) &&
+      filePath.startsWith(`${changesetGitPath}/`) &&
       filePath.endsWith('.md') &&
       !filePath.endsWith('README.md')
     ) {
-      addedChangesets.push(filePath.replace(`${CHANGESET_DIR}/`, ''));
+      addedChangesets.push(filePath.replace(`${changesetGitPath}/`, ''));
     }
   }
   return addedChangesets;
@@ -65,9 +69,10 @@ function parseAddedChangesets(diffOutput) {
  * Try to get changesets using explicit SHA comparison
  * @param {string} baseSha Base commit SHA
  * @param {string} headSha Head commit SHA
+ * @param {string} changesetDir Path to the changeset directory
  * @returns {string[] | null} Array of changeset files or null if failed
  */
-function tryExplicitShaComparison(baseSha, headSha) {
+function tryExplicitShaComparison(baseSha, headSha, changesetDir) {
   console.log(`Comparing ${baseSha}...${headSha}`);
   try {
     ensureCommitAvailable(baseSha);
@@ -75,7 +80,7 @@ function tryExplicitShaComparison(baseSha, headSha) {
       `git diff --name-status ${baseSha} ${headSha}`,
       { encoding: 'utf-8' }
     );
-    return parseAddedChangesets(diffOutput);
+    return parseAddedChangesets(diffOutput, changesetDir);
   } catch (error) {
     console.log(`Git diff with explicit SHAs failed: ${error.message}`);
     return null;
@@ -85,9 +90,10 @@ function tryExplicitShaComparison(baseSha, headSha) {
 /**
  * Try to get changesets using base branch comparison
  * @param {string} prBase Base branch name
+ * @param {string} changesetDir Path to the changeset directory
  * @returns {string[] | null} Array of changeset files or null if failed
  */
-function tryBaseBranchComparison(prBase) {
+function tryBaseBranchComparison(prBase, changesetDir) {
   console.log(`Comparing against base branch: ${prBase}`);
   try {
     try {
@@ -99,7 +105,7 @@ function tryBaseBranchComparison(prBase) {
       `git diff --name-status origin/${prBase}...HEAD`,
       { encoding: 'utf-8' }
     );
-    return parseAddedChangesets(diffOutput);
+    return parseAddedChangesets(diffOutput, changesetDir);
   } catch (error) {
     console.log(`Git diff with base ref failed: ${error.message}`);
     return null;
@@ -108,31 +114,33 @@ function tryBaseBranchComparison(prBase) {
 
 /**
  * Fallback: get all changesets in directory
+ * @param {string} changesetDir Path to the changeset directory
  * @returns {string[]} Array of all changeset file names
  */
-function getAllChangesets() {
+function getAllChangesets(changesetDir) {
   console.log(
     'Warning: Could not determine PR diff, checking all changesets in directory'
   );
-  if (!existsSync(CHANGESET_DIR)) {
+  if (!existsSync(changesetDir)) {
     return [];
   }
-  return readdirSync(CHANGESET_DIR).filter(
+  return readdirSync(changesetDir).filter(
     (file) => file.endsWith('.md') && file !== 'README.md'
   );
 }
 
 /**
  * Get changeset files added in the current PR using git diff
+ * @param {string} changesetDir Path to the changeset directory
  * @returns {string[]} Array of added changeset file names
  */
-function getAddedChangesetFiles() {
+function getAddedChangesetFiles(changesetDir) {
   const baseSha = process.env.GITHUB_BASE_SHA || process.env.BASE_SHA;
   const headSha = process.env.GITHUB_HEAD_SHA || process.env.HEAD_SHA;
 
   // Try explicit SHAs first
   if (baseSha && headSha) {
-    const result = tryExplicitShaComparison(baseSha, headSha);
+    const result = tryExplicitShaComparison(baseSha, headSha, changesetDir);
     if (result !== null) {
       return result;
     }
@@ -141,36 +149,34 @@ function getAddedChangesetFiles() {
   // Try base branch comparison
   const prBase = process.env.GITHUB_BASE_REF;
   if (prBase) {
-    const result = tryBaseBranchComparison(prBase);
+    const result = tryBaseBranchComparison(prBase, changesetDir);
     if (result !== null) {
       return result;
     }
   }
 
   // Fallback to checking all changesets
-  return getAllChangesets();
+  return getAllChangesets(changesetDir);
 }
 
 /**
  * Validate a single changeset file
  * @param {string} filePath Full path to the changeset file
+ * @param {string} packageName
  * @returns {{valid: boolean, type?: string, description?: string, error?: string}}
  */
-function validateChangesetFile(filePath) {
+function validateChangesetFile(filePath, packageName) {
   try {
     const content = readFileSync(filePath, 'utf-8');
 
     // Check if changeset has a valid type (major, minor, or patch)
-    const versionTypeRegex = new RegExp(
-      `^['"]${PACKAGE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]:\\s+(major|minor|patch)`,
-      'm'
-    );
+    const versionTypeRegex = getChangesetVersionTypeRegex(packageName);
     const versionTypeMatch = content.match(versionTypeRegex);
 
     if (!versionTypeMatch) {
       return {
         valid: false,
-        error: `Changeset must specify a version type: major, minor, or patch\nExpected format:\n---\n'${PACKAGE_NAME}': patch\n---\n\nYour description here`,
+        error: `Changeset must specify a version type: major, minor, or patch\nExpected format:\n---\n'${packageName}': patch\n---\n\nYour description here`,
       };
     }
 
@@ -207,9 +213,14 @@ function validateChangesetFile(filePath) {
 
 try {
   console.log('Validating changesets added by this PR...');
+  const jsRootConfig = parseJsRootConfig();
+  const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
+  const changesetDir = getChangesetDir({ jsRoot });
+  const { name: packageName } = readPackageInfo({ jsRoot });
+  console.log(`Package: ${packageName}`);
 
   // Get changeset files added in this PR
-  const addedChangesetFiles = getAddedChangesetFiles();
+  const addedChangesetFiles = getAddedChangesetFiles(changesetDir);
   const changesetCount = addedChangesetFiles.length;
 
   console.log(`Found ${changesetCount} changeset file(s) added by this PR`);
@@ -237,10 +248,10 @@ try {
   }
 
   // Validate the single changeset file
-  const changesetFile = join(CHANGESET_DIR, addedChangesetFiles[0]);
+  const changesetFile = join(changesetDir, addedChangesetFiles[0]);
   console.log(`Validating changeset: ${changesetFile}`);
 
-  const validation = validateChangesetFile(changesetFile);
+  const validation = validateChangesetFile(changesetFile, packageName);
 
   if (!validation.valid) {
     console.error(`::error::${validation.error}`);

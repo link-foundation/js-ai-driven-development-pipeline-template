@@ -36,14 +36,11 @@
  * - Issue #36: Release job silently skips when PRs merge without changesets
  */
 
-import { readFileSync, appendFileSync } from 'fs';
+import { appendFileSync } from 'fs';
 import { execSync } from 'child_process';
 
-import {
-  getJsRoot,
-  getPackageJsonPath,
-  parseJsRootConfig,
-} from './js-paths.mjs';
+import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+import { readPackageInfo } from './package-info.mjs';
 
 const jsRootConfig = parseJsRootConfig();
 const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
@@ -66,9 +63,7 @@ function setOutput(name, value) {
  * @returns {{ name: string, version: string }}
  */
 function getPackageInfo() {
-  const packageJsonPath = getPackageJsonPath({ jsRoot });
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-  return { name: packageJson.name, version: packageJson.version };
+  return readPackageInfo({ jsRoot });
 }
 
 /**

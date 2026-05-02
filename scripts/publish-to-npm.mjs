@@ -5,8 +5,6 @@
  * Usage: node scripts/publish-to-npm.mjs [--should-pull] [--js-root <path>]
  *   should_pull: Optional flag to pull latest changes before publishing (for release job)
  *
- * IMPORTANT: Update the PACKAGE_NAME constant below to match your package.json
- *
  * Configuration:
  * - CLI: --js-root <path> to explicitly set JavaScript root
  * - Environment: JS_ROOT=<path>
@@ -22,17 +20,10 @@
  * - Reference: link-assistant/agent PR #114 (configurable package root)
  */
 
-import { readFileSync, appendFileSync } from 'fs';
+import { appendFileSync } from 'fs';
 
-import {
-  getJsRoot,
-  getPackageJsonPath,
-  needsCd,
-  parseJsRootConfig,
-} from './js-paths.mjs';
-
-// TODO: Update this to match your package name in package.json
-const PACKAGE_NAME = 'my-package';
+import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
+import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
 
 // Load use-m dynamically
 const { use } = eval(
@@ -113,14 +104,18 @@ function detectPublishFailure(output) {
 /**
  * Verify that a package version is published on npm
  * Reference: link-assistant/agent PR #116
+ * @param {Function} shell
  * @param {string} packageName
  * @param {string} version
  * @returns {Promise<boolean>}
  */
-async function verifyPublished(packageName, version) {
-  const result = await $`npm view "${packageName}@${version}" version`.run({
-    capture: true,
-  });
+async function verifyPublished(shell, packageName, version) {
+  const result =
+    await shell`npm view "${formatNpmPackageVersion(packageName, version)}" version`.run(
+      {
+        capture: true,
+      }
+    );
   return result.code === 0 && result.stdout.trim().includes(version);
 }
 
@@ -138,21 +133,28 @@ function setOutput(key, value) {
 
 /**
  * Run changeset:publish command with output capture
+ * @param {Function} shell
+ * @param {string} jsRoot
+ * @param {string} originalCwd
  * @returns {Promise<{result: object|null, error: Error|null}>}
  */
-async function runChangesetPublish() {
+async function runChangesetPublish(shell, jsRoot, originalCwd) {
   try {
     // Run changeset:publish from the js directory where package.json with this script exists
     // IMPORTANT: Use .run({ capture: true }) to capture output for failure detection
     // IMPORTANT: cd is a virtual command that calls process.chdir(), so we restore after
     if (needsCd({ jsRoot })) {
-      const result = await $`cd ${jsRoot} && npm run changeset:publish`.run({
-        capture: true,
-      });
+      const result = await shell`cd ${jsRoot} && npm run changeset:publish`.run(
+        {
+          capture: true,
+        }
+      );
       process.chdir(originalCwd);
       return { result, error: null };
     }
-    const result = await $`npm run changeset:publish`.run({ capture: true });
+    const result = await shell`npm run changeset:publish`.run({
+      capture: true,
+    });
     return { result, error: null };
   } catch (error) {
     // Restore cwd on error before retry
@@ -203,10 +205,24 @@ function analyzePublishResult(publishResult, commandError) {
 /**
  * Perform a single publish attempt with verification
  * @param {string} currentVersion
+ * @param {string} packageName
+ * @param {Function} shell
+ * @param {string} jsRoot
+ * @param {string} originalCwd
  * @returns {Promise<{success: boolean, error: Error|null}>}
  */
-async function attemptPublish(currentVersion) {
-  const { result, error } = await runChangesetPublish();
+async function attemptPublish(
+  currentVersion,
+  packageName,
+  shell,
+  jsRoot,
+  originalCwd
+) {
+  const { result, error } = await runChangesetPublish(
+    shell,
+    jsRoot,
+    originalCwd
+  );
   const analysisError = analyzePublishResult(result, error);
 
   if (analysisError) {
@@ -216,7 +232,7 @@ async function attemptPublish(currentVersion) {
   // Verify the package is actually on npm (ultimate verification)
   console.log('Verifying package was published to npm...');
   await sleep(2000); // Wait for npm registry to propagate
-  const isPublished = await verifyPublished(PACKAGE_NAME, currentVersion);
+  const isPublished = await verifyPublished(shell, packageName, currentVersion);
 
   if (isPublished) {
     return { success: true, error: null };
@@ -237,9 +253,10 @@ async function main() {
     }
 
     // Get current version
-    const packageJsonPath = getPackageJsonPath({ jsRoot });
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-    const currentVersion = packageJson.version;
+    const { name: packageName, version: currentVersion } = readPackageInfo({
+      jsRoot,
+    });
+    console.log(`Package to publish: ${packageName}`);
     console.log(`Current version to publish: ${currentVersion}`);
 
     // Check if this version is already published on npm
@@ -247,9 +264,11 @@ async function main() {
       `Checking if version ${currentVersion} is already published...`
     );
     const checkResult =
-      await $`npm view "${PACKAGE_NAME}@${currentVersion}" version`.run({
-        capture: true,
-      });
+      await $`npm view "${formatNpmPackageVersion(packageName, currentVersion)}" version`.run(
+        {
+          capture: true,
+        }
+      );
 
     // command-stream returns { code: 0 } on success, { code: 1 } on failure (e.g., E404)
     // Exit code 0 means version exists, non-zero means version not found
@@ -270,14 +289,18 @@ async function main() {
     // Multi-layer failure detection based on link-assistant/agent PR #116
     for (let i = 1; i <= MAX_RETRIES; i++) {
       console.log(`Publish attempt ${i} of ${MAX_RETRIES}...`);
-      const { success, error } = await attemptPublish(currentVersion);
+      const { success, error } = await attemptPublish(
+        currentVersion,
+        packageName,
+        $,
+        jsRoot,
+        originalCwd
+      );
 
       if (success) {
         setOutput('published', 'true');
         setOutput('published_version', currentVersion);
-        console.log(
-          `\u2705 Published ${PACKAGE_NAME}@${currentVersion} to npm`
-        );
+        console.log(`\u2705 Published ${packageName}@${currentVersion} to npm`);
         return;
       }
 

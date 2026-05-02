@@ -18,14 +18,8 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 1. Click "Use this template" on GitHub to create a new repository
 2. Clone your new repository
 3. Update `package.json` with your package name and description
-4. Update the `PACKAGE_NAME` constant in these scripts:
-   - `scripts/validate-changeset.mjs`
-   - `scripts/merge-changesets.mjs`
-   - `scripts/publish-to-npm.mjs`
-   - `scripts/format-release-notes.mjs`
-   - `scripts/create-manual-changeset.mjs`
-5. Install dependencies: `bun install`
-6. Start developing!
+4. Install dependencies: `bun install`
+5. Start developing!
 
 ### Development
 
@@ -177,7 +171,9 @@ After creating a repository from this template, update the package name in:
 
 1. `package.json`: `"name": "your-package-name"`
 2. `.changeset/config.json`: Package references
-3. Scripts that reference the package name (see Quick Start)
+
+Release scripts derive the package name from `package.json` at runtime, so no
+script-level package-name constants need to be edited during template adoption.
 
 ### ESLint Rules
 

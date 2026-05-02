@@ -2,9 +2,7 @@
 
 /**
  * Create a changeset file for manual releases
- * Usage: node scripts/create-manual-changeset.mjs --bump-type <major|minor|patch> [--description <description>]
- *
- * IMPORTANT: Update the PACKAGE_NAME constant below to match your package.json
+ * Usage: node scripts/create-manual-changeset.mjs --bump-type <major|minor|patch> [--description <description>] [--js-root <path>]
  *
  * Uses link-foundation libraries:
  * - use-m: Dynamic package loading without package.json dependencies
@@ -12,11 +10,12 @@
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
  */
 
-import { writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
+import { join } from 'path';
 
-// TODO: Update this to match your package name in package.json
-const PACKAGE_NAME = 'my-package';
+import { getChangesetDir, getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+import { formatChangesetHeader, readPackageInfo } from './package-info.mjs';
 
 // Load use-m dynamically
 const { use } = eval(
@@ -41,11 +40,17 @@ const config = makeConfig({
         type: 'string',
         default: getenv('DESCRIPTION', ''),
         describe: 'Description for the changeset',
+      })
+      .option('js-root', {
+        type: 'string',
+        default: getenv('JS_ROOT', ''),
+        describe:
+          'JavaScript package root directory (auto-detected if not specified)',
       }),
 });
 
 try {
-  const { bumpType, description: descriptionArg } = config;
+  const { bumpType, description: descriptionArg, jsRoot: jsRootArg } = config;
 
   // Use provided description or default based on bump type
   const description = descriptionArg || `Manual ${bumpType} release`;
@@ -57,18 +62,24 @@ try {
     process.exit(1);
   }
 
+  const jsRootConfig = jsRootArg || parseJsRootConfig();
+  const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
+  const changesetDir = getChangesetDir({ jsRoot });
+  const { name: packageName } = readPackageInfo({ jsRoot });
+
   // Generate a random changeset ID
   const changesetId = randomBytes(4).toString('hex');
-  const changesetFile = `.changeset/manual-release-${changesetId}.md`;
+  const changesetFile = join(changesetDir, `manual-release-${changesetId}.md`);
 
   // Create the changeset file with single quotes to match Prettier config
   const content = `---
-'${PACKAGE_NAME}': ${bumpType}
+${formatChangesetHeader(packageName, bumpType)}
 ---
 
 ${description}
 `;
 
+  mkdirSync(changesetDir, { recursive: true });
   writeFileSync(changesetFile, content, 'utf-8');
 
   console.log(`Created changeset: ${changesetFile}`);
