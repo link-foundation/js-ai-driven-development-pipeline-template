@@ -25,12 +25,22 @@ const canRunCliFixtures =
   !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
 
 function prependPath(env, binPath) {
-  const pathKey =
-    Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+  const nextEnv = { ...env };
+  const currentPath =
+    Object.entries(nextEnv).find(
+      ([key]) => key.toLowerCase() === 'path'
+    )?.[1] ?? '';
+
+  for (const key of Object.keys(nextEnv)) {
+    if (key.toLowerCase() === 'path') {
+      delete nextEnv[key];
+    }
+  }
 
   return {
-    ...env,
-    [pathKey]: `${binPath}${path.delimiter}${env[pathKey] ?? ''}`,
+    ...nextEnv,
+    [process.platform === 'win32' ? 'Path' : 'PATH']:
+      `${binPath}${path.delimiter}${currentPath}`,
   };
 }
 
