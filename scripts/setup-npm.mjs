@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import { resolve } from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
 /**
  * Update npm for OIDC trusted publishing
  * npm trusted publishing requires npm >= 11.5.1
@@ -10,13 +14,111 @@
  * - command-stream: Modern shell command execution with streaming support
  */
 
-// Load use-m dynamically
-const { use } = eval(
-  await (await fetch('https://unpkg.com/use-m/use.js')).text()
-);
+export const NPM_MIN_VERSION = '11.5.1';
+export const NODE_MIN_VERSION = '22.14.0';
+export const NPM_TARGET_MAJOR = 11;
+export const NPM_REGISTRY_METADATA_URL = 'https://registry.npmjs.org/npm';
 
-// Import command-stream for shell command execution
-const { $ } = await use('command-stream');
+export function parseVersion(version) {
+  const match = String(version)
+    .trim()
+    .match(
+      /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-.]+))?(?:\+[0-9A-Za-z-.]+)?$/
+    );
+
+  if (!match) {
+    throw new Error(`Invalid semantic version: ${version}`);
+  }
+
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] || '',
+  };
+}
+
+export function compareVersions(leftVersion, rightVersion) {
+  const left = parseVersion(leftVersion);
+  const right = parseVersion(rightVersion);
+  const keys = ['major', 'minor', 'patch'];
+
+  for (const key of keys) {
+    if (left[key] !== right[key]) {
+      return left[key] > right[key] ? 1 : -1;
+    }
+  }
+
+  if (left.prerelease === right.prerelease) {
+    return 0;
+  }
+
+  if (!left.prerelease) {
+    return 1;
+  }
+
+  if (!right.prerelease) {
+    return -1;
+  }
+
+  return left.prerelease > right.prerelease ? 1 : -1;
+}
+
+export function isVersionAtLeast(version, minimumVersion) {
+  return compareVersions(version, minimumVersion) >= 0;
+}
+
+export function isSupportedNpmVersion(version) {
+  return isVersionAtLeast(version, NPM_MIN_VERSION);
+}
+
+export function isSupportedNodeVersion(version) {
+  return isVersionAtLeast(version, NODE_MIN_VERSION);
+}
+
+export function selectLatestSupportedNpmRelease(metadata) {
+  const releases = Object.entries(metadata?.versions || {})
+    .filter(([version, release]) => {
+      const parsed = parseVersion(version);
+      return (
+        parsed.major === NPM_TARGET_MAJOR &&
+        !parsed.prerelease &&
+        isSupportedNpmVersion(version) &&
+        release?.dist?.tarball
+      );
+    })
+    .sort(([leftVersion], [rightVersion]) =>
+      compareVersions(rightVersion, leftVersion)
+    );
+
+  if (releases.length === 0) {
+    throw new Error(
+      `No npm ${NPM_TARGET_MAJOR}.x release found at or above ${NPM_MIN_VERSION}`
+    );
+  }
+
+  const [version, release] = releases[0];
+  return { version, tarballUrl: release.dist.tarball };
+}
+
+async function fetchNpmRegistryMetadata(fetchFn) {
+  const response = await fetchFn(NPM_REGISTRY_METADATA_URL, {
+    headers: { accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch npm registry metadata: ${response.status} ${response.statusText}`
+    );
+  }
+
+  return response.json();
+}
+
+async function resolveLatestSupportedNpmRelease(fetchFn) {
+  const metadata = await fetchNpmRegistryMetadata(fetchFn);
+  return selectLatestSupportedNpmRelease(metadata);
+}
 
 // Update npm for OIDC trusted publishing (requires >= 11.5.1)
 // Pin to npm@11 to avoid breaking changes from future major versions
@@ -34,23 +136,29 @@ const { $ } = await use('command-stream');
 // 3. npx npm@11 install (uses npx cache, bypasses arborist)
 // 4. corepack as last resort
 
-async function tryStandardInstall() {
+async function tryStandardInstall($) {
   await $`npm install -g npm@11`;
 }
 
-async function tryCurlTarball() {
+async function tryCurlTarball($, fetchFn) {
+  const npmRelease = await resolveLatestSupportedNpmRelease(fetchFn);
+  console.log(`Downloading npm ${npmRelease.version} tarball...`);
+
   const nodeDir = (
     await $`dirname $(dirname $(which node))`.run({ capture: true })
   ).stdout.trim();
   const globalNpmDir = `${nodeDir}/lib/node_modules/npm`;
-  await $`curl -sL https://registry.npmjs.org/npm/-/npm-11.4.2.tgz | tar xz -C /tmp && rm -rf "${globalNpmDir}" && mv /tmp/package "${globalNpmDir}"`;
+  const tempNpmDir = '/tmp/setup-npm-package';
+
+  await $`rm -rf "${tempNpmDir}" && mkdir -p "${tempNpmDir}"`;
+  await $`curl -fsSL "${npmRelease.tarballUrl}" | tar xz --strip-components=1 -C "${tempNpmDir}" && rm -rf "${globalNpmDir}" && mv "${tempNpmDir}" "${globalNpmDir}"`;
 }
 
-async function tryNpxInstall() {
+async function tryNpxInstall($) {
   await $`npx --yes npm@11 install -g npm@11`;
 }
 
-async function tryCorepack() {
+async function tryCorepack($) {
   await $`corepack enable`;
   await $`corepack prepare npm@11 --activate`;
 }
@@ -65,16 +173,40 @@ async function tryStrategy(name, fn) {
   }
 }
 
-try {
+function failUnsupportedNodeVersion(nodeVersion) {
+  console.error(
+    `ERROR: Node.js ${NODE_MIN_VERSION} or later is required for npm OIDC trusted publishing setup.`
+  );
+  console.error(`Current Node.js version is ${nodeVersion}.`);
+  process.exit(1);
+}
+
+function failUnsupportedNpmVersion(npmVersion) {
+  console.error(
+    `ERROR: Could not update npm to >= ${NPM_MIN_VERSION} for OIDC trusted publishing.`
+  );
+  console.error(`Current npm version ${npmVersion} does not support OIDC.`);
+  console.error('See: https://github.com/actions/runner-images/issues/13883');
+  process.exit(1);
+}
+
+export async function setupNpm($, fetchFn = fetch) {
+  const nodeVersion = process.version;
+  console.log(`Current Node.js version: ${nodeVersion}`);
+
+  if (!isSupportedNodeVersion(nodeVersion)) {
+    failUnsupportedNodeVersion(nodeVersion);
+  }
+
   const currentResult = await $`npm --version`.run({ capture: true });
   const currentVersion = currentResult.stdout.trim();
   console.log(`Current npm version: ${currentVersion}`);
 
   const strategies = [
-    ['npm install -g npm@11', tryStandardInstall],
-    ['curl-based tarball download', tryCurlTarball],
-    ['npx-based install', tryNpxInstall],
-    ['corepack', tryCorepack],
+    ['npm install -g npm@11', () => tryStandardInstall($)],
+    ['curl-based tarball download', () => tryCurlTarball($, fetchFn)],
+    ['npx-based install', () => tryNpxInstall($)],
+    ['corepack', () => tryCorepack($)],
   ];
 
   let success = false;
@@ -90,29 +222,44 @@ try {
   }
 
   if (!success) {
-    const majorVersion = parseInt(currentVersion.split('.')[0], 10);
-    if (majorVersion >= 11) {
+    if (isSupportedNpmVersion(currentVersion)) {
       console.log(
         'Current npm version already supports OIDC trusted publishing'
       );
-    } else {
-      console.error(
-        'ERROR: Could not update npm to >= 11.5.1 for OIDC trusted publishing.'
-      );
-      console.error(
-        `Current npm version ${currentVersion} does not support OIDC.`
-      );
-      console.error(
-        'See: https://github.com/actions/runner-images/issues/13883'
-      );
-      process.exit(1);
     }
   }
 
   const updatedResult = await $`npm --version`.run({ capture: true });
   const updatedVersion = updatedResult.stdout.trim();
   console.log(`Updated npm version: ${updatedVersion}`);
-} catch (error) {
-  console.error('Error updating npm:', error.message);
-  process.exit(1);
+
+  if (!isSupportedNpmVersion(updatedVersion)) {
+    failUnsupportedNpmVersion(updatedVersion);
+  }
+}
+
+function isMainModule() {
+  return process.argv[1]
+    ? resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+    : false;
+}
+
+if (isMainModule()) {
+  try {
+    if (!isSupportedNodeVersion(process.version)) {
+      failUnsupportedNodeVersion(process.version);
+    }
+
+    // Load use-m dynamically only for CLI execution, so tests can import the
+    // pure version helpers without fetching dependencies or mutating npm.
+    const { use } = eval(
+      await (await fetch('https://unpkg.com/use-m/use.js')).text()
+    );
+    const { $ } = await use('command-stream');
+
+    await setupNpm($);
+  } catch (error) {
+    console.error('Error updating npm:', error.message);
+    process.exit(1);
+  }
 }
