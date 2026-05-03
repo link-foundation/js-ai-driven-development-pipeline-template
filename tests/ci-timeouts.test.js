@@ -1,20 +1,29 @@
 import { describe, it, expect } from 'test-anywhere';
 import { readFileSync } from 'node:fs';
 
-const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
-const linksWorkflow = readFileSync('.github/workflows/links.yml', 'utf8');
+const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
+const linksWorkflow = readWorkflow('.github/workflows/links.yml');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 
+function readWorkflow(filePath) {
+  return readFileSync(filePath, 'utf8').replaceAll('\r\n', '\n');
+}
+
+function normalizeNewlines(text) {
+  return text.replaceAll('\r\n', '\n');
+}
+
 function listWorkflowJobs(workflow) {
-  const jobsStart = workflow.indexOf('\njobs:\n');
-  const jobsBody = jobsStart === -1 ? '' : workflow.slice(jobsStart);
+  const normalizedWorkflow = normalizeNewlines(workflow);
+  const jobsStart = normalizedWorkflow.indexOf('\njobs:\n');
+  const jobsBody = jobsStart === -1 ? '' : normalizedWorkflow.slice(jobsStart);
   const matches = jobsBody.matchAll(/^[ ]{2}([a-zA-Z0-9_-]+):\s*$/gm);
 
   return Array.from(matches, (match) => match[1]);
 }
 
 function getJobBlock(workflow, jobName) {
-  const lines = workflow.split('\n');
+  const lines = normalizeNewlines(workflow).split('\n');
   const jobHeader = `  ${jobName}:`;
   const start = lines.findIndex((line) => line === jobHeader);
 
@@ -64,6 +73,22 @@ describe('CI timeout policy', () => {
   it('sets timeout-minutes for every link workflow job', () => {
     expect(listWorkflowJobs(linksWorkflow)).toEqual(['link-checker']);
     expect(getTimeoutMinutes(linksWorkflow, 'link-checker')).toBe(10);
+  });
+
+  it('parses workflow files checked out with Windows line endings', () => {
+    const crlfWorkflow = [
+      'name: CRLF fixture',
+      '',
+      'jobs:',
+      '  first-job:',
+      '    timeout-minutes: 5',
+      '  second-job:',
+      '    timeout-minutes: 10',
+      '',
+    ].join('\r\n');
+
+    expect(listWorkflowJobs(crlfWorkflow)).toEqual(['first-job', 'second-job']);
+    expect(getTimeoutMinutes(crlfWorkflow, 'second-job')).toBe(10);
   });
 
   it('caps individual Node.js and Bun tests at 30 seconds', () => {
