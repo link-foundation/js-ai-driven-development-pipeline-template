@@ -54,7 +54,7 @@ Tests should:
 
 ```bash
 # Run tests
-bun test
+bun test --timeout 30000
 npm test
 deno test --allow-read
 ```
