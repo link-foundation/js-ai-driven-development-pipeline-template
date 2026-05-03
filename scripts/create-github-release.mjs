@@ -6,95 +6,184 @@
  *   release-version: Version number (e.g., 1.0.0)
  *   repository: GitHub repository (e.g., owner/repo)
  *   tag-prefix: Prefix for the git tag (default: "v", use "js-v" for multi-language repos)
- *
- * Uses link-foundation libraries:
- * - use-m: Dynamic package loading without package.json dependencies
- * - command-stream: Modern shell command execution with streaming support
- * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
  */
 
-import { readFileSync } from 'fs';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Load use-m dynamically
-const { use } = eval(
-  await (await fetch('https://unpkg.com/use-m/use.js')).text()
-);
+const USAGE =
+  'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>]';
 
-// Import link-foundation libraries
-const { $ } = await use('command-stream');
-const { makeConfig } = await use('lino-arguments');
+export function parseArgs(argv, env = process.env) {
+  const config = {
+    releaseVersion: env.VERSION ?? '',
+    repository: env.REPOSITORY ?? '',
+    tagPrefix: env.TAG_PREFIX ?? 'v',
+  };
 
-// Parse CLI arguments using lino-arguments
-// Note: Using --release-version instead of --version to avoid conflict with yargs' built-in --version flag
-const config = makeConfig({
-  yargs: ({ yargs, getenv }) =>
-    yargs
-      .option('release-version', {
-        type: 'string',
-        default: getenv('VERSION', ''),
-        describe: 'Version number (e.g., 1.0.0)',
-      })
-      .option('repository', {
-        type: 'string',
-        default: getenv('REPOSITORY', ''),
-        describe: 'GitHub repository (e.g., owner/repo)',
-      })
-      .option('tag-prefix', {
-        type: 'string',
-        default: getenv('TAG_PREFIX', 'v'),
-        describe:
-          'Prefix for the git tag (e.g., "js-v" for multi-language repos)',
-      }),
-});
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
 
-const { releaseVersion: version, repository, tagPrefix } = config;
+    if (arg === '--release-version') {
+      config.releaseVersion = readOptionValue(argv, index, arg);
+      index++;
+    } else if (arg.startsWith('--release-version=')) {
+      config.releaseVersion = arg.slice('--release-version='.length);
+    } else if (arg === '--repository') {
+      config.repository = readOptionValue(argv, index, arg);
+      index++;
+    } else if (arg.startsWith('--repository=')) {
+      config.repository = arg.slice('--repository='.length);
+    } else if (arg === '--tag-prefix') {
+      config.tagPrefix = readOptionValue(argv, index, arg);
+      index++;
+    } else if (arg.startsWith('--tag-prefix=')) {
+      config.tagPrefix = arg.slice('--tag-prefix='.length);
+    }
+  }
 
-if (!version || !repository) {
-  console.error('Error: Missing required arguments');
-  console.error(
-    'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>]'
-  );
-  process.exit(1);
+  return config;
 }
 
-const tag = `${tagPrefix}${version}`;
+function readOptionValue(argv, index, optionName) {
+  const value = argv[index + 1];
 
-console.log(`Creating GitHub release for ${tag}...`);
+  if (value === undefined || value.startsWith('--')) {
+    throw new Error(`Missing value for ${optionName}`);
+  }
 
-try {
-  // Read CHANGELOG.md
-  const changelog = readFileSync('./CHANGELOG.md', 'utf8');
+  return value;
+}
 
-  // Extract changelog entry for this version
-  // Read from CHANGELOG.md between this version header and the next version header
-  const versionHeaderRegex = new RegExp(`## ${version}[\\s\\S]*?(?=## \\d|$)`);
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function extractReleaseNotes(changelog, version) {
+  // Read from CHANGELOG.md between this version header and the next version header.
+  const versionHeaderRegex = new RegExp(
+    `## ${escapeRegex(version)}[\\s\\S]*?(?=## \\d|$)`
+  );
   const match = changelog.match(versionHeaderRegex);
 
-  let releaseNotes = '';
-  if (match) {
-    // Remove the version header itself and trim
-    releaseNotes = match[0].replace(`## ${version}`, '').trim();
+  if (!match) {
+    return `Release ${version}`;
   }
 
-  if (!releaseNotes) {
-    releaseNotes = `Release ${version}`;
-  }
+  const releaseNotes = match[0].replace(`## ${version}`, '').trim();
 
-  // Create release using GitHub API with JSON input
-  // This avoids shell escaping issues that occur when passing text via command-line arguments
-  // (Previously caused apostrophes like "didn't" to appear as "didn'''" in releases)
-  const payload = JSON.stringify({
+  return releaseNotes || `Release ${version}`;
+}
+
+export function buildReleasePayload({ changelog, tag, version }) {
+  return JSON.stringify({
     tag_name: tag,
     name: tag,
-    body: releaseNotes,
+    body: extractReleaseNotes(changelog, version),
   });
+}
 
-  await $`gh api repos/${repository}/releases -X POST --input -`.run({
-    stdin: payload,
-  });
+function formatGhOutput(result) {
+  return [result.stderr, result.stdout]
+    .filter((output) => typeof output === 'string' && output.trim())
+    .map((output) => output.trim())
+    .join('\n');
+}
 
-  console.log(`\u2705 Created GitHub release: ${tag}`);
-} catch (error) {
-  console.error('Error creating release:', error.message);
-  process.exit(1);
+function getGhExitDescription(result) {
+  if (result.signal) {
+    return `signal ${result.signal}`;
+  }
+
+  if (typeof result.status === 'number') {
+    return `code ${result.status}`;
+  }
+
+  return 'unknown exit status';
+}
+
+export function createRelease({ payload, repository, spawn = spawnSync }) {
+  const result = spawn(
+    'gh',
+    ['api', `repos/${repository}/releases`, '-X', 'POST', '--input', '-'],
+    {
+      encoding: 'utf8',
+      input: payload,
+    }
+  );
+
+  if (result.error) {
+    throw new Error(`gh api failed to start: ${result.error.message}`);
+  }
+
+  if (result.status === 0) {
+    return { alreadyExists: false };
+  }
+
+  const output = formatGhOutput(result);
+
+  if (/already_exists/i.test(output)) {
+    return { alreadyExists: true };
+  }
+
+  const details = output ? `:\n${output}` : '';
+  throw new Error(
+    `gh api failed with ${getGhExitDescription(result)}${details}`
+  );
+}
+
+export function main({
+  argv = process.argv.slice(2),
+  cwd = process.cwd(),
+  env = process.env,
+  spawn = spawnSync,
+  stderr = console.error,
+  stdout = console.log,
+} = {}) {
+  try {
+    const {
+      releaseVersion: version,
+      repository,
+      tagPrefix,
+    } = parseArgs(argv, env);
+
+    if (!version || !repository) {
+      stderr('Error: Missing required arguments');
+      stderr(USAGE);
+      return 1;
+    }
+
+    const tag = `${tagPrefix}${version}`;
+
+    stdout(`Creating GitHub release for ${tag}...`);
+
+    const changelog = readFileSync(path.join(cwd, 'CHANGELOG.md'), 'utf8');
+    const payload = buildReleasePayload({ changelog, tag, version });
+    const result = createRelease({ payload, repository, spawn });
+
+    if (result.alreadyExists) {
+      stdout(`GitHub release already exists: ${tag}. Skipping creation.`);
+      return 0;
+    }
+
+    stdout(`\u2705 Created GitHub release: ${tag}`);
+    return 0;
+  } catch (error) {
+    stderr(`Error creating release: ${error.message}`);
+    return 1;
+  }
+}
+
+function isCliEntryPoint() {
+  return (
+    typeof process !== 'undefined' &&
+    process.argv?.[1] &&
+    fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  );
+}
+
+if (isCliEntryPoint()) {
+  process.exitCode = main();
 }
