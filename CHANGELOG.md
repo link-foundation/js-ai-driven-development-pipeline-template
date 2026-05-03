@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.5
+
+### Patch Changes
+
+- Fail GitHub release creation on unexpected gh api errors and clearly skip releases that already exist.
+
+  Enforce npm and Node.js minimum versions for trusted publishing setup and resolve a supported npm 11 tarball for fallback installs.
+
 ## 0.8.4
 
 ### Patch Changes
