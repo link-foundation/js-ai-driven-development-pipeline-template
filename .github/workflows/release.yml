@@ -46,6 +46,9 @@ jobs:
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    # Typical run: ~6s. Cap at 5min so a hung detection step
+    # surfaces quickly instead of stalling the whole pipeline.
+    timeout-minutes: 5
     if: github.event_name != 'workflow_dispatch'
     outputs:
       mjs-changed: ${{ steps.changes.outputs.mjs-changed }}
@@ -70,6 +73,8 @@ jobs:
   test-compilation:
     name: Test Compilation
     runs-on: ubuntu-latest
+    # Typical run: <10s. Tight cap fails fast on syntax-check hangs.
+    timeout-minutes: 5
     needs: [detect-changes]
     if: |
       github.event_name == 'push' ||
@@ -85,6 +90,8 @@ jobs:
   check-file-line-limits:
     name: Check File Line Limits
     runs-on: ubuntu-latest
+    # Typical run: <10s. This job only walks tracked files and counts lines.
+    timeout-minutes: 5
     needs: [detect-changes]
     if: |
       github.event_name == 'push' ||
@@ -110,6 +117,8 @@ jobs:
   version-check:
     name: Check for Manual Version Changes
     runs-on: ubuntu-latest
+    # Typical run: ~6s. Read-only package.json diff inspection.
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
@@ -127,6 +136,8 @@ jobs:
   changeset-check:
     name: Check for Changesets
     runs-on: ubuntu-latest
+    # Typical run: <30s including npm install. 10min covers cold runners.
+    timeout-minutes: 10
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
@@ -168,6 +179,9 @@ jobs:
   lint:
     name: Lint and Format Check
     runs-on: ubuntu-latest
+    # Typical run: <1min including install, ESLint, Prettier, jscpd,
+    # and secretlint. 10min protects against a hung lint plugin.
+    timeout-minutes: 10
     needs: [detect-changes]
     if: |
       github.event_name == 'push' ||
@@ -215,6 +229,10 @@ jobs:
   test:
     name: Test (${{ matrix.runtime }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Typical run: <1min per runtime/OS on warm runners, with Windows
+    # sometimes slower on cold starts. 10min fails hung tests well
+    # before GitHub Actions' 6h default.
+    timeout-minutes: 10
     needs:
       [
         detect-changes,
@@ -276,7 +294,9 @@ jobs:
 
       - name: Run tests (Bun)
         if: matrix.runtime == 'bun'
-        run: bun test
+        # --timeout caps an individual test at 30s, matching Node's
+        # --test-timeout budget while leaving headroom for cold runners.
+        run: bun test --timeout 30000
 
       - name: Setup Deno
         if: matrix.runtime == 'deno'
@@ -293,6 +313,8 @@ jobs:
   validate-docs:
     name: Validate Documentation
     runs-on: ubuntu-latest
+    # Typical run: <10s. Pure shell checks over documentation files.
+    timeout-minutes: 5
     needs: [detect-changes]
     if: |
       github.event_name == 'push' ||
@@ -356,6 +378,9 @@ jobs:
   release:
     name: Release
     needs: [lint, test]
+    # Typical run is well under 10min. 30min gives npm and GitHub
+    # release APIs room for retries without allowing a 6h hang.
+    timeout-minutes: 30
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
     # This is needed because lint/test jobs have a transitive dependency on changeset-check
     if: |
@@ -437,6 +462,8 @@ jobs:
     name: Instant Release
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'instant'
     runs-on: ubuntu-latest
+    # Same publish envelope as the automated release path.
+    timeout-minutes: 30
     # Permissions required for npm OIDC trusted publishing
     permissions:
       contents: write
@@ -486,6 +513,8 @@ jobs:
     name: Create Changeset PR
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'changeset-pr'
     runs-on: ubuntu-latest
+    # PR creation only: install, create a changeset, format, and open a PR.
+    timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write

@@ -147,7 +147,51 @@ Documentation files are validated in CI just like code:
 - Required files check (README.md, CHANGELOG.md, CONTRIBUTING.md, BEST-PRACTICES.md)
 - Only runs when documentation files change
 
-### 13. Proper Cancellation Propagation
+### 13. Reasonable Timeouts on Every Job and Test
+
+Every CI job declares an explicit `timeout-minutes`, sized at roughly
+5-10x the typical run time for that job. This keeps feedback fast when
+a test, network call, package install, or release step hangs:
+
+- Fast checks fail within 5-10 minutes instead of waiting for GitHub
+  Actions' six-hour default.
+- Matrix test jobs have a 10-minute cap per runtime and operating
+  system.
+- Release jobs have 30 minutes for package registry and GitHub API
+  retries without allowing an unbounded release run.
+- The broken link checker has 10 minutes for slow external hosts and
+  Web Archive fallback probes.
+
+Current timeout bands:
+
+| Job                       | Cap    |
+| ------------------------- | ------ |
+| `detect-changes`          | 5 min  |
+| `test-compilation`        | 5 min  |
+| `check-file-line-limits`  | 5 min  |
+| `version-check`           | 5 min  |
+| `validate-docs`           | 5 min  |
+| `changeset-check`         | 10 min |
+| `lint`                    | 10 min |
+| `test` per runtime and OS | 10 min |
+| `links.yml` link checker  | 10 min |
+| `changeset-pr`            | 10 min |
+| `release`                 | 30 min |
+| `instant-release`         | 30 min |
+
+Per-test timeouts are also enforced inside the runners that support a
+global budget:
+
+```bash
+node --test --test-timeout=30000 tests/*.test.js
+bun test --timeout 30000
+```
+
+Deno does not currently provide an equivalent single global per-test
+timeout flag, so Deno tests are protected by the 10-minute matrix job
+timeout.
+
+### 14. Proper Cancellation Propagation
 
 Use `!cancelled()` instead of `always()` in job conditions (hive-mind issue #1278):
 

@@ -28,7 +28,7 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 bun install
 
 # Run tests
-bun test
+bun test --timeout 30000
 
 # Or with other runtimes:
 npm test
@@ -135,6 +135,19 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) implements a fast-
 9. **Changeset merge**: Combines multiple pending changesets at release time
 10. **Release**: Automated versioning and npm publishing
 
+#### Reasonable Timeouts
+
+Every CI job declares an explicit `timeout-minutes` so hung steps fail
+in minutes instead of reaching the GitHub Actions default of six hours.
+Fast checks use 5-10 minute caps, release jobs use 30 minutes, and the
+link checker uses 10 minutes for external network variance.
+
+Individual tests are also capped inside supported runners:
+`npm test` runs `node --test --test-timeout=30000`, and the CI Bun
+runner uses `bun test --timeout 30000`. Deno does not provide a single
+global per-test timeout flag, so Deno tests are protected by the
+10-minute matrix job cap.
+
 See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) for detailed explanations of each practice.
 
 #### Robust Changeset Handling
@@ -199,15 +212,16 @@ Configured in `.prettierrc`:
 
 ## Scripts Reference
 
-| Script                 | Description                             |
-| ---------------------- | --------------------------------------- |
-| `bun test`             | Run tests with Bun                      |
-| `bun run lint`         | Check code with ESLint                  |
-| `bun run lint:fix`     | Fix ESLint issues automatically         |
-| `bun run format`       | Format code with Prettier               |
-| `bun run format:check` | Check formatting without changing files |
-| `bun run check`        | Run all checks (lint + format)          |
-| `bun run changeset`    | Create a new changeset                  |
+| Script                     | Description                                   |
+| -------------------------- | --------------------------------------------- |
+| `bun test --timeout 30000` | Run tests with Bun and a 30s per-test cap     |
+| `npm test`                 | Run tests with Node.js and a 30s per-test cap |
+| `bun run lint`             | Check code with ESLint                        |
+| `bun run lint:fix`         | Fix ESLint issues automatically               |
+| `bun run format`           | Format code with Prettier                     |
+| `bun run format:check`     | Check formatting without changing files       |
+| `bun run check`            | Run all checks (lint + format)                |
+| `bun run changeset`        | Create a new changeset                        |
 
 ## Contributing
 
