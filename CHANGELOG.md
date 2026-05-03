@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.4
+
+### Patch Changes
+
+- 031f7cd: Add explicit CI job timeouts and per-test runner timeout limits.
+
 ## 0.8.3
 
 ### Patch Changes
