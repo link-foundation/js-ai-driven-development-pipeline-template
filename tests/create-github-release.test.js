@@ -17,12 +17,27 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 
+import { createRelease } from '../scripts/create-github-release.mjs';
+
 const scriptPath = fileURLToPath(
   new URL('../scripts/create-github-release.mjs', import.meta.url)
 );
 const isDenoRuntime = typeof Deno !== 'undefined';
+const isBunRuntime =
+  typeof process !== 'undefined' && Boolean(process.versions?.bun);
+const isNodeRuntime =
+  typeof process !== 'undefined' &&
+  Boolean(process.versions?.node) &&
+  !isBunRuntime &&
+  !isDenoRuntime;
+const isWindowsNodeRuntime = isNodeRuntime && process.platform === 'win32';
+// Node on Windows does not execute the .cmd gh fixture through spawnSync.
+// The injected-spawn tests below cover release result handling on that runner.
 const canRunCliFixtures =
-  !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
+  !isDenoRuntime &&
+  !isWindowsNodeRuntime &&
+  typeof process !== 'undefined' &&
+  process.execPath;
 
 function prependPath(env, binPath) {
   const nextEnv = { ...env };
@@ -146,7 +161,89 @@ function runCreateRelease(root, mode) {
   };
 }
 
+function createSpawnRecorder(result) {
+  const calls = [];
+
+  return {
+    calls,
+    spawn(command, args, options) {
+      calls.push({ args, command, options });
+      return result;
+    },
+  };
+}
+
 describe('create-github-release.mjs', () => {
+  it('uses gh api and reports successful creation only for exit code 0', () => {
+    const payload = JSON.stringify({ tag_name: 'v1.2.3' });
+    const { calls, spawn } = createSpawnRecorder({
+      status: 0,
+      stderr: '',
+      stdout: JSON.stringify({ id: 123 }),
+    });
+
+    expect(createRelease({ payload, repository: 'owner/repo', spawn })).toEqual(
+      {
+        alreadyExists: false,
+      }
+    );
+    expect(calls).toEqual([
+      {
+        args: [
+          'api',
+          'repos/owner/repo/releases',
+          '-X',
+          'POST',
+          '--input',
+          '-',
+        ],
+        command: 'gh',
+        options: {
+          encoding: 'utf8',
+          input: payload,
+        },
+      },
+    ]);
+  });
+
+  it('throws when gh api exits non-zero with an unexpected error', () => {
+    const { spawn } = createSpawnRecorder({
+      status: 1,
+      stderr: 'gh: synthetic server error',
+      stdout: '',
+    });
+    let thrownError;
+
+    try {
+      createRelease({
+        payload: '{}',
+        repository: 'owner/repo',
+        spawn,
+      });
+    } catch (error) {
+      thrownError = error;
+    }
+
+    expect(thrownError.message).toContain('gh api failed with code 1');
+    expect(thrownError.message).toContain('synthetic server error');
+  });
+
+  it('treats already_exists as an idempotent gh api result', () => {
+    const { spawn } = createSpawnRecorder({
+      status: 1,
+      stderr: 'already_exists',
+      stdout: '',
+    });
+
+    expect(
+      createRelease({
+        payload: '{}',
+        repository: 'owner/repo',
+        spawn,
+      })
+    ).toEqual({ alreadyExists: true });
+  });
+
   if (canRunCliFixtures) {
     it('passes release payload to gh api and reports success only on exit code 0', () => {
       const root = createFixture();
