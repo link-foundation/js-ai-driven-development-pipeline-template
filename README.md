@@ -7,6 +7,7 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 - **Multi-runtime support**: Works with Bun, Node.js, and Deno
 - **Universal testing**: Uses [test-anywhere](https://github.com/link-foundation/test-anywhere) for cross-runtime tests
 - **Automated releases**: Changesets-based versioning with GitHub Actions
+- **Optional Docker Hub publishing**: Docker images can be published after the matching npm version is visible
 - **Code quality**: ESLint + Prettier with pre-commit hooks via Husky
 - **Package manager agnostic**: Works with bun, npm, yarn, pnpm, and deno
 - **Broken link checks**: Automated link validation with [lychee](https://github.com/lycheeverse/lychee-action) and Web Archive fallback suggestions
@@ -103,7 +104,8 @@ The release workflow uses [Changesets](https://github.com/changesets/changesets)
 2. **PR validation**: CI checks for valid changeset in each PR
 3. **Automated versioning**: Merging to `main` triggers version bump
 4. **npm publishing**: Automated via OIDC trusted publishing (no tokens needed)
-5. **GitHub releases**: Auto-created with formatted release notes
+5. **Optional Docker Hub publishing**: When configured, waits for the exact npm version and tags the Docker image with that version
+6. **GitHub releases**: Auto-created with formatted release notes
 
 #### Manual Releases
 
@@ -134,6 +136,7 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) implements a fast-
 
 9. **Changeset merge**: Combines multiple pending changesets at release time
 10. **Release**: Automated versioning and npm publishing
+11. **Optional Docker publish**: Publishes Docker Hub `latest` and npm-version tags after the npm package is visible
 
 #### Reasonable Timeouts
 
@@ -187,6 +190,24 @@ After creating a repository from this template, update the package name in:
 
 Release scripts derive the package name from `package.json` at runtime, so no
 script-level package-name constants need to be edited during template adoption.
+
+### Optional Docker Hub Publishing
+
+Docker publishing is disabled by default. To enable it for a project that ships
+a Docker image, add a `Dockerfile` and configure these GitHub Actions settings:
+
+| Setting              | Type               | Description                                                                           |
+| -------------------- | ------------------ | ------------------------------------------------------------------------------------- |
+| `DOCKERHUB_IMAGE`    | Variable           | Docker Hub image name, for example `namespace/image`. This enables Docker publishing. |
+| `DOCKERHUB_USERNAME` | Variable           | Docker Hub username used by `docker/login-action`.                                    |
+| `DOCKERHUB_TOKEN`    | Secret             | Docker Hub access token used for registry authentication.                             |
+| `DOCKER_CONTEXT`     | Variable, optional | Docker build context. Defaults to `.`.                                                |
+| `DOCKERFILE`         | Variable, optional | Dockerfile path. Defaults to `./Dockerfile`.                                          |
+
+When enabled, the release workflow waits until the exact published npm version
+is visible in the npm registry, then publishes Docker Hub tags for `latest` and
+that same version. The Docker build also receives `NPM_PACKAGE_VERSION` as a
+build argument so Dockerfiles can install the matching published package.
 
 ### ESLint Rules
 

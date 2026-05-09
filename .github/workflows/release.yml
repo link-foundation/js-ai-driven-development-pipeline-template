@@ -395,6 +395,9 @@ jobs:
       contents: write
       pull-requests: write
       id-token: write
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      published_version: ${{ steps.publish.outputs.published_version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -469,6 +472,9 @@ jobs:
       contents: write
       pull-requests: write
       id-token: write
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      published_version: ${{ steps.publish.outputs.published_version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -507,6 +513,51 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/format-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}" --commit-sha "${{ github.sha }}"
+
+  # Optional Docker Hub publishing for packages that also ship Docker images.
+  # Set vars.DOCKERHUB_IMAGE to enable this path, then configure
+  # vars.DOCKERHUB_USERNAME and secrets.DOCKERHUB_TOKEN.
+  docker-publish:
+    name: Optional Docker Hub Publish
+    needs: [release, instant-release]
+    timeout-minutes: 30
+    if: |
+      !cancelled() &&
+      (
+        (needs.release.result == 'success' && needs.release.outputs.published == 'true') ||
+        (needs.instant-release.result == 'success' && needs.instant-release.outputs.published == 'true')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DOCKER_CONTEXT: ${{ vars.DOCKER_CONTEXT }}
+      DOCKERFILE: ${{ vars.DOCKERFILE }}
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      RELEASE_VERSION: ${{ needs.release.outputs.published_version || needs.instant-release.outputs.published_version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check Docker publish configuration
+        id: docker_config
+        run: node scripts/check-docker-publish.mjs
+
+      - name: Wait for npm package availability before Docker publish
+        if: steps.docker_config.outputs.enabled == 'true'
+        run: node scripts/wait-for-npm.mjs --release-version "${{ env.RELEASE_VERSION }}"
+
+      - name: Publish Docker image to Docker Hub
+        if: steps.docker_config.outputs.enabled == 'true'
+        uses: ./.github/actions/publish-dockerhub
+        with:
+          context: ${{ steps.docker_config.outputs.context }}
+          file: ${{ steps.docker_config.outputs.dockerfile }}
+          image: ${{ steps.docker_config.outputs.image }}
+          token: ${{ env.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          version: ${{ env.RELEASE_VERSION }}
 
   # Manual Changeset PR - creates a pull request with the changeset for review
   changeset-pr:
