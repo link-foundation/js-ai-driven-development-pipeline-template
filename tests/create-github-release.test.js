@@ -1,6 +1,7 @@
 /**
  * Tests for create-github-release.mjs CLI behavior.
  * Reproduces issue #49: failed gh api calls must not be reported as success.
+ * Reproduces issue #52: release names should be human-readable titles.
  */
 
 import { describe, it, expect } from 'test-anywhere';
@@ -17,7 +18,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 
-import { createRelease } from '../scripts/create-github-release.mjs';
+import {
+  buildReleasePayload,
+  createRelease,
+  parseArgs,
+} from '../scripts/create-github-release.mjs';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/create-github-release.mjs', import.meta.url)
@@ -132,7 +137,7 @@ exec "${process.execPath}" "$(dirname "$0")/fake-gh.js" "$@"
   return root;
 }
 
-function runCreateRelease(root, mode) {
+function runCreateRelease(root, mode, extraArgs = []) {
   const argsFile = path.join(root, 'gh-args.json');
   const payloadFile = path.join(root, 'gh-payload.json');
   const binPath = path.join(root, 'bin');
@@ -151,7 +156,14 @@ function runCreateRelease(root, mode) {
     payloadFile,
     result: spawnSync(
       process.execPath,
-      [scriptPath, '--release-version', '1.2.3', '--repository', 'owner/repo'],
+      [
+        scriptPath,
+        '--release-version',
+        '1.2.3',
+        '--repository',
+        'owner/repo',
+        ...extraArgs,
+      ],
       {
         cwd: root,
         encoding: 'utf8',
@@ -172,6 +184,59 @@ function createSpawnRecorder(result) {
     },
   };
 }
+
+describe('create-github-release release title formatting', () => {
+  it('parses language from CLI arguments and environment defaults', () => {
+    expect(parseArgs([], {})).toEqual({
+      language: 'JavaScript',
+      releaseVersion: '',
+      repository: '',
+      tagPrefix: 'v',
+    });
+    expect(parseArgs([], { LANGUAGE: 'TypeScript' })).toEqual({
+      language: 'TypeScript',
+      releaseVersion: '',
+      repository: '',
+      tagPrefix: 'v',
+    });
+    expect(parseArgs(['--language', 'JavaScript'], {})).toEqual({
+      language: 'JavaScript',
+      releaseVersion: '',
+      repository: '',
+      tagPrefix: 'v',
+    });
+    expect(parseArgs(['--language=Rust'], {})).toEqual({
+      language: 'Rust',
+      releaseVersion: '',
+      repository: '',
+      tagPrefix: 'v',
+    });
+  });
+
+  it('builds a human-readable release name from a language-prefixed tag', () => {
+    const changelog = `# Changelog
+
+## 1.2.3
+
+- Fix release creation
+`;
+
+    expect(
+      JSON.parse(
+        buildReleasePayload({
+          changelog,
+          language: 'JavaScript',
+          tag: 'js-v1.2.3',
+          version: '1.2.3',
+        })
+      )
+    ).toEqual({
+      tag_name: 'js-v1.2.3',
+      name: '[JavaScript] 1.2.3',
+      body: '- Fix release creation',
+    });
+  });
+});
 
 describe('create-github-release.mjs', () => {
   it('uses gh api and reports successful creation only for exit code 0', () => {
@@ -267,7 +332,32 @@ describe('create-github-release.mjs', () => {
         ]);
         expect(JSON.parse(readFileSync(payloadFile, 'utf8'))).toEqual({
           tag_name: 'v1.2.3',
-          name: 'v1.2.3',
+          name: '[JavaScript] 1.2.3',
+          body: '### Patch Changes\n\n- Fix release creation',
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('passes a human-readable release name for language-prefixed tags', () => {
+      const root = createFixture();
+
+      try {
+        const { payloadFile, result } = runCreateRelease(root, 'success', [
+          '--tag-prefix',
+          'js-v',
+          '--language',
+          'JavaScript',
+        ]);
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain(
+          'Creating GitHub release for js-v1.2.3'
+        );
+        expect(JSON.parse(readFileSync(payloadFile, 'utf8'))).toEqual({
+          tag_name: 'js-v1.2.3',
+          name: '[JavaScript] 1.2.3',
           body: '### Patch Changes\n\n- Fix release creation',
         });
       } finally {
