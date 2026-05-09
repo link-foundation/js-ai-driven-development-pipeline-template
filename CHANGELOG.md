@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+### Minor Changes
+
+- f23283c: Add an optional Docker Hub publishing path that waits for the exact npm
+  package version before tagging Docker images.
+
 ## 0.8.6
 
 ### Patch Changes
