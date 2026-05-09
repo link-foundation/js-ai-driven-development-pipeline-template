@@ -78,6 +78,7 @@ Automated release workflows ensure:
 - **OIDC trusted publishing** - No API tokens needed in CI
 - **Validated releases only** - All checks must pass before publishing
 - **Dual trigger modes** - Both automatic (on merge) and manual (workflow dispatch)
+- **Optional Docker Hub publishing** - Projects with Docker images can publish version-matched Docker tags after npm package availability is confirmed
 
 ### 8. CI/CD Pipeline Features
 
@@ -178,6 +179,7 @@ Current timeout bands:
 | `changeset-pr`            | 10 min |
 | `release`                 | 30 min |
 | `instant-release`         | 30 min |
+| `docker-publish`          | 30 min |
 
 Per-test timeouts are also enforced inside the runners that support a
 global budget:
@@ -218,6 +220,7 @@ Developer Machine    ->    CI/CD Pipeline               ->    Release
                           ├── Slow checks (~1-10 min)
                           │   └── test matrix (9 combos)
                           ├── Documentation validation
+                          ├── Optional Docker Hub publish
                           └── Changeset verify
 ```
 
