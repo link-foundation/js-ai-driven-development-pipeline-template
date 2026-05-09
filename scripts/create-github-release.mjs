@@ -2,10 +2,11 @@
 
 /**
  * Create GitHub Release from CHANGELOG.md
- * Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>]
+ * Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>]
  *   release-version: Version number (e.g., 1.0.0)
  *   repository: GitHub repository (e.g., owner/repo)
  *   tag-prefix: Prefix for the git tag (default: "v", use "js-v" for multi-language repos)
+ *   language: Human-readable language name for the release title (default: "JavaScript")
  */
 
 import { spawnSync } from 'node:child_process';
@@ -14,10 +15,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const USAGE =
-  'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>]';
+  'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>]';
 
 export function parseArgs(argv, env = process.env) {
   const config = {
+    language: env.LANGUAGE ?? 'JavaScript',
     releaseVersion: env.VERSION ?? '',
     repository: env.REPOSITORY ?? '',
     tagPrefix: env.TAG_PREFIX ?? 'v',
@@ -41,6 +43,11 @@ export function parseArgs(argv, env = process.env) {
       index++;
     } else if (arg.startsWith('--tag-prefix=')) {
       config.tagPrefix = arg.slice('--tag-prefix='.length);
+    } else if (arg === '--language') {
+      config.language = readOptionValue(argv, index, arg);
+      index++;
+    } else if (arg.startsWith('--language=')) {
+      config.language = arg.slice('--language='.length);
     }
   }
 
@@ -77,10 +84,30 @@ export function extractReleaseNotes(changelog, version) {
   return releaseNotes || `Release ${version}`;
 }
 
-export function buildReleasePayload({ changelog, tag, version }) {
+export function normalizeReleaseVersionForTitle(releaseVersion) {
+  const trimmedVersion = releaseVersion.trim();
+  const semverTagMatch = trimmedVersion.match(
+    /(?:^|[-_])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/i
+  );
+
+  if (semverTagMatch) {
+    return semverTagMatch[1];
+  }
+
+  return trimmedVersion
+    .replace(/^[A-Za-z][A-Za-z0-9]*[-_]/, '')
+    .replace(/^v/i, '');
+}
+
+export function buildReleaseTitle(language, releaseVersion) {
+  const titleLanguage = language.trim() || 'JavaScript';
+  return `[${titleLanguage}] ${normalizeReleaseVersionForTitle(releaseVersion)}`;
+}
+
+export function buildReleasePayload({ changelog, language, tag, version }) {
   return JSON.stringify({
     tag_name: tag,
-    name: tag,
+    name: buildReleaseTitle(language ?? 'JavaScript', tag),
     body: extractReleaseNotes(changelog, version),
   });
 }
@@ -144,6 +171,7 @@ export function main({
 } = {}) {
   try {
     const {
+      language,
       releaseVersion: version,
       repository,
       tagPrefix,
@@ -160,7 +188,7 @@ export function main({
     stdout(`Creating GitHub release for ${tag}...`);
 
     const changelog = readFileSync(path.join(cwd, 'CHANGELOG.md'), 'utf8');
-    const payload = buildReleasePayload({ changelog, tag, version });
+    const payload = buildReleasePayload({ changelog, language, tag, version });
     const result = createRelease({ payload, repository, spawn });
 
     if (result.alreadyExists) {
