@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.6
+
+### Patch Changes
+
+- acccf75: Format GitHub release names as human-readable `[Language] x.y.z` titles while keeping prefixed tag names unchanged.
+
 ## 0.8.5
 
 ### Patch Changes
