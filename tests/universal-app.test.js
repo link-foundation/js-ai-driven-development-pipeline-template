@@ -85,6 +85,7 @@ describe('universal React example app', () => {
     expect(workflow).toContain('npm ci --prefix examples/universal-app');
     expect(workflow).toContain('npm run example:web:build');
     expect(workflow).toContain('npm run example:desktop:package');
+    expect(workflow).toContain('actions/configure-pages@v6');
     expect(workflow).toContain('actions/upload-pages-artifact');
     expect(workflow).toContain('actions/deploy-pages');
     expect(workflow).toContain('EXAMPLE_APP_ENABLE_ANDROID_BUILD');

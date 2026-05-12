@@ -1,10 +1,20 @@
 {
-  "name": "my-package",
+  "name": "@link-foundation/example-package-name",
   "version": "0.10.0",
   "description": "A JavaScript/TypeScript package template for AI-driven development",
   "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
+  "bin": {
+    "example-package-name": "./bin/example-package-name.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.d.ts",
@@ -39,9 +49,12 @@
   ],
   "author": "",
   "license": "Unlicense",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/link-foundation/js-ai-driven-development-pipeline-template"
+    "url": "git+https://github.com/link-foundation/js-ai-driven-development-pipeline-template.git"
   },
   "engines": {
     "node": ">=20.0.0"
