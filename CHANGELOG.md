@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.2
+
+### Patch Changes
+
+- f044604: Document the one-time **Settings → Pages → Source = GitHub Actions** prerequisite for the example app deployment, and note it in a comment above the `pages-deploy` job.
+
 ## 0.10.1
 
 ### Patch Changes
