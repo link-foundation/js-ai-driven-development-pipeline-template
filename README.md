@@ -2,6 +2,10 @@
 
 A comprehensive template for AI-driven JavaScript/TypeScript development with full CI/CD pipeline support.
 
+This repository publishes the real test package
+`@link-foundation/example-package-name` so the template release pipeline is
+validated end to end with npm trusted publishing.
+
 ## Features
 
 - **Multi-runtime support**: Works with Bun, Node.js, and Deno
@@ -49,6 +53,9 @@ bun run check
 npm install --prefix examples/universal-app
 npm run example:web:build
 npm run example:desktop:package
+
+# Try the CLI locally
+node bin/example-package-name.js add 2 3
 ```
 
 ## Project Structure
@@ -209,7 +216,7 @@ Add regex patterns to `.lycheeignore` to exclude URLs from checks (e.g., local d
 
 After creating a repository from this template, update the package name in:
 
-1. `package.json`: `"name": "your-package-name"`
+1. `package.json`: replace `"@link-foundation/example-package-name"` with your package name
 2. `.changeset/config.json`: Package references
 
 Release scripts derive the package name from `package.json` at runtime, so no
