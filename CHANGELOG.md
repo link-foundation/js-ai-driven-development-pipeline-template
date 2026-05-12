@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0
+
+### Minor Changes
+
+- 5a81a7f: Add a universal React example app with GitHub Pages, Electron desktop, and Capacitor mobile build paths.
+
 ## 0.9.0
 
 ### Minor Changes
