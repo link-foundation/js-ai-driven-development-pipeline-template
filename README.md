@@ -8,6 +8,7 @@ A comprehensive template for AI-driven JavaScript/TypeScript development with fu
 - **Universal testing**: Uses [test-anywhere](https://github.com/link-foundation/test-anywhere) for cross-runtime tests
 - **Automated releases**: Changesets-based versioning with GitHub Actions
 - **Optional Docker Hub publishing**: Docker images can be published after the matching npm version is visible
+- **Universal app example**: React UI for the package API with GitHub Pages, Electron, and Capacitor build paths
 - **Code quality**: ESLint + Prettier with pre-commit hooks via Husky
 - **Package manager agnostic**: Works with bun, npm, yarn, pnpm, and deno
 - **Broken link checks**: Automated link validation with [lychee](https://github.com/lycheeverse/lychee-action) and Web Archive fallback suggestions
@@ -43,6 +44,11 @@ bun run format
 
 # Check all (lint + format + file size)
 bun run check
+
+# Build the universal React example app
+npm install --prefix examples/universal-app
+npm run example:web:build
+npm run example:desktop:package
 ```
 
 ## Project Structure
@@ -53,6 +59,7 @@ bun run check
 ├── .github/workflows/    # GitHub Actions CI/CD
 ├── .husky/               # Git hooks (pre-commit)
 ├── examples/             # Usage examples
+│   └── universal-app/    # React + GitHub Pages + Electron + Capacitor app
 ├── scripts/              # Build and release scripts
 ├── src/                  # Source code
 │   ├── index.js          # Main entry point
@@ -88,6 +95,23 @@ While `package.json` is the source of truth for dependencies, the template suppo
 - **deno**: Uses `deno.json` for configuration
 
 Note: `package-lock.json` is not committed by default to allow any package manager.
+
+### Universal App Example
+
+The template includes `examples/universal-app`, a Vite React app that imports
+`add` and `multiply` from `src/index.js` and renders a visual calculator UI.
+The same static build is used by:
+
+- GitHub Pages (`npm run example:web:build`)
+- Electron desktop packaging (`npm run example:desktop:package`)
+- Capacitor Android/iOS sync (`npm run example:mobile:sync`)
+
+The example app has its own `package.json` and lockfile so template users can
+opt into the frontend stack without adding React, Electron, or Capacitor to the
+library package itself.
+
+See [examples/universal-app/README.md](examples/universal-app/README.md) for
+local web, desktop, Android, and iOS testing instructions.
 
 ### Code Quality
 
@@ -233,16 +257,20 @@ Configured in `.prettierrc`:
 
 ## Scripts Reference
 
-| Script                     | Description                                   |
-| -------------------------- | --------------------------------------------- |
-| `bun test --timeout 30000` | Run tests with Bun and a 30s per-test cap     |
-| `npm test`                 | Run tests with Node.js and a 30s per-test cap |
-| `bun run lint`             | Check code with ESLint                        |
-| `bun run lint:fix`         | Fix ESLint issues automatically               |
-| `bun run format`           | Format code with Prettier                     |
-| `bun run format:check`     | Check formatting without changing files       |
-| `bun run check`            | Run all checks (lint + format)                |
-| `bun run changeset`        | Create a new changeset                        |
+| Script                            | Description                                           |
+| --------------------------------- | ----------------------------------------------------- |
+| `bun test --timeout 30000`        | Run tests with Bun and a 30s per-test cap             |
+| `npm test`                        | Run tests with Node.js and a 30s per-test cap         |
+| `bun run lint`                    | Check code with ESLint                                |
+| `bun run lint:fix`                | Fix ESLint issues automatically                       |
+| `bun run format`                  | Format code with Prettier                             |
+| `bun run format:check`            | Check formatting without changing files               |
+| `bun run check`                   | Run all checks (lint + format)                        |
+| `npm run example:web:dev`         | Start the universal app Vite dev server               |
+| `npm run example:web:build`       | Build the universal app static web bundle             |
+| `npm run example:desktop:package` | Package the Electron desktop app locally              |
+| `npm run example:mobile:sync`     | Build and sync the app bundle into Capacitor projects |
+| `bun run changeset`               | Create a new changeset                                |
 
 ## Contributing
 

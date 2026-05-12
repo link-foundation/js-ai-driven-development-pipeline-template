@@ -6,7 +6,7 @@ export default [
   js.configs.recommended,
   prettierConfig,
   {
-    files: ['**/*.js', '**/*.mjs'],
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
     plugins: {
       prettier: prettierPlugin,
     },
@@ -20,6 +20,8 @@ export default [
         Buffer: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
+        require: 'readonly',
+        module: 'readonly',
         // Node.js 18+ globals
         fetch: 'readonly',
         AbortController: 'readonly',
@@ -74,6 +76,15 @@ export default [
     },
   },
   {
+    files: ['examples/universal-app/src/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+      },
+    },
+  },
+  {
     // Test files have different requirements
     files: ['tests/**/*.js', '**/*.test.js'],
     rules: {
@@ -83,8 +94,11 @@ export default [
   {
     ignores: [
       'node_modules/**',
+      '**/node_modules/**',
       'coverage/**',
       'dist/**',
+      '**/dist/**',
+      '**/out/**',
       '*.min.js',
       '.eslintcache',
       // Case study raw data files (downloaded from external sources)
