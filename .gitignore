@@ -52,6 +52,7 @@ web_modules/
 
 # Optional eslint cache
 .eslintcache
+.playwright-mcp/
 
 # Optional stylelint cache
 .stylelintcache
