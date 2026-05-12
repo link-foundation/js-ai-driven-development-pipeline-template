@@ -196,6 +196,18 @@ The CI/CD pipeline is designed to handle concurrent PRs gracefully:
 
 This design decouples PR validation from the need to pull changes from the default branch, reducing conflicts and ensuring that even if CI/CD fails, all unpublished changesets will still get published when the error is resolved.
 
+### Deploying the example app
+
+The `example-app.yml` workflow deploys the universal example app to GitHub
+Pages on every push to `main`. Before the first run on `main` in a new
+repository created from this template, open **Settings → Pages** and set
+**Source = GitHub Actions**. This is a one-time manual step and cannot be
+configured from a workflow because the Pages source defaults to
+_Deploy from a branch_. Without it, the `pages-deploy` job fails on
+`actions/deploy-pages` with `Get Pages site failed` /
+`Failed to create deployment`. After flipping the source, the workflow
+provisions the Pages site on its first run.
+
 ### Broken Link Checker
 
 The link checker workflow (`.github/workflows/links.yml`) validates all links in Markdown and HTML files:

@@ -70,6 +70,9 @@ jobs:
         with:
           path: examples/universal-app/dist
 
+  # Requires Settings → Pages → Source = GitHub Actions to be set once
+  # in the repository before this job can succeed. See README → "Deploying
+  # the example app". The Pages source cannot be configured from a workflow.
   pages-deploy:
     name: Deploy GitHub Pages
     needs: [web-build]
