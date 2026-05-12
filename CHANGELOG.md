@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+### Patch Changes
+
+- ede9f84: Publish the template as the real link-foundation example package and add the globally installable CLI entry point.
+
 ## 0.10.0
 
 ### Minor Changes
