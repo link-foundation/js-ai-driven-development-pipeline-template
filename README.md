@@ -208,6 +208,31 @@ _Deploy from a branch_. Without it, the `pages-deploy` job fails on
 `Failed to create deployment`. After flipping the source, the workflow
 provisions the Pages site on its first run.
 
+### Auto-regenerated preview screenshots
+
+The same `example-app.yml` workflow contains a `preview-regen` job that boots
+the built example app in a headless Chromium via
+[`browser-commander`](https://www.npmjs.com/package/browser-commander) +
+Playwright and writes fresh screenshots to
+`docs/screenshots/example-app/example-app-{locale}-{theme}.png` on every
+push to `main` (and on `workflow_dispatch`). Any drift is committed back to
+`main` with `[skip ci]` so README/site images never go stale between
+releases.
+
+The same script is available locally:
+
+```bash
+npm install --prefix examples/universal-app
+npm run example:web:preview-images
+# Verbose probe of <html data-theme>, <html lang>, and PNG signatures:
+PREVIEW_VERBOSE=1 npm run example:web:preview-images
+```
+
+The matrix defaults to `{en, ru} × {light, dark}`. The shipped example app
+has no localization or theme toggle yet, so every cell currently renders
+the same UI — when a fork adds either, the matrix produces real per-cell
+variants without script edits.
+
 ### Broken Link Checker
 
 The link checker workflow (`.github/workflows/links.yml`) validates all links in Markdown and HTML files:
@@ -276,20 +301,21 @@ Configured in `.prettierrc`:
 
 ## Scripts Reference
 
-| Script                            | Description                                           |
-| --------------------------------- | ----------------------------------------------------- |
-| `bun test --timeout 30000`        | Run tests with Bun and a 30s per-test cap             |
-| `npm test`                        | Run tests with Node.js and a 30s per-test cap         |
-| `bun run lint`                    | Check code with ESLint                                |
-| `bun run lint:fix`                | Fix ESLint issues automatically                       |
-| `bun run format`                  | Format code with Prettier                             |
-| `bun run format:check`            | Check formatting without changing files               |
-| `bun run check`                   | Run all checks (lint + format)                        |
-| `npm run example:web:dev`         | Start the universal app Vite dev server               |
-| `npm run example:web:build`       | Build the universal app static web bundle             |
-| `npm run example:desktop:package` | Package the Electron desktop app locally              |
-| `npm run example:mobile:sync`     | Build and sync the app bundle into Capacitor projects |
-| `bun run changeset`               | Create a new changeset                                |
+| Script                               | Description                                           |
+| ------------------------------------ | ----------------------------------------------------- |
+| `bun test --timeout 30000`           | Run tests with Bun and a 30s per-test cap             |
+| `npm test`                           | Run tests with Node.js and a 30s per-test cap         |
+| `bun run lint`                       | Check code with ESLint                                |
+| `bun run lint:fix`                   | Fix ESLint issues automatically                       |
+| `bun run format`                     | Format code with Prettier                             |
+| `bun run format:check`               | Check formatting without changing files               |
+| `bun run check`                      | Run all checks (lint + format)                        |
+| `npm run example:web:dev`            | Start the universal app Vite dev server               |
+| `npm run example:web:build`          | Build the universal app static web bundle             |
+| `npm run example:web:preview-images` | Regenerate preview screenshots via browser-commander  |
+| `npm run example:desktop:package`    | Package the Electron desktop app locally              |
+| `npm run example:mobile:sync`        | Build and sync the app bundle into Capacitor projects |
+| `bun run changeset`                  | Create a new changeset                                |
 
 ## Contributing
 

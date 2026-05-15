@@ -32,6 +32,7 @@
     "example:web:dev": "npm --prefix examples/universal-app run dev",
     "example:web:build": "npm --prefix examples/universal-app run build",
     "example:web:preview": "npm --prefix examples/universal-app run preview",
+    "example:web:preview-images": "node scripts/update-preview-images.mjs",
     "example:desktop:package": "npm --prefix examples/universal-app run desktop:package",
     "example:desktop:make": "npm --prefix examples/universal-app run desktop:make",
     "example:mobile:sync": "npm --prefix examples/universal-app run mobile:sync",
