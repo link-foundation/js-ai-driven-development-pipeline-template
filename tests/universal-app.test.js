@@ -102,4 +102,29 @@ describe('universal React example app', () => {
     expect(docs).toContain('Apple Developer Program');
     expect(docs).toContain('Google Play Console');
   });
+
+  it('regenerates preview screenshots with browser-commander on every push to main', () => {
+    const rootPackageJson = readJson('package.json');
+    const workflow = readText(workflowPath);
+    const script = readText('scripts/update-preview-images.mjs');
+    const rootReadme = readText('README.md');
+
+    expect(rootPackageJson.scripts['example:web:preview-images']).toBe(
+      'node scripts/update-preview-images.mjs'
+    );
+    expect(existsSync('scripts/update-preview-images.mjs')).toBe(true);
+
+    expect(workflow).toContain('preview-regen:');
+    expect(workflow).toContain('browser-commander');
+    expect(workflow).toContain('npx playwright install --with-deps chromium');
+    expect(workflow).toContain('node scripts/update-preview-images.mjs');
+    expect(workflow).toContain('[skip ci]');
+
+    expect(script).toContain("from 'browser-commander'");
+    expect(script).toContain("from 'playwright'");
+    expect(script).toContain('docs/screenshots/example-app');
+
+    expect(rootReadme).toContain('Auto-regenerated preview screenshots');
+    expect(rootReadme).toContain('npm run example:web:preview-images');
+  });
 });
