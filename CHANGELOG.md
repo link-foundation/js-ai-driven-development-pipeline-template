@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0
+
+### Minor Changes
+
+- e7025ed: Add a release-time `preview-regen` job to `example-app.yml` and a
+  `scripts/update-preview-images.mjs` driver that boot the universal example app
+  in a headless Chromium via `browser-commander` + Playwright, capture a
+  locale × theme matrix of screenshots into `docs/screenshots/example-app/`, and
+  commit any drift back to `main` with `[skip ci]`. Adds the matching
+  `npm run example:web:preview-images` script.
+
 ## 0.10.2
 
 ### Patch Changes
