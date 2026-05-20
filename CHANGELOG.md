@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.1
+
+### Patch Changes
+
+- 8cd0d70: Correct CI workflow concurrency and preview failure artifact handling in the template.
+
 ## 0.11.0
 
 ### Minor Changes
