@@ -82,20 +82,20 @@ Automated release workflows ensure:
 
 ### 8. CI/CD Pipeline Features
 
-The workflow implements several critical features from hive-mind issues #1274 and #1278:
+The workflow implements several critical features from hive-mind issues #1274 and #1278, plus template reliability fixes:
 
 #### Concurrency Control
 
 ```yaml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 ```
 
 This configuration (implemented in this template) ensures:
 
-- **Main branch**: Newer runs cancel older runs, preventing blocking (Issue #1274 fix)
-- **PR branches**: Runs are queued to preserve check history
+- **Main branch**: Runs finish without newer pushes cancelling in-flight release work
+- **PR branches**: Newer pushes cancel stale runs to save CI minutes and avoid racing checks
 
 See [DETAILED-COMPARISON.md](./case-studies/issue-25/DETAILED-COMPARISON.md) for the full analysis of best practices from both repositories.
 

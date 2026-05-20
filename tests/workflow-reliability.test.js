@@ -1,0 +1,66 @@
+import { describe, it, expect } from 'test-anywhere';
+import { readFileSync } from 'node:fs';
+
+function readWorkflow(filePath) {
+  return readFileSync(filePath, 'utf8').replaceAll('\r\n', '\n');
+}
+
+function getJobBlock(workflow, jobName) {
+  const lines = workflow.split('\n');
+  const jobHeader = `  ${jobName}:`;
+  const start = lines.findIndex((line) => line === jobHeader);
+
+  if (start === -1) {
+    return '';
+  }
+
+  const end = lines.findIndex(
+    (line, index) => index > start && /^[ ]{2}[a-zA-Z0-9_-]+:\s*$/.test(line)
+  );
+
+  return lines.slice(start, end === -1 ? lines.length : end).join('\n');
+}
+
+describe('workflow reliability policy', () => {
+  it('cancels superseded non-main runs without cancelling main runs', () => {
+    const workflowPaths = [
+      '.github/workflows/example-app.yml',
+      '.github/workflows/release.yml',
+    ];
+
+    for (const workflowPath of workflowPaths) {
+      const workflow = readWorkflow(workflowPath);
+
+      expect(workflow).toContain(
+        'group: ${{ github.workflow }}-${{ github.ref }}'
+      );
+      expect(workflow).toContain(
+        "cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}"
+      );
+      expect(workflow).not.toContain(
+        "cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}"
+      );
+    }
+  });
+
+  it('uploads preview regeneration artifacts when screenshot rendering fails', () => {
+    const exampleAppWorkflow = readWorkflow(
+      '.github/workflows/example-app.yml'
+    );
+    const previewRegenJob = getJobBlock(exampleAppWorkflow, 'preview-regen');
+
+    expect(previewRegenJob).toContain(
+      'name: Upload screenshot failure artifacts'
+    );
+    expect(previewRegenJob).toContain('if: failure()');
+    expect(previewRegenJob).toContain('uses: actions/upload-artifact@v7');
+    expect(previewRegenJob).toContain(
+      'name: preview-regen-failure-${{ github.run_id }}'
+    );
+    expect(previewRegenJob).toContain('docs/screenshots/');
+    expect(previewRegenJob).toContain('web/test-results/');
+    expect(previewRegenJob).toContain('web/playwright-report/');
+    expect(previewRegenJob).toContain('retention-days: 7');
+    expect(previewRegenJob).toContain('if-no-files-found: ignore');
+  });
+});
