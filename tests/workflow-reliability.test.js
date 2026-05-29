@@ -63,4 +63,50 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).toContain('retention-days: 7');
     expect(previewRegenJob).toContain('if-no-files-found: ignore');
   });
+
+  it('uses the official Playwright image for preview regeneration instead of downloading Chromium', () => {
+    const exampleAppWorkflow = readWorkflow(
+      '.github/workflows/example-app.yml'
+    );
+    const previewRegenJob = getJobBlock(exampleAppWorkflow, 'preview-regen');
+    const imageVersion = previewRegenJob.match(
+      /image:\s*mcr\.microsoft\.com\/playwright:v([0-9.]+)-noble/
+    )?.[1];
+    const packageVersion = previewRegenJob.match(/playwright@([0-9.]+)/)?.[1];
+
+    expect(previewRegenJob).toContain('container:');
+    expect(imageVersion).toBe('1.59.1');
+    expect(packageVersion).toBe(imageVersion);
+    expect(previewRegenJob).toContain("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'");
+    expect(previewRegenJob).not.toContain('npx playwright install');
+    expect(previewRegenJob).not.toContain('~/.cache/ms-playwright');
+  });
+
+  it('verifies desktop package output before uploading artifacts', () => {
+    const exampleAppWorkflow = readWorkflow(
+      '.github/workflows/example-app.yml'
+    );
+    const desktopPackageJob = getJobBlock(
+      exampleAppWorkflow,
+      'desktop-package'
+    );
+    const packageStepIndex = desktopPackageJob.indexOf(
+      'name: Package Electron app'
+    );
+    const uploadStepIndex = desktopPackageJob.indexOf(
+      'name: Upload desktop package'
+    );
+
+    expect(packageStepIndex).toBeGreaterThanOrEqual(0);
+    expect(uploadStepIndex).toBeGreaterThan(packageStepIndex);
+    expect(desktopPackageJob).toContain("node-version: '20.x'");
+    expect(desktopPackageJob).not.toContain("node-version: '24.x'");
+    expect(desktopPackageJob).toContain('shell: bash');
+    expect(desktopPackageJob).toContain('npm run example:desktop:package');
+    expect(desktopPackageJob).toContain('find examples/universal-app/out');
+    expect(desktopPackageJob).toContain(
+      'Desktop package output was not created at examples/universal-app/out'
+    );
+    expect(desktopPackageJob).toContain('if-no-files-found: error');
+  });
 });

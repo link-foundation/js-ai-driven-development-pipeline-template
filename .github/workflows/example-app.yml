@@ -106,7 +106,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          # Electron Forge packaging currently exits before writing out/ under
+          # Node 24 in CI. Use the package's supported Node 20 floor here until
+          # the desktop packaging toolchain is compatible with Node 24.
+          node-version: '20.x'
           cache: npm
           cache-dependency-path: examples/universal-app/package-lock.json
 
@@ -114,7 +117,19 @@ jobs:
         run: npm ci --prefix examples/universal-app
 
       - name: Package Electron app
-        run: npm run example:desktop:package
+        shell: bash
+        run: |
+          npm run example:desktop:package
+          for attempt in {1..30}; do
+            if [[ -d examples/universal-app/out ]] &&
+              [[ -n "$(find examples/universal-app/out -mindepth 1 -print -quit)" ]]; then
+              find examples/universal-app/out -maxdepth 2 -mindepth 1 -print
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Desktop package output was not created at examples/universal-app/out"
+          exit 1
         env:
           VITE_REPOSITORY_URL: https://github.com/${{ github.repository }}
 
@@ -197,12 +212,17 @@ jobs:
   preview-regen:
     name: Regenerate Preview Images
     runs-on: ubuntu-latest
+    container:
+      # Keep this tag in sync with the playwright package version below.
+      image: mcr.microsoft.com/playwright:v1.59.1-noble
     timeout-minutes: 20
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
       - uses: actions/checkout@v6
         with:
@@ -212,11 +232,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24.x'
-
       - name: Install example app dependencies
         run: npm ci --prefix examples/universal-app
 
@@ -224,9 +239,6 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm install --no-save --package-lock=false --no-audit --no-fund browser-commander@0.8.1 playwright@1.59.1
-
-      - name: Install Chromium for preview rendering
-        run: npx playwright install --with-deps chromium
 
       - name: Regenerate preview images
         run: node scripts/update-preview-images.mjs
