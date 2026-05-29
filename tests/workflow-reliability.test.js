@@ -81,4 +81,30 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).not.toContain('npx playwright install');
     expect(previewRegenJob).not.toContain('~/.cache/ms-playwright');
   });
+
+  it('verifies desktop package output before uploading artifacts', () => {
+    const exampleAppWorkflow = readWorkflow(
+      '.github/workflows/example-app.yml'
+    );
+    const desktopPackageJob = getJobBlock(
+      exampleAppWorkflow,
+      'desktop-package'
+    );
+    const packageStepIndex = desktopPackageJob.indexOf(
+      'name: Package Electron app'
+    );
+    const uploadStepIndex = desktopPackageJob.indexOf(
+      'name: Upload desktop package'
+    );
+
+    expect(packageStepIndex).toBeGreaterThanOrEqual(0);
+    expect(uploadStepIndex).toBeGreaterThan(packageStepIndex);
+    expect(desktopPackageJob).toContain('shell: bash');
+    expect(desktopPackageJob).toContain('npm run example:desktop:package');
+    expect(desktopPackageJob).toContain('find examples/universal-app/out');
+    expect(desktopPackageJob).toContain(
+      'Desktop package output was not created at examples/universal-app/out'
+    );
+    expect(desktopPackageJob).toContain('if-no-files-found: error');
+  });
 });
