@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.2
+
+### Patch Changes
+
+- aeec4cb: Enforce the 1500-line architecture limit across all JavaScript (`.js`, `.mjs`, `.cjs`) and Markdown (`.md`) files in the `check-file-line-limits` CI gate, lower the documentation limit from 2500 to 1500, and exempt case-study generated-data files explicitly.
+
 ## 0.11.1
 
 ### Patch Changes
