@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 # check-file-line-limits.sh
 #
-# Enforces a 1500-line limit on all .mjs files and on release.yml.
+# Enforces the documented 1500-line architecture limit on tracked
+# JavaScript (.js, .mjs, .cjs) and Markdown (.md) files, plus
+# .github/workflows/release.yml.
+#
+# This shell gate complements the ESLint `max-lines` rule: ESLint only
+# covers source files it lints, while this check walks every tracked
+# JavaScript and Markdown file so .js, .cjs, and documentation cannot
+# slip past the limit.
+#
+# Intentional exceptions (kept in sync with the eslint.config.js ignore
+# list): case-study and generated-data files under
+# docs/case-studies/*/data/ mirror external sources verbatim and must not
+# be reflowed to satisfy the limit, so they are excluded here.
 #
 # Usage:
 #   bash scripts/check-file-line-limits.sh
@@ -15,37 +27,45 @@ WARN_THRESHOLD=1350
 FAILURES=()
 WARNINGS=()
 
-echo "Checking that all .mjs files are under ${LIMIT} lines..."
-
-while IFS= read -r -d '' file; do
+# check_file FILE [HINT]
+# Counts lines in FILE and records a warning or failure when it crosses
+# the warning threshold or hard limit. HINT is appended to the GitHub
+# annotation to suggest a remediation.
+check_file() {
+  local file="$1"
+  local hint="${2:-Extract code to keep files under the ${LIMIT} line limit.}"
+  local line_count
   line_count=$(wc -l < "$file" | tr -d '[:space:]')
   echo "$file: $line_count lines"
   if [ "$line_count" -gt "$LIMIT" ]; then
     echo "ERROR: $file has $line_count lines (limit: ${LIMIT})"
-    echo "::error file=$file::File has $line_count lines (limit: ${LIMIT})"
+    echo "::error file=$file::File has $line_count lines (limit: ${LIMIT}). ${hint}"
     FAILURES+=("$file")
   elif [ "$line_count" -gt "$WARN_THRESHOLD" ]; then
     echo "WARNING: $file has $line_count lines (approaching limit of ${LIMIT}, warning threshold: ${WARN_THRESHOLD})"
-    echo "::warning file=$file::File has $line_count lines (approaching limit of ${LIMIT}). Consider extracting code to keep under ${WARN_THRESHOLD} lines and prevent concurrent PR merge limit violations."
+    echo "::warning file=$file::File has $line_count lines (approaching limit of ${LIMIT}). ${hint}"
     WARNINGS+=("$file")
   fi
-done < <(find . -name "*.mjs" -type f -not -path "*/node_modules/*" -print0)
+}
+
+echo "Checking that JavaScript and Markdown files are under ${LIMIT} lines..."
+
+# Walk every tracked JavaScript and Markdown file. node_modules is build
+# output, and docs/case-studies/*/data holds verbatim external sources
+# (see header note and eslint.config.js ignores).
+while IFS= read -r -d '' file; do
+  check_file "$file"
+done < <(find . -type f \
+  \( -name "*.js" -o -name "*.mjs" -o -name "*.cjs" -o -name "*.md" \) \
+  -not -path "*/node_modules/*" \
+  -not -path "./docs/case-studies/*/data/*" \
+  -print0)
 
 echo ""
 echo "Checking that .github/workflows/release.yml is under ${LIMIT} lines..."
 RELEASE_YML=".github/workflows/release.yml"
 if [ -f "$RELEASE_YML" ]; then
-  line_count=$(wc -l < "$RELEASE_YML" | tr -d '[:space:]')
-  echo "$RELEASE_YML: $line_count lines"
-  if [ "$line_count" -gt "$LIMIT" ]; then
-    echo "ERROR: $RELEASE_YML has $line_count lines (limit: ${LIMIT})"
-    echo "::error file=$RELEASE_YML::File has $line_count lines (limit: ${LIMIT}). Move inline scripts to ./scripts/ folder."
-    FAILURES+=("$RELEASE_YML")
-  elif [ "$line_count" -gt "$WARN_THRESHOLD" ]; then
-    echo "WARNING: $RELEASE_YML has $line_count lines (approaching limit of ${LIMIT}, warning threshold: ${WARN_THRESHOLD})"
-    echo "::warning file=$RELEASE_YML::File has $line_count lines (approaching limit of ${LIMIT}). Consider moving inline scripts to ./scripts/ folder."
-    WARNINGS+=("$RELEASE_YML")
-  fi
+  check_file "$RELEASE_YML" "Move inline scripts to the ./scripts/ folder to reduce file size."
 else
   echo "WARNING: $RELEASE_YML not found, skipping"
 fi

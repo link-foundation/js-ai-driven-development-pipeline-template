@@ -114,7 +114,9 @@ function detectChanges() {
   const mjsChanged = changedFiles.some((file) => file.endsWith('.mjs'));
   setOutput('mjs-changed', mjsChanged ? 'true' : 'false');
 
-  const jsChanged = changedFiles.some((file) => file.endsWith('.js'));
+  const jsChanged = changedFiles.some(
+    (file) => file.endsWith('.js') || file.endsWith('.cjs')
+  );
   setOutput('js-changed', jsChanged ? 'true' : 'false');
 
   const packageChanged = changedFiles.some((file) => file === 'package.json');
@@ -140,7 +142,7 @@ function detectChanges() {
   }
   console.log('');
 
-  const codePattern = /\.(mjs|js|json|yml|yaml)$|\.github\/workflows\//;
+  const codePattern = /\.(mjs|cjs|js|json|yml|yaml)$|\.github\/workflows\//;
   const anyCodeChanged = codeChangedFiles.some((file) =>
     codePattern.test(file)
   );

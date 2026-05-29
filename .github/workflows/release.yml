@@ -97,6 +97,7 @@ jobs:
       github.event_name == 'push' ||
       needs.detect-changes.outputs.mjs-changed == 'true' ||
       needs.detect-changes.outputs.js-changed == 'true' ||
+      needs.detect-changes.outputs.docs-changed == 'true' ||
       needs.detect-changes.outputs.workflow-changed == 'true'
     steps:
       - uses: actions/checkout@v6
@@ -109,6 +110,9 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: bash scripts/simulate-fresh-merge.sh
 
+      # Enforces the 1500-line limit on JavaScript (.js/.mjs/.cjs) and
+      # Markdown (.md) files plus release.yml. This is the single source
+      # of truth for the line limit; validate-docs no longer re-checks it.
       - name: Check file line limits
         run: bash scripts/check-file-line-limits.sh
 
@@ -322,30 +326,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check documentation file sizes
-        run: |
-          LIMIT=2500
-          FAILURES=()
-
-          echo "Checking that documentation files are under ${LIMIT} lines..."
-
-          while IFS= read -r -d '' file; do
-            line_count=$(wc -l < "$file")
-            if [ "$line_count" -gt "$LIMIT" ]; then
-              echo "ERROR: $file has $line_count lines (limit: ${LIMIT})"
-              echo "::error file=$file::Documentation file has $line_count lines (limit: ${LIMIT})"
-              FAILURES+=("$file")
-            fi
-          done < <(find docs -name "*.md" -type f -print0 2>/dev/null)
-
-          if [ "${#FAILURES[@]}" -gt 0 ]; then
-            echo "The following docs exceed the ${LIMIT} line limit:"
-            printf '  %s\n' "${FAILURES[@]}"
-            exit 1
-          else
-            echo "All documentation files are within the ${LIMIT} line limit."
-          fi
-
+      # Documentation line limits (1500 lines, matching the architecture
+      # limit) are enforced by the check-file-line-limits job, which scans
+      # every .md file. This job only validates required-file presence.
       - name: Check required documentation files exist
         run: |
           REQUIRED_FILES=(
