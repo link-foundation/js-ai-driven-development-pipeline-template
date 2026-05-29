@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.3
+
+### Patch Changes
+
+- a8e4030: Run the preview screenshot regeneration workflow inside the official Playwright container to avoid stalled Chromium downloads in CI, and keep the desktop packaging job on Node 20 while verifying package output before artifact upload.
+
 ## 0.11.2
 
 ### Patch Changes
