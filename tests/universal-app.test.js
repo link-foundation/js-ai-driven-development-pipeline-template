@@ -115,8 +115,11 @@ describe('universal React example app', () => {
     expect(existsSync('scripts/update-preview-images.mjs')).toBe(true);
 
     expect(workflow).toContain('preview-regen:');
+    expect(workflow).toContain(
+      'image: mcr.microsoft.com/playwright:v1.59.1-noble'
+    );
     expect(workflow).toContain('browser-commander');
-    expect(workflow).toContain('npx playwright install --with-deps chromium');
+    expect(workflow).not.toContain('npx playwright install');
     expect(workflow).toContain('node scripts/update-preview-images.mjs');
     expect(workflow).toContain('[skip ci]');
 

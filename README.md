@@ -217,7 +217,8 @@ Playwright and writes fresh screenshots to
 `docs/screenshots/example-app/example-app-{locale}-{theme}.png` on every
 push to `main` (and on `workflow_dispatch`). Any drift is committed back to
 `main` with `[skip ci]` so README/site images never go stale between
-releases.
+releases. The job runs in the official Playwright container with the browser
+already installed, avoiding CI stalls from live Chromium downloads.
 
 The same script is available locally:
 
