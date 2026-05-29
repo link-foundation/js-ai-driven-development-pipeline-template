@@ -106,7 +106,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          # Electron Forge packaging currently exits before writing out/ under
+          # Node 24 in CI. Use the package's supported Node 20 floor here until
+          # the desktop packaging toolchain is compatible with Node 24.
+          node-version: '20.x'
           cache: npm
           cache-dependency-path: examples/universal-app/package-lock.json
 

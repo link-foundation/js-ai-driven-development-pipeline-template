@@ -99,6 +99,8 @@ describe('workflow reliability policy', () => {
 
     expect(packageStepIndex).toBeGreaterThanOrEqual(0);
     expect(uploadStepIndex).toBeGreaterThan(packageStepIndex);
+    expect(desktopPackageJob).toContain("node-version: '20.x'");
+    expect(desktopPackageJob).not.toContain("node-version: '24.x'");
     expect(desktopPackageJob).toContain('shell: bash');
     expect(desktopPackageJob).toContain('npm run example:desktop:package');
     expect(desktopPackageJob).toContain('find examples/universal-app/out');
