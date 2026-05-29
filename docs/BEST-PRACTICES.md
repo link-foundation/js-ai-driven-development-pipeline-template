@@ -125,12 +125,13 @@ Slow test matrix only runs after all fast checks pass. This dramatically reduces
 
 ### 10. File Line Limits in CI
 
-In addition to the ESLint `max-lines` rule (which only covers source files), a separate CI check enforces the 1500-line limit on:
+In addition to the ESLint `max-lines` rule (which only covers the source files it lints), a separate CI check enforces the 1500-line limit on:
 
-- All `.mjs` files (including scripts)
+- All JavaScript files (`.js`, `.mjs`, `.cjs`, including scripts)
+- All Markdown files (`.md`, including documentation)
 - `.github/workflows/release.yml` (to prevent workflow bloat)
 
-This is enforced by `scripts/check-file-line-limits.sh`.
+This is enforced by `scripts/check-file-line-limits.sh`. Case-study and generated-data files under `docs/case-studies/*/data/` are exempt because they mirror external sources verbatim (the same paths are ignored by ESLint).
 
 ### 11. Secrets Detection
 
@@ -144,7 +145,7 @@ Automated scanning for accidental credential leaks using [secretlint](https://gi
 
 Documentation files are validated in CI just like code:
 
-- File size limits (2500 lines for docs)
+- File size limits (1500 lines, enforced by the `check-file-line-limits` job alongside JavaScript files)
 - Required files check (README.md, CHANGELOG.md, CONTRIBUTING.md, BEST-PRACTICES.md)
 - Only runs when documentation files change
 

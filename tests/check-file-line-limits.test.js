@@ -106,6 +106,70 @@ describe('check-file-line-limits.sh', () => {
       }
     });
 
+    it('fails .js and .cjs files over the hard limit', () => {
+      const root = createFixture({
+        'src/too-large.js': 1501,
+        'src/legacy.cjs': 1600,
+      });
+
+      try {
+        const result = runLineLimitCheck(root);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(
+          'ERROR: ./src/too-large.js has 1501 lines (limit: 1500)'
+        );
+        expect(result.stdout).toContain(
+          'ERROR: ./src/legacy.cjs has 1600 lines (limit: 1500)'
+        );
+        expect(result.stdout).toContain(
+          'The following files exceed the 1500 line limit:'
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('fails Markdown files over the hard limit', () => {
+      const root = createFixture({
+        'docs/HUGE.md': 1501,
+      });
+
+      try {
+        const result = runLineLimitCheck(root);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(
+          'ERROR: ./docs/HUGE.md has 1501 lines (limit: 1500)'
+        );
+        expect(result.stdout).toContain(
+          'The following files exceed the 1500 line limit:'
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('exempts case-study generated-data files from the limit', () => {
+      const root = createFixture({
+        'docs/case-studies/issue-99/data/raw.md': 5000,
+        'docs/case-studies/issue-99/data/sample.cjs': 5000,
+      });
+
+      try {
+        const result = runLineLimitCheck(root);
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).not.toContain(
+          'The following files exceed the 1500 line limit:'
+        );
+        expect(result.stdout).not.toContain('data/raw.md');
+        expect(result.stdout).not.toContain('data/sample.cjs');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
     it('normalizes padded wc output from BSD-like environments', () => {
       const root = createFixture({
         'src/near-limit.mjs': 1351,
