@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.4
+
+### Patch Changes
+
+- 35696cc: Cap generated GitHub release notes before creating releases so oversized changelog
+  entries link to the full tagged changelog instead of failing GitHub API
+  validation.
+
 ## 0.11.3
 
 ### Patch Changes
