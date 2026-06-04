@@ -17,6 +17,10 @@ import { fileURLToPath } from 'node:url';
 const USAGE =
   'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>]';
 
+// Keep comfortably below GitHub's observed 125000-character release body limit.
+export const GITHUB_RELEASE_BODY_MAX_BYTES = 120_000;
+const textEncoder = new globalThis.TextEncoder();
+
 export function parseArgs(argv, env = process.env) {
   const config = {
     language: env.LANGUAGE ?? 'JavaScript',
@@ -104,11 +108,80 @@ export function buildReleaseTitle(language, releaseVersion) {
   return `[${titleLanguage}] ${normalizeReleaseVersionForTitle(releaseVersion)}`;
 }
 
-export function buildReleasePayload({ changelog, language, tag, version }) {
+function getUtf8ByteLength(value) {
+  return textEncoder.encode(value).byteLength;
+}
+
+function truncateToUtf8Bytes(value, maxBytes) {
+  const chunks = [];
+  let usedBytes = 0;
+
+  for (const character of value) {
+    const characterBytes = getUtf8ByteLength(character);
+
+    if (usedBytes + characterBytes > maxBytes) {
+      break;
+    }
+
+    chunks.push(character);
+    usedBytes += characterBytes;
+  }
+
+  return chunks.join('');
+}
+
+function buildTaggedChangelogUrl(repository, tag) {
+  return `https://github.com/${repository}/blob/${tag}/CHANGELOG.md`;
+}
+
+function buildTruncatedReleaseNotesNotice({ repository, tag }) {
+  const changelogUrl = buildTaggedChangelogUrl(repository, tag);
+
+  return `Release notes were shortened to fit GitHub's release body limit. See the full tagged CHANGELOG.md: ${changelogUrl}`;
+}
+
+export function limitReleaseNotesBytes({
+  maxBytes = GITHUB_RELEASE_BODY_MAX_BYTES,
+  releaseNotes,
+  repository,
+  tag,
+}) {
+  if (getUtf8ByteLength(releaseNotes) <= maxBytes) {
+    return releaseNotes;
+  }
+
+  const suffix = `\n\n...\n\n${buildTruncatedReleaseNotesNotice({
+    repository,
+    tag,
+  })}`;
+  const suffixBytes = getUtf8ByteLength(suffix);
+  const availableBytes = Math.max(0, maxBytes - suffixBytes);
+  const shortenedNotes = truncateToUtf8Bytes(
+    releaseNotes,
+    availableBytes
+  ).trimEnd();
+  const limitedNotes = `${shortenedNotes}${suffix}`;
+
+  if (getUtf8ByteLength(limitedNotes) <= maxBytes) {
+    return limitedNotes;
+  }
+
+  return truncateToUtf8Bytes(limitedNotes, maxBytes);
+}
+
+export function buildReleasePayload({
+  changelog,
+  language,
+  repository,
+  tag,
+  version,
+}) {
+  const releaseNotes = extractReleaseNotes(changelog, version);
+
   return JSON.stringify({
     tag_name: tag,
     name: buildReleaseTitle(language ?? 'JavaScript', tag),
-    body: extractReleaseNotes(changelog, version),
+    body: limitReleaseNotesBytes({ releaseNotes, repository, tag }),
   });
 }
 
@@ -188,7 +261,13 @@ export function main({
     stdout(`Creating GitHub release for ${tag}...`);
 
     const changelog = readFileSync(path.join(cwd, 'CHANGELOG.md'), 'utf8');
-    const payload = buildReleasePayload({ changelog, language, tag, version });
+    const payload = buildReleasePayload({
+      changelog,
+      language,
+      repository,
+      tag,
+      version,
+    });
     const result = createRelease({ payload, repository, spawn });
 
     if (result.alreadyExists) {
