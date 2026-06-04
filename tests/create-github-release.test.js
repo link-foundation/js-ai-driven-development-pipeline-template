@@ -21,6 +21,7 @@ import { fileURLToPath, URL } from 'node:url';
 import {
   buildReleasePayload,
   createRelease,
+  GITHUB_RELEASE_BODY_MAX_BYTES,
   parseArgs,
 } from '../scripts/create-github-release.mjs';
 
@@ -36,6 +37,7 @@ const isNodeRuntime =
   !isBunRuntime &&
   !isDenoRuntime;
 const isWindowsNodeRuntime = isNodeRuntime && process.platform === 'win32';
+const textEncoder = new globalThis.TextEncoder();
 // Node on Windows does not execute the .cmd gh fixture through spawnSync.
 // The injected-spawn tests below cover release result handling on that runner.
 const canRunCliFixtures =
@@ -185,6 +187,10 @@ function createSpawnRecorder(result) {
   };
 }
 
+function getUtf8ByteLength(value) {
+  return textEncoder.encode(value).byteLength;
+}
+
 describe('create-github-release release title formatting', () => {
   it('parses language from CLI arguments and environment defaults', () => {
     expect(parseArgs([], {})).toEqual({
@@ -235,6 +241,43 @@ describe('create-github-release release title formatting', () => {
       name: '[JavaScript] 1.2.3',
       body: '- Fix release creation',
     });
+  });
+
+  it('caps oversized release notes and links to the tagged changelog', () => {
+    const multibyteCharacter = '\u{1f680}';
+    const largeEntry = `- ${multibyteCharacter.repeat(
+      GITHUB_RELEASE_BODY_MAX_BYTES / 2
+    )}`;
+    const changelog = `# Changelog
+
+## 1.2.3
+
+${largeEntry}
+
+## 1.2.2
+
+- Previous release
+`;
+
+    const payload = JSON.parse(
+      buildReleasePayload({
+        changelog,
+        language: 'JavaScript',
+        repository: 'owner/repo',
+        tag: 'v1.2.3',
+        version: '1.2.3',
+      })
+    );
+
+    expect(getUtf8ByteLength(payload.body)).toBeLessThanOrEqual(
+      GITHUB_RELEASE_BODY_MAX_BYTES
+    );
+    expect(
+      payload.body.startsWith(`- ${multibyteCharacter}${multibyteCharacter}`)
+    ).toBe(true);
+    expect(payload.body).toContain(
+      'https://github.com/owner/repo/blob/v1.2.3/CHANGELOG.md'
+    );
   });
 });
 
