@@ -26,6 +26,7 @@ describe('workflow reliability policy', () => {
     const workflowPaths = [
       '.github/workflows/example-app.yml',
       '.github/workflows/release.yml',
+      '.github/workflows/links.yml',
     ];
 
     for (const workflowPath of workflowPaths) {
