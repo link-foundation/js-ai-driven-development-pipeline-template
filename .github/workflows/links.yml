@@ -16,6 +16,15 @@ on:
       - '.github/workflows/links.yml'
   workflow_dispatch:
 
+# Concurrency: Only one workflow run per branch at a time
+# - For main branch: let runs finish so a newer push does not cancel an
+#   in-flight link check.
+# - For PR branches: cancel older runs so new pushes supersede stale checks.
+# See: docs/case-studies/issue-25/DETAILED-COMPARISON.md for context
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   link-checker:
     name: Check Links
