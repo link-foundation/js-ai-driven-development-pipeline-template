@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.5
+
+### Patch Changes
+
+- 312a2fe: Add a `concurrency` block to the Broken Link Checker workflow (`links.yml`) so redundant runs are cancelled on new commits, consistent with the other workflows in the template.
+
 ## 0.11.4
 
 ### Patch Changes
