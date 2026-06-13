@@ -21,6 +21,72 @@ function getJobBlock(workflow, jobName) {
   return lines.slice(start, end === -1 ? lines.length : end).join('\n');
 }
 
+function getMultilineIfExpression(jobBlock) {
+  const lines = jobBlock.split('\n');
+  const start = lines.findIndex((line) => line === '    if: |');
+
+  if (start === -1) {
+    return '';
+  }
+
+  const expressionLines = [];
+
+  for (const line of lines.slice(start + 1)) {
+    if (/^[ ]{4}\S/.test(line)) {
+      break;
+    }
+
+    expressionLines.push(line.slice(6));
+  }
+
+  return expressionLines.join('\n').trim();
+}
+
+function evaluateWorkflowIf(expression, context) {
+  const javaScriptExpression = expression
+    .replaceAll('!cancelled()', '!context.cancelled')
+    .replaceAll('github.event_name', 'context.github.event_name')
+    .replace(
+      /needs\.([a-zA-Z0-9_-]+)\.outputs\.([a-zA-Z0-9_-]+)/g,
+      'context.needs["$1"].outputs["$2"]'
+    )
+    .replace(/needs\.([a-zA-Z0-9_-]+)\.result/g, 'context.needs["$1"].result');
+
+  return Function(
+    'context',
+    `"use strict"; return (${javaScriptExpression});`
+  )(context);
+}
+
+function createTestJobContext({
+  eventName = 'pull_request',
+  outputs = {},
+  result = 'skipped',
+} = {}) {
+  return {
+    cancelled: false,
+    github: {
+      event_name: eventName,
+    },
+    needs: {
+      'detect-changes': {
+        outputs: {
+          'any-code-changed': 'false',
+          'mjs-changed': 'false',
+          'js-changed': 'false',
+          'package-changed': 'false',
+          'workflow-changed': 'false',
+          ...outputs,
+        },
+      },
+      'changeset-check': { result },
+      'test-compilation': { result },
+      lint: { result },
+      'check-file-line-limits': { result },
+    },
+  };
+}
+
 describe('workflow reliability policy', () => {
   it('cancels superseded non-main runs without cancelling main runs', () => {
     const workflowPaths = [
@@ -109,6 +175,32 @@ describe('workflow reliability policy', () => {
       'Desktop package output was not created at examples/universal-app/out'
     );
     expect(desktopPackageJob).toContain('if-no-files-found: error');
+  });
+});
+
+describe('release workflow change gates', () => {
+  it('skips the slow test matrix for pull requests with no code changes', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const testJob = getJobBlock(workflow, 'test');
+    const testCondition = getMultilineIfExpression(testJob);
+    const nonCodePullRequest = createTestJobContext();
+
+    expect(evaluateWorkflowIf(testCondition, nonCodePullRequest)).toBe(false);
+  });
+
+  it('runs the slow test matrix for workflow changes after fast checks pass', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const testJob = getJobBlock(workflow, 'test');
+    const testCondition = getMultilineIfExpression(testJob);
+    const workflowPullRequest = createTestJobContext({
+      outputs: {
+        'any-code-changed': 'true',
+        'workflow-changed': 'true',
+      },
+      result: 'success',
+    });
+
+    expect(evaluateWorkflowIf(testCondition, workflowPullRequest)).toBe(true);
   });
 });
 
