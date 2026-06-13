@@ -24,6 +24,10 @@ import { appendFileSync } from 'fs';
 
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
 import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
+import {
+  buildAuthFailureGuidance,
+  isNonRetryableFailure,
+} from './publish-failure-classifier.mjs';
 
 // Load use-m dynamically
 const { use } = eval(
@@ -226,6 +230,17 @@ async function attemptPublish(
   const analysisError = analyzePublishResult(result, error);
 
   if (analysisError) {
+    // Mark authentication / registry-configuration failures as non-retryable so
+    // the retry loop can fail fast with actionable guidance instead of burning
+    // through MAX_RETRIES (issue #77).
+    const combinedOutput = [
+      analysisError.message || '',
+      result?.stdout || '',
+      result?.stderr || '',
+    ].join('\n');
+    if (isNonRetryableFailure(combinedOutput)) {
+      analysisError.nonRetryable = true;
+    }
     return { success: false, error: analysisError };
   }
 
@@ -302,6 +317,16 @@ async function main() {
         setOutput('published_version', currentVersion);
         console.log(`\u2705 Published ${packageName}@${currentVersion} to npm`);
         return;
+      }
+
+      // Authentication / registry-configuration errors will not be fixed by
+      // retrying, so fail fast with actionable guidance instead of burning
+      // through MAX_RETRIES (which previously hid the real cause behind a
+      // generic "Failed to publish after 3 attempts" message). See issue #77.
+      if (error?.nonRetryable) {
+        console.error(`Publish failed: ${error.message}`);
+        console.error(buildAuthFailureGuidance(packageName));
+        process.exit(1);
       }
 
       if (i < MAX_RETRIES) {

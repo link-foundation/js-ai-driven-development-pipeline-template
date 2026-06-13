@@ -427,6 +427,15 @@ jobs:
           steps.version.outputs.already_released == 'true' ||
           (steps.check_release.outputs.should_release == 'true' && steps.check_release.outputs.skip_bump == 'true')
         id: publish
+        # Optional NPM_TOKEN bootstrap fallback. OIDC trusted publishing is the
+        # steady-state mechanism, but it cannot create a brand-new package (the
+        # first publish returns E404 because a trusted publisher can only be
+        # configured for a package that already exists). When NPM_TOKEN is set,
+        # the first publish succeeds; once the package exists and a trusted
+        # publisher is configured, OIDC takes over and the token can be removed.
+        # See issue #77.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-to-npm.mjs --should-pull
 
       - name: Create GitHub Release
@@ -483,6 +492,10 @@ jobs:
         # Run if version was committed OR if a previous attempt already committed (for re-runs)
         if: steps.version.outputs.version_committed == 'true' || steps.version.outputs.already_released == 'true'
         id: publish
+        # Optional NPM_TOKEN bootstrap fallback; OIDC trusted publishing is used
+        # when the secret is unset. See the release job above for details (#77).
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-to-npm.mjs
 
       - name: Create GitHub Release
