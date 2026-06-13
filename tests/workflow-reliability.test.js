@@ -111,3 +111,19 @@ describe('workflow reliability policy', () => {
     expect(desktopPackageJob).toContain('if-no-files-found: error');
   });
 });
+
+describe('npm publish token bootstrap (issue #77)', () => {
+  // The first publish of a brand-new package cannot use OIDC trusted publishing
+  // (npm returns E404 because a trusted publisher can only be configured for an
+  // existing package). Every Publish-to-npm step must therefore expose an
+  // optional NODE_AUTH_TOKEN fallback sourced from secrets.NPM_TOKEN.
+  for (const jobName of ['release', 'instant-release']) {
+    it(`passes secrets.NPM_TOKEN as NODE_AUTH_TOKEN on the ${jobName} publish step`, () => {
+      const workflow = readWorkflow('.github/workflows/release.yml');
+      const job = getJobBlock(workflow, jobName);
+
+      expect(job).toContain('node scripts/publish-to-npm.mjs');
+      expect(job).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}');
+    });
+  }
+});
