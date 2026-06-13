@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.8
+
+### Patch Changes
+
+- 391530e: Skip the slow CI test matrix for pull requests that only touch non-code files.
+
 ## 0.11.7
 
 ### Patch Changes
