@@ -7,6 +7,13 @@ import { join } from 'node:path';
 const ACTION_PATH = '.github/actions/setup-buildx-resilient/action.yml';
 const action = readFileSync(ACTION_PATH, 'utf8');
 
+// The subprocess-driven cases need run/write/env access to drive the real
+// pre-pull script through a mock `docker`. Deno's CI invokes tests with
+// `deno test --allow-read` only, so they can't execute there — node and bun
+// run the full suite, and experiments/test-issue75-buildx-mirror-fallback.sh
+// covers the same logic offline. The static action.yml checks run everywhere.
+const CAN_RUN_SUBPROCESS = typeof globalThis.Deno === 'undefined';
+
 // Extract the first `run: |` block verbatim from the action so the test drives
 // the real pre-pull script (not a copy that can drift out of sync). The block
 // starts after the first `run: |` line and ends at the next step (`    - name:`
@@ -113,7 +120,9 @@ function runCase({ canonicalOk, mirrorOk }) {
   };
 }
 
-describe('setup-buildx-resilient pre-pull script', () => {
+const describeSubprocess = CAN_RUN_SUBPROCESS ? describe : () => {};
+
+describeSubprocess('setup-buildx-resilient pre-pull script', () => {
   it('caches the canonical image and never touches the mirror when Docker Hub is healthy', () => {
     const result = runCase({ canonicalOk: true, mirrorOk: false });
 
