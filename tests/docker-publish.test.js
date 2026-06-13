@@ -71,7 +71,9 @@ describe('optional Docker Hub publishing workflow', () => {
   });
 
   it('uses Docker official GitHub Actions with DOCKERHUB_TOKEN authentication', () => {
-    expect(dockerHubAction).toContain('uses: docker/setup-buildx-action@v4');
+    expect(dockerHubAction).toContain(
+      'uses: ./.github/actions/setup-buildx-resilient'
+    );
     expect(dockerHubAction).toContain('uses: docker/login-action@v4');
     expect(dockerHubAction).toContain('password: ${{ inputs.token }}');
     expect(dockerHubAction).toContain('uses: docker/metadata-action@v6');
