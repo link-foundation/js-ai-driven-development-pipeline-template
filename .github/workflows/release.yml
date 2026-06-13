@@ -246,10 +246,19 @@ jobs:
         check-file-line-limits,
       ]
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
-    # Run if: push event, OR changeset-check succeeded, OR changeset-check was skipped (docs-only PR)
-    # AND all fast checks passed (or were skipped for irrelevant changes)
+    # Run on pushes, or PRs with code/package/workflow changes that can affect
+    # test results. Skipped fast checks still count as non-failures only after
+    # this positive change-detector gate passes.
     if: |
       !cancelled() &&
+      (
+        github.event_name == 'push' ||
+        needs.detect-changes.outputs.any-code-changed == 'true' ||
+        needs.detect-changes.outputs.mjs-changed == 'true' ||
+        needs.detect-changes.outputs.js-changed == 'true' ||
+        needs.detect-changes.outputs.package-changed == 'true' ||
+        needs.detect-changes.outputs.workflow-changed == 'true'
+      ) &&
       (github.event_name == 'push' || needs.changeset-check.result == 'success' || needs.changeset-check.result == 'skipped') &&
       (needs.test-compilation.result == 'success' || needs.test-compilation.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
