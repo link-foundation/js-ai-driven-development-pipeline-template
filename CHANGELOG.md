@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.10
+
+### Patch Changes
+
+- 9915756: Auto-detect single-language versus `js/` monorepo layouts when naming GitHub
+  releases, namespace multi-language JavaScript tags as `js_v<version>`, and
+  normalize prefixed tags before linking npm version badges.
+
 ## 0.11.9
 
 ### Patch Changes
