@@ -20,6 +20,9 @@ import { fileURLToPath, URL } from 'node:url';
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-changesets.mjs', import.meta.url)
 );
+const isDenoRuntime = typeof Deno !== 'undefined';
+const canRunCliFixtures =
+  !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
 
 function createFixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'check-changesets-'));
@@ -53,76 +56,78 @@ function runCheckChangesets(root) {
 }
 
 describe('check-changesets CLI', () => {
-  it('ignores stray Markdown files without valid changeset frontmatter', () => {
-    const root = createFixture();
+  if (canRunCliFixtures) {
+    it('ignores stray Markdown files without valid changeset frontmatter', () => {
+      const root = createFixture();
 
-    try {
-      writeFileSync(
-        path.join(root, '.changeset', 'NOTES.md'),
-        '# Release notes draft\n\nThis is project documentation, not a changeset.\n'
-      );
+      try {
+        writeFileSync(
+          path.join(root, '.changeset', 'NOTES.md'),
+          '# Release notes draft\n\nThis is project documentation, not a changeset.\n'
+        );
 
-      const { outputFile, result } = runCheckChangesets(root);
+        const { outputFile, result } = runCheckChangesets(root);
 
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain('Found 0 changeset file(s)');
-      expect(readFileSync(outputFile, 'utf8')).toBe(
-        'has_changesets=false\nchangeset_count=0\n'
-      );
-    } finally {
-      rmSync(root, { force: true, recursive: true });
-    }
-  });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Found 0 changeset file(s)');
+        expect(readFileSync(outputFile, 'utf8')).toBe(
+          'has_changesets=false\nchangeset_count=0\n'
+        );
+      } finally {
+        rmSync(root, { force: true, recursive: true });
+      }
+    });
 
-  it('counts Markdown files with a recognized package bump in frontmatter', () => {
-    const root = createFixture();
+    it('counts Markdown files with a recognized package bump in frontmatter', () => {
+      const root = createFixture();
 
-    try {
-      writeFileSync(
-        path.join(root, '.changeset', 'valid-change.md'),
-        `---
+      try {
+        writeFileSync(
+          path.join(root, '.changeset', 'valid-change.md'),
+          `---
 '@scope/fixture-package': patch
 ---
 
 Fix the fixture behavior.
 `
-      );
+        );
 
-      const { outputFile, result } = runCheckChangesets(root);
+        const { outputFile, result } = runCheckChangesets(root);
 
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain('Found 1 changeset file(s)');
-      expect(readFileSync(outputFile, 'utf8')).toBe(
-        'has_changesets=true\nchangeset_count=1\n'
-      );
-    } finally {
-      rmSync(root, { force: true, recursive: true });
-    }
-  });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Found 1 changeset file(s)');
+        expect(readFileSync(outputFile, 'utf8')).toBe(
+          'has_changesets=true\nchangeset_count=1\n'
+        );
+      } finally {
+        rmSync(root, { force: true, recursive: true });
+      }
+    });
 
-  it('ignores changeset frontmatter for an unknown package', () => {
-    const root = createFixture();
+    it('ignores changeset frontmatter for an unknown package', () => {
+      const root = createFixture();
 
-    try {
-      writeFileSync(
-        path.join(root, '.changeset', 'other-package.md'),
-        `---
+      try {
+        writeFileSync(
+          path.join(root, '.changeset', 'other-package.md'),
+          `---
 'other-package': minor
 ---
 
 Update another package.
 `
-      );
+        );
 
-      const { outputFile, result } = runCheckChangesets(root);
+        const { outputFile, result } = runCheckChangesets(root);
 
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain('Found 0 changeset file(s)');
-      expect(readFileSync(outputFile, 'utf8')).toBe(
-        'has_changesets=false\nchangeset_count=0\n'
-      );
-    } finally {
-      rmSync(root, { force: true, recursive: true });
-    }
-  });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Found 0 changeset file(s)');
+        expect(readFileSync(outputFile, 'utf8')).toBe(
+          'has_changesets=false\nchangeset_count=0\n'
+        );
+      } finally {
+        rmSync(root, { force: true, recursive: true });
+      }
+    });
+  }
 });
