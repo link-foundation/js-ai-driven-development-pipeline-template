@@ -4,7 +4,9 @@
  * Check for pending changeset files
  *
  * This script checks for pending changeset files in the .changeset directory
- * and outputs the count and status for use in GitHub Actions workflow conditions.
+ * and outputs the count and status for use in GitHub Actions workflow
+ * conditions. A pending changeset must declare the current package and a valid
+ * bump type in changeset frontmatter; stray Markdown docs are ignored.
  *
  * Usage:
  *   node scripts/check-changesets.mjs
@@ -14,9 +16,14 @@
  *   - changeset_count: number of changeset files found
  */
 
-import { readdirSync, existsSync, appendFileSync } from 'fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
-const CHANGESET_DIR = '.changeset';
+import { getChangesetDir, getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+import {
+  getChangesetVersionTypeRegex,
+  readPackageInfo,
+} from './package-info.mjs';
 
 /**
  * Write output to GitHub Actions output file
@@ -32,18 +39,64 @@ function setOutput(name, value) {
 }
 
 /**
+ * Extract frontmatter from a Markdown changeset file.
+ * @param {string} content
+ * @returns {string | null}
+ */
+function extractChangesetFrontmatter(content) {
+  const frontmatterMatch = content.match(
+    /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
+  );
+
+  return frontmatterMatch ? frontmatterMatch[1] : null;
+}
+
+/**
+ * Check whether a file name can be a changeset candidate.
+ * @param {string} file
+ * @returns {boolean}
+ */
+function isMarkdownChangesetCandidate(file) {
+  return file.endsWith('.md') && file !== 'README.md';
+}
+
+/**
+ * Check whether a Markdown file has valid changeset frontmatter.
+ * @param {string} filePath
+ * @param {RegExp} versionTypeRegex
+ * @returns {boolean}
+ */
+function hasValidChangesetFrontmatter(filePath, versionTypeRegex) {
+  try {
+    const content = readFileSync(filePath, 'utf-8');
+    const frontmatter = extractChangesetFrontmatter(content);
+
+    return frontmatter !== null && versionTypeRegex.test(frontmatter);
+  } catch (error) {
+    console.warn(`Warning: Failed to read ${filePath}: ${error.message}`);
+    return false;
+  }
+}
+
+/**
  * Count changeset files in the .changeset directory
+ * @param {string} changesetDir
+ * @param {string} packageName
  * @returns {number} Number of changeset files found
  */
-function countChangesetFiles() {
-  if (!existsSync(CHANGESET_DIR)) {
+function countChangesetFiles(changesetDir, packageName) {
+  if (!existsSync(changesetDir)) {
     return 0;
   }
 
-  const files = readdirSync(CHANGESET_DIR);
-  // Filter to only count .md files, excluding README.md
+  const versionTypeRegex = getChangesetVersionTypeRegex(packageName, {
+    requireQuotes: false,
+  });
+  const files = readdirSync(changesetDir);
   const changesetFiles = files.filter(
-    (file) => file.endsWith('.md') && file !== 'README.md'
+    (file) =>
+      isMarkdownChangesetCandidate(file) &&
+      hasValidChangesetFrontmatter(join(changesetDir, file), versionTypeRegex)
   );
 
   return changesetFiles.length;
@@ -55,7 +108,15 @@ function countChangesetFiles() {
 function checkChangesets() {
   console.log('Checking for pending changeset files...\n');
 
-  const changesetCount = countChangesetFiles();
+  const jsRootConfig = parseJsRootConfig();
+  const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
+  const changesetDir = getChangesetDir({ jsRoot });
+  const { name: packageName } = readPackageInfo({ jsRoot });
+
+  console.log(`Package: ${packageName}`);
+  console.log(`Changeset directory: ${changesetDir}`);
+
+  const changesetCount = countChangesetFiles(changesetDir, packageName);
 
   console.log(`Found ${changesetCount} changeset file(s)`);
 
