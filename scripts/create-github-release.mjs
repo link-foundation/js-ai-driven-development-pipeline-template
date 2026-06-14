@@ -93,7 +93,7 @@ function escapeRegex(value) {
 export function extractReleaseNotes(changelog, version) {
   // Read from CHANGELOG.md between this version header and the next version header.
   const versionHeaderRegex = new RegExp(
-    `## ${escapeRegex(version)}[\\s\\S]*?(?=## \\d|$)`
+    `## ${escapeRegex(version)}(?=\\s|$)[\\s\\S]*?(?=## \\d|$)`
   );
   const match = changelog.match(versionHeaderRegex);
 
