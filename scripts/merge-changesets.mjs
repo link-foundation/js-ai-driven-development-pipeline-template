@@ -9,6 +9,7 @@
  * - Preserves all descriptions in chronological order (by file modification time)
  * - Removes the individual changeset files after merging
  * - Does nothing if there's only one or no changesets
+ * - Fails if any changeset cannot be parsed
  *
  * This script is run before `changeset version` to ensure a clean release
  * even when multiple PRs have merged before a release cycle.
@@ -115,40 +116,44 @@ function generateChangesetName() {
  * Parse a changeset file and extract its metadata
  * @param {string} filePath
  * @param {string} packageName
- * @returns {{type: string, description: string, mtime: Date} | null}
+ * @returns {{type: string, description: string, mtime: Date}}
  */
 function parseChangeset(filePath, packageName) {
+  let content;
+  let stats;
+
   try {
-    const content = readFileSync(filePath, 'utf-8');
-    const stats = statSync(filePath);
-
-    // Extract version type - support both quoted and unquoted package names
-    const versionTypeRegex = getChangesetVersionTypeRegex(packageName, {
-      requireQuotes: false,
-    });
-    const versionTypeMatch = content.match(versionTypeRegex);
-
-    if (!versionTypeMatch) {
-      console.warn(
-        `Warning: Could not parse version type from ${filePath}, skipping`
-      );
-      return null;
-    }
-
-    // Extract description
-    const parts = content.split('---');
-    const description =
-      parts.length >= 3 ? parts.slice(2).join('---').trim() : '';
-
-    return {
-      type: versionTypeMatch[1],
-      description,
-      mtime: stats.mtime,
-    };
+    content = readFileSync(filePath, 'utf-8');
+    stats = statSync(filePath);
   } catch (error) {
-    console.warn(`Warning: Failed to parse ${filePath}: ${error.message}`);
-    return null;
+    throw new Error(`Failed to read ${filePath}: ${error.message}`);
   }
+
+  // Extract version type - support both quoted and unquoted package names
+  const versionTypeRegex = getChangesetVersionTypeRegex(packageName, {
+    requireQuotes: false,
+  });
+  const versionTypeMatch = content.match(versionTypeRegex);
+
+  if (!versionTypeMatch) {
+    throw new Error(
+      `Could not parse version type from ${filePath}. Expected a changeset header like ${formatChangesetHeader(
+        packageName,
+        'patch'
+      )} with version type major, minor, or patch.`
+    );
+  }
+
+  // Extract description
+  const parts = content.split('---');
+  const description =
+    parts.length >= 3 ? parts.slice(2).join('---').trim() : '';
+
+  return {
+    type: versionTypeMatch[1],
+    description,
+    mtime: stats.mtime,
+  };
 }
 
 /**
@@ -271,4 +276,12 @@ function main() {
   console.log(`\nMerged changeset content:\n${mergedContent}`);
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  console.error(`::error::${error.message}`);
+  if (process.env.DEBUG) {
+    console.error('Stack trace:', error.stack);
+  }
+  process.exit(1);
+}
