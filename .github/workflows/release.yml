@@ -447,6 +447,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-to-npm.mjs --should-pull
 
+      - name: Smoke-test published npm package
+        if: steps.publish.outputs.published == 'true'
+        run: node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
+
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
         env:
@@ -506,6 +510,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-to-npm.mjs
+
+      - name: Smoke-test published npm package
+        if: steps.publish.outputs.published == 'true'
+        run: node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'

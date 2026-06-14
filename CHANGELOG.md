@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.9
+
+### Patch Changes
+
+- 49a8205: Add a post-publish smoke test that installs the just-published npm package in a clean project and verifies its entry points.
+
 ## 0.11.8
 
 ### Patch Changes
