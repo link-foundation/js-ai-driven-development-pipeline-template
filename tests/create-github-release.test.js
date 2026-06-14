@@ -21,6 +21,7 @@ import { fileURLToPath, URL } from 'node:url';
 import {
   buildReleasePayload,
   createRelease,
+  extractReleaseNotes,
   GITHUB_RELEASE_BODY_MAX_BYTES,
   parseArgs,
 } from '../scripts/create-github-release.mjs';
@@ -199,6 +200,23 @@ function createSpawnRecorder(result) {
 function getUtf8ByteLength(value) {
   return textEncoder.encode(value).byteLength;
 }
+
+describe('create-github-release release note extraction', () => {
+  it('extracts notes for an exact version header instead of a prefix match', () => {
+    const changelog = `# Changelog
+
+## 1.2.3
+
+- newer notes
+
+## 1.2
+
+- older notes
+`;
+
+    expect(extractReleaseNotes(changelog, '1.2')).toBe('- older notes');
+  });
+});
 
 describe('create-github-release release title formatting', () => {
   it('parses language from CLI arguments and environment defaults', () => {
