@@ -1,6 +1,6 @@
 {
   "name": "@link-foundation/example-package-name",
-  "version": "0.11.8",
+  "version": "0.11.9",
   "description": "A JavaScript/TypeScript package template for AI-driven development",
   "type": "module",
   "main": "src/index.js",
