@@ -1,16 +1,7 @@
+import { normalizeReleaseVersion } from './release-naming.mjs';
+
 export function normalizeReleaseVersionForBadge(releaseVersion) {
-  const trimmedVersion = releaseVersion.trim();
-  const semverTagMatch = trimmedVersion.match(
-    /(?:^|-)v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/i
-  );
-
-  if (semverTagMatch) {
-    return semverTagMatch[1];
-  }
-
-  return trimmedVersion
-    .replace(/^[A-Za-z][A-Za-z0-9]*-/, '')
-    .replace(/^v/i, '');
+  return normalizeReleaseVersion(releaseVersion);
 }
 
 export function encodeShieldsStaticBadgeSegment(value) {
