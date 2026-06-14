@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.12
+
+### Patch Changes
+
+- 89fb151: Ignore stray Markdown files when checking for pending changesets.
+
 ## 0.11.11
 
 ### Patch Changes
