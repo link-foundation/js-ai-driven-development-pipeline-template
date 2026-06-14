@@ -58,6 +58,16 @@ function evaluateWorkflowIf(expression, context) {
   )(context);
 }
 
+function expectOrdered(text, markers) {
+  let lastIndex = -1;
+
+  for (const marker of markers) {
+    const index = text.indexOf(marker);
+    expect(index).toBeGreaterThan(lastIndex);
+    lastIndex = index;
+  }
+}
+
 function createTestJobContext({
   eventName = 'pull_request',
   outputs = {},
@@ -216,6 +226,24 @@ describe('npm publish token bootstrap (issue #77)', () => {
 
       expect(job).toContain('node scripts/publish-to-npm.mjs');
       expect(job).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}');
+    });
+  }
+});
+
+describe('install-from-package smoke test (issue #81)', () => {
+  for (const jobName of ['release', 'instant-release']) {
+    it(`smoke-tests the published npm package in the ${jobName} job`, () => {
+      const workflow = readWorkflow('.github/workflows/release.yml');
+      const job = getJobBlock(workflow, jobName);
+
+      expectOrdered(job, [
+        '- name: Publish to npm',
+        '- name: Smoke-test published npm package',
+        '- name: Create GitHub Release',
+      ]);
+      expect(job).toContain(
+        'node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"'
+      );
     });
   }
 });
