@@ -66,13 +66,22 @@ function prependPath(env, binPath) {
   };
 }
 
-function createFixture() {
+function createFixture({ jsRoot = '.' } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'create-release-'));
   const binPath = path.join(root, 'bin');
+  const packageRoot = jsRoot === '.' ? root : path.join(root, jsRoot);
 
   mkdirSync(binPath, { recursive: true });
+  mkdirSync(packageRoot, { recursive: true });
   writeFileSync(
-    path.join(root, 'CHANGELOG.md'),
+    path.join(packageRoot, 'package.json'),
+    JSON.stringify({
+      name: jsRoot === '.' ? 'fixture-package' : '@scope/js-package',
+      version: '1.2.3',
+    })
+  );
+  writeFileSync(
+    path.join(packageRoot, 'CHANGELOG.md'),
     `# Changelog
 
 ## 1.2.3
@@ -194,32 +203,36 @@ function getUtf8ByteLength(value) {
 describe('create-github-release release title formatting', () => {
   it('parses language from CLI arguments and environment defaults', () => {
     expect(parseArgs([], {})).toEqual({
+      jsRoot: '',
       language: 'JavaScript',
       releaseVersion: '',
       repository: '',
-      tagPrefix: 'v',
+      tagPrefix: undefined,
     });
     expect(parseArgs([], { LANGUAGE: 'TypeScript' })).toEqual({
+      jsRoot: '',
       language: 'TypeScript',
       releaseVersion: '',
       repository: '',
-      tagPrefix: 'v',
+      tagPrefix: undefined,
     });
     expect(parseArgs(['--language', 'JavaScript'], {})).toEqual({
+      jsRoot: '',
       language: 'JavaScript',
       releaseVersion: '',
       repository: '',
-      tagPrefix: 'v',
+      tagPrefix: undefined,
     });
     expect(parseArgs(['--language=Rust'], {})).toEqual({
+      jsRoot: '',
       language: 'Rust',
       releaseVersion: '',
       repository: '',
-      tagPrefix: 'v',
+      tagPrefix: undefined,
     });
   });
 
-  it('builds a human-readable release name from a language-prefixed tag', () => {
+  it('builds a human-readable release name from a multi-language tag', () => {
     const changelog = `# Changelog
 
 ## 1.2.3
@@ -231,13 +244,15 @@ describe('create-github-release release title formatting', () => {
       JSON.parse(
         buildReleasePayload({
           changelog,
+          jsRoot: 'js',
           language: 'JavaScript',
-          tag: 'js-v1.2.3',
+          packageName: '@scope/js-package',
+          tag: 'js_v1.2.3',
           version: '1.2.3',
         })
       )
     ).toEqual({
-      tag_name: 'js-v1.2.3',
+      tag_name: 'js_v1.2.3',
       name: '[JavaScript] 1.2.3',
       body: '- Fix release creation',
     });
@@ -375,7 +390,7 @@ describe('create-github-release.mjs', () => {
         ]);
         expect(JSON.parse(readFileSync(payloadFile, 'utf8'))).toEqual({
           tag_name: 'v1.2.3',
-          name: '[JavaScript] 1.2.3',
+          name: 'fixture-package 1.2.3',
           body: '### Patch Changes\n\n- Fix release creation',
         });
       } finally {
@@ -383,23 +398,18 @@ describe('create-github-release.mjs', () => {
       }
     });
 
-    it('passes a human-readable release name for language-prefixed tags', () => {
-      const root = createFixture();
+    it('auto-detects multi-language release tags and titles', () => {
+      const root = createFixture({ jsRoot: 'js' });
 
       try {
-        const { payloadFile, result } = runCreateRelease(root, 'success', [
-          '--tag-prefix',
-          'js-v',
-          '--language',
-          'JavaScript',
-        ]);
+        const { payloadFile, result } = runCreateRelease(root, 'success');
 
         expect(result.status).toBe(0);
         expect(result.stdout).toContain(
-          'Creating GitHub release for js-v1.2.3'
+          'Creating GitHub release for js_v1.2.3'
         );
         expect(JSON.parse(readFileSync(payloadFile, 'utf8'))).toEqual({
-          tag_name: 'js-v1.2.3',
+          tag_name: 'js_v1.2.3',
           name: '[JavaScript] 1.2.3',
           body: '### Patch Changes\n\n- Fix release creation',
         });

@@ -2,11 +2,12 @@
 
 /**
  * Create GitHub Release from CHANGELOG.md
- * Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>]
+ * Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>] [--js-root <path>]
  *   release-version: Version number (e.g., 1.0.0)
  *   repository: GitHub repository (e.g., owner/repo)
- *   tag-prefix: Prefix for the git tag (default: "v", use "js-v" for multi-language repos)
+ *   tag-prefix: Prefix for the git tag (default: auto-detect from layout)
  *   language: Human-readable language name for the release title (default: "JavaScript")
+ *   js-root: JavaScript package root directory (auto-detected if not specified)
  */
 
 import { spawnSync } from 'node:child_process';
@@ -14,8 +15,23 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { getJsRoot } from './js-paths.mjs';
+import { readPackageInfo } from './package-info.mjs';
+import {
+  buildReleaseTag,
+  buildReleaseTitle,
+  normalizeReleaseVersion,
+} from './release-naming.mjs';
+
 const USAGE =
-  'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>]';
+  'Usage: node scripts/create-github-release.mjs --release-version <version> --repository <repository> [--tag-prefix <prefix>] [--language <language>] [--js-root <path>]';
+const OPTION_CONFIG_KEYS = new Map([
+  ['--release-version', 'releaseVersion'],
+  ['--repository', 'repository'],
+  ['--tag-prefix', 'tagPrefix'],
+  ['--language', 'language'],
+  ['--js-root', 'jsRoot'],
+]);
 
 // Keep comfortably below GitHub's observed 125000-character release body limit.
 export const GITHUB_RELEASE_BODY_MAX_BYTES = 120_000;
@@ -23,39 +39,41 @@ const textEncoder = new globalThis.TextEncoder();
 
 export function parseArgs(argv, env = process.env) {
   const config = {
+    jsRoot: env.JS_ROOT ?? '',
     language: env.LANGUAGE ?? 'JavaScript',
     releaseVersion: env.VERSION ?? '',
     repository: env.REPOSITORY ?? '',
-    tagPrefix: env.TAG_PREFIX ?? 'v',
+    tagPrefix: env.TAG_PREFIX,
   };
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
+    const inlineValueIndex = arg.indexOf('=');
 
-    if (arg === '--release-version') {
-      config.releaseVersion = readOptionValue(argv, index, arg);
+    if (inlineValueIndex !== -1) {
+      assignOptionValue(
+        config,
+        arg.slice(0, inlineValueIndex),
+        arg.slice(inlineValueIndex + 1)
+      );
+      continue;
+    }
+
+    if (OPTION_CONFIG_KEYS.has(arg)) {
+      assignOptionValue(config, arg, readOptionValue(argv, index, arg));
       index++;
-    } else if (arg.startsWith('--release-version=')) {
-      config.releaseVersion = arg.slice('--release-version='.length);
-    } else if (arg === '--repository') {
-      config.repository = readOptionValue(argv, index, arg);
-      index++;
-    } else if (arg.startsWith('--repository=')) {
-      config.repository = arg.slice('--repository='.length);
-    } else if (arg === '--tag-prefix') {
-      config.tagPrefix = readOptionValue(argv, index, arg);
-      index++;
-    } else if (arg.startsWith('--tag-prefix=')) {
-      config.tagPrefix = arg.slice('--tag-prefix='.length);
-    } else if (arg === '--language') {
-      config.language = readOptionValue(argv, index, arg);
-      index++;
-    } else if (arg.startsWith('--language=')) {
-      config.language = arg.slice('--language='.length);
     }
   }
 
   return config;
+}
+
+function assignOptionValue(config, optionName, value) {
+  const configKey = OPTION_CONFIG_KEYS.get(optionName);
+
+  if (configKey) {
+    config[configKey] = value;
+  }
 }
 
 function readOptionValue(argv, index, optionName) {
@@ -86,26 +104,6 @@ export function extractReleaseNotes(changelog, version) {
   const releaseNotes = match[0].replace(`## ${version}`, '').trim();
 
   return releaseNotes || `Release ${version}`;
-}
-
-export function normalizeReleaseVersionForTitle(releaseVersion) {
-  const trimmedVersion = releaseVersion.trim();
-  const semverTagMatch = trimmedVersion.match(
-    /(?:^|[-_])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/i
-  );
-
-  if (semverTagMatch) {
-    return semverTagMatch[1];
-  }
-
-  return trimmedVersion
-    .replace(/^[A-Za-z][A-Za-z0-9]*[-_]/, '')
-    .replace(/^v/i, '');
-}
-
-export function buildReleaseTitle(language, releaseVersion) {
-  const titleLanguage = language.trim() || 'JavaScript';
-  return `[${titleLanguage}] ${normalizeReleaseVersionForTitle(releaseVersion)}`;
 }
 
 function getUtf8ByteLength(value) {
@@ -171,16 +169,23 @@ export function limitReleaseNotesBytes({
 
 export function buildReleasePayload({
   changelog,
+  jsRoot = '.',
   language,
+  packageName,
   repository,
   tag,
   version,
 }) {
-  const releaseNotes = extractReleaseNotes(changelog, version);
+  const normalizedVersion = normalizeReleaseVersion(version);
+  const releaseNotes = extractReleaseNotes(changelog, normalizedVersion);
 
   return JSON.stringify({
     tag_name: tag,
-    name: buildReleaseTitle(language ?? 'JavaScript', tag),
+    name: buildReleaseTitle(tag, {
+      jsRoot,
+      language: language ?? 'JavaScript',
+      packageName,
+    }),
     body: limitReleaseNotesBytes({ releaseNotes, repository, tag }),
   });
 }
@@ -245,6 +250,7 @@ export function main({
   try {
     const {
       language,
+      jsRoot: configuredJsRoot,
       releaseVersion: version,
       repository,
       tagPrefix,
@@ -256,17 +262,24 @@ export function main({
       return 1;
     }
 
-    const tag = `${tagPrefix}${version}`;
+    const jsRoot = getJsRoot({ jsRoot: configuredJsRoot || undefined });
+    const tag = buildReleaseTag(version, { jsRoot, tagPrefix });
+    const normalizedVersion = normalizeReleaseVersion(version);
+    const { name: packageName } = readPackageInfo({ jsRoot });
 
     stdout(`Creating GitHub release for ${tag}...`);
 
-    const changelog = readFileSync(path.join(cwd, 'CHANGELOG.md'), 'utf8');
+    const changelogPath =
+      jsRoot === '.' ? 'CHANGELOG.md' : path.join(jsRoot, 'CHANGELOG.md');
+    const changelog = readFileSync(path.join(cwd, changelogPath), 'utf8');
     const payload = buildReleasePayload({
       changelog,
+      jsRoot,
       language,
+      packageName,
       repository,
       tag,
-      version,
+      version: normalizedVersion,
     });
     const result = createRelease({ payload, repository, spawn });
 
