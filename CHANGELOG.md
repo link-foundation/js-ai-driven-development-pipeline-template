@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.11
+
+### Patch Changes
+
+- d2e3932: Require exact changelog version headers when extracting GitHub release notes.
+- e7356e9: Fail release-time changeset merging when any pending changeset is malformed.
+
 ## 0.11.10
 
 ### Patch Changes

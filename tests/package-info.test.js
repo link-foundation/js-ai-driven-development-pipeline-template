@@ -48,6 +48,12 @@ describe('package info helpers', () => {
     expect(regex.test("---\n'my-package': minor\n---")).toBe(false);
   });
 
+  it('does not match version type prefixes as valid changeset bumps', () => {
+    const regex = getChangesetVersionTypeRegex('@scope/real-package');
+
+    expect(regex.test("---\n'@scope/real-package': patches\n---")).toBe(false);
+  });
+
   it('reports missing package names clearly', () => {
     let errorMessage = '';
 

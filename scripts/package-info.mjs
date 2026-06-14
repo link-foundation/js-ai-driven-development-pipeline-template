@@ -71,7 +71,7 @@ export function getChangesetVersionTypeRegex(
 ) {
   const quotePattern = requireQuotes ? '[\'"]' : '[\'"]?';
   return new RegExp(
-    `^${quotePattern}${escapeRegExp(packageName)}${quotePattern}:\\s+(major|minor|patch)`,
+    `^${quotePattern}${escapeRegExp(packageName)}${quotePattern}:\\s+(major|minor|patch)\\s*$`,
     'm'
   );
 }
