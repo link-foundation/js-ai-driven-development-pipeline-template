@@ -1,6 +1,13 @@
 import js from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
 import prettierPlugin from 'eslint-plugin-prettier';
+import noChangelogCommentsRule from './eslint-rules/no-changelog-comments.js';
+
+const localPlugin = {
+  rules: {
+    'no-changelog-comments': noChangelogCommentsRule,
+  },
+};
 
 export default [
   js.configs.recommended,
@@ -8,6 +15,7 @@ export default [
   {
     files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
     plugins: {
+      local: localPlugin,
       prettier: prettierPlugin,
     },
     languageOptions: {
@@ -57,6 +65,7 @@ export default [
       'require-await': 'warn',
 
       // Comments and documentation
+      'local/no-changelog-comments': 'warn',
       'spaced-comment': ['error', 'always', { markers: ['/'] }],
 
       // Complexity rules - reasonable thresholds for maintainability
