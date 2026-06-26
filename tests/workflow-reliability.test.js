@@ -120,6 +120,22 @@ describe('workflow reliability policy', () => {
     }
   });
 
+  it('excludes Vite source HTML from raw lychee file scans', () => {
+    const linksWorkflow = readWorkflow('.github/workflows/links.yml');
+    const viteSourceHtmlPath = 'examples/universal-app/index.html';
+    const viteSourceHtml = readWorkflow(viteSourceHtmlPath);
+
+    expect(viteSourceHtml).toContain('href="/favicon.svg"');
+    expect(viteSourceHtml).toContain('src="/src/main.js"');
+    expect(linksWorkflow).toContain(`--exclude-path ${viteSourceHtmlPath}`);
+    expectOrdered(linksWorkflow, [
+      '--exclude-path docs/case-studies',
+      `--exclude-path ${viteSourceHtmlPath}`,
+      "'./**/*.md'",
+      "'./**/*.html'",
+    ]);
+  });
+
   it('uploads preview regeneration artifacts when screenshot rendering fails', () => {
     const exampleAppWorkflow = readWorkflow(
       '.github/workflows/example-app.yml'
@@ -141,7 +157,7 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).toContain('if-no-files-found: ignore');
   });
 
-  it('uses the official Playwright image for preview regeneration instead of downloading Chromium', () => {
+  it('uses the official Playwright image for preview regeneration with browser downloads disabled', () => {
     const exampleAppWorkflow = readWorkflow(
       '.github/workflows/example-app.yml'
     );
@@ -214,7 +230,7 @@ describe('release workflow change gates', () => {
   });
 });
 
-describe('npm publish token bootstrap (issue #77)', () => {
+describe('npm publish token bootstrap', () => {
   // The first publish of a brand-new package cannot use OIDC trusted publishing
   // (npm returns E404 because a trusted publisher can only be configured for an
   // existing package). Every Publish-to-npm step must therefore expose an
@@ -230,7 +246,7 @@ describe('npm publish token bootstrap (issue #77)', () => {
   }
 });
 
-describe('install-from-package smoke test (issue #81)', () => {
+describe('install-from-package smoke test', () => {
   for (const jobName of ['release', 'instant-release']) {
     it(`smoke-tests the published npm package in the ${jobName} job`, () => {
       const workflow = readWorkflow('.github/workflows/release.yml');
