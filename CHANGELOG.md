@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.13
+
+### Patch Changes
+
+- Add a warning-level ESLint rule for changelog-style comments and strings.
+
+  Detect code changes from real merge commits pushed to main with the first-parent
+  merge diff while preserving pull request synthetic merge behavior.
+
 ## 0.11.12
 
 ### Patch Changes
