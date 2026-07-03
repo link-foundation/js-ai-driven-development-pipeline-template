@@ -14,11 +14,6 @@
  * - use-m: Dynamic package loading without package.json dependencies
  * - command-stream: Modern shell command execution with streaming support
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
- *
- * Addresses issues documented in:
- * - Issue #21: Supporting both single and multi-language repository structures
- * - Reference: link-assistant/agent PR #112 (--legacy-peer-deps fix)
- * - Reference: link-assistant/agent PR #114 (configurable package root)
  */
 
 import { readFileSync, appendFileSync, readdirSync } from 'fs';
@@ -264,8 +259,9 @@ async function main() {
       const escapedMessage = commitMessage.replace(/"/g, '\\"');
       await $`git commit -m "${escapedMessage}"`;
 
-      // Push directly to main
-      await $`git push origin main`;
+      // Push directly to main, rebasing and retrying if another main writer won
+      // the race between this commit and the push.
+      await $`bash scripts/push-main-with-rebase-retry.sh`;
 
       console.log('\u2705 Version bump committed and pushed to main');
       setOutput('version_committed', 'true');

@@ -373,6 +373,9 @@ jobs:
     # Typical run is well under 10min. 30min gives npm and GitHub
     # release APIs room for retries without allowing a 6h hang.
     timeout-minutes: 30
+    concurrency:
+      group: main-writer-${{ github.repository }}-main
+      cancel-in-progress: false
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
     # This is needed because lint/test jobs have a transitive dependency on changeset-check
     if: |
@@ -472,6 +475,9 @@ jobs:
     runs-on: ubuntu-latest
     # Same publish envelope as the automated release path.
     timeout-minutes: 30
+    concurrency:
+      group: main-writer-${{ github.repository }}-main
+      cancel-in-progress: false
     # Permissions required for npm OIDC trusted publishing
     permissions:
       contents: write

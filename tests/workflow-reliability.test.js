@@ -68,6 +68,12 @@ function expectOrdered(text, markers) {
   }
 }
 
+function expectMainWriterConcurrency(jobBlock) {
+  expect(jobBlock).toContain(
+    '    concurrency:\n      group: main-writer-${{ github.repository }}-main\n      cancel-in-progress: false'
+  );
+}
+
 function createTestJobContext({
   eventName = 'pull_request',
   outputs = {},
@@ -173,6 +179,32 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).toContain("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'");
     expect(previewRegenJob).not.toContain('npx playwright install');
     expect(previewRegenJob).not.toContain('~/.cache/ms-playwright');
+  });
+
+  it('serializes main writers and retries generated pushes after rebasing', () => {
+    const exampleAppWorkflow = readWorkflow(
+      '.github/workflows/example-app.yml'
+    );
+    const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
+    const pushHelper = readWorkflow('scripts/push-main-with-rebase-retry.sh');
+    const versionAndCommit = readWorkflow('scripts/version-and-commit.mjs');
+    const previewRegenJob = getJobBlock(exampleAppWorkflow, 'preview-regen');
+    const releaseJob = getJobBlock(releaseWorkflow, 'release');
+    const instantReleaseJob = getJobBlock(releaseWorkflow, 'instant-release');
+
+    expectMainWriterConcurrency(previewRegenJob);
+    expectMainWriterConcurrency(releaseJob);
+    expectMainWriterConcurrency(instantReleaseJob);
+    expect(previewRegenJob).toContain(
+      'bash scripts/push-main-with-rebase-retry.sh'
+    );
+    expect(previewRegenJob).not.toContain('git push origin HEAD:main');
+    expect(versionAndCommit).toContain(
+      'bash scripts/push-main-with-rebase-retry.sh'
+    );
+    expect(versionAndCommit).not.toContain('git push origin main');
+    expect(pushHelper).toContain('git push "$remote" "HEAD:$branch"');
+    expect(pushHelper).toContain('git pull --rebase "$remote" "$branch"');
   });
 
   it('verifies desktop package output before uploading artifacts', () => {

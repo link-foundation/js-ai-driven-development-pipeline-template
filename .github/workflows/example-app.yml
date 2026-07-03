@@ -216,6 +216,9 @@ jobs:
       # Keep this tag in sync with the playwright package version below.
       image: mcr.microsoft.com/playwright:v1.59.1-noble
     timeout-minutes: 20
+    concurrency:
+      group: main-writer-${{ github.repository }}-main
+      cancel-in-progress: false
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
@@ -272,7 +275,7 @@ jobs:
           # [skip ci] prevents an infinite re-run loop; the next push to main
           # will pick up these fresh images for the regular pages-build.
           git commit -m "chore(preview): regenerate example-app preview images [skip ci]"
-          git push origin HEAD:main
+          bash scripts/push-main-with-rebase-retry.sh
 
       - name: Upload screenshot failure artifacts
         if: failure()
