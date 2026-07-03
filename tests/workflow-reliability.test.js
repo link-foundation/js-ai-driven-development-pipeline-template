@@ -278,6 +278,22 @@ describe('npm publish token bootstrap', () => {
   }
 });
 
+describe('npm user config cleanup', () => {
+  for (const jobName of ['release', 'instant-release']) {
+    it(`removes deprecated always-auth before npm commands in the ${jobName} job`, () => {
+      const workflow = readWorkflow('.github/workflows/release.yml');
+      const job = getJobBlock(workflow, jobName);
+
+      expectOrdered(job, [
+        'uses: actions/setup-node@v6',
+        '- name: Remove deprecated npm auth config',
+        '- name: Install dependencies',
+      ]);
+      expect(job).toContain('run: node scripts/sanitize-npm-userconfig.mjs');
+    });
+  }
+});
+
 describe('install-from-package smoke test', () => {
   for (const jobName of ['release', 'instant-release']) {
     it(`smoke-tests the published npm package in the ${jobName} job`, () => {

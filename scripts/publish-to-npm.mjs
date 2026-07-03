@@ -23,7 +23,8 @@
 import { appendFileSync } from 'fs';
 
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
-import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
+import { isPackageVersionPublished } from './npm-registry.mjs';
+import { readPackageInfo } from './package-info.mjs';
 import {
   buildAuthFailureGuidance,
   isNonRetryableFailure,
@@ -108,19 +109,12 @@ function detectPublishFailure(output) {
 /**
  * Verify that a package version is published on npm
  * Reference: link-assistant/agent PR #116
- * @param {Function} shell
  * @param {string} packageName
  * @param {string} version
  * @returns {Promise<boolean>}
  */
-async function verifyPublished(shell, packageName, version) {
-  const result =
-    await shell`npm view "${formatNpmPackageVersion(packageName, version)}" version`.run(
-      {
-        capture: true,
-      }
-    );
-  return result.code === 0 && result.stdout.trim().includes(version);
+function verifyPublished(packageName, version) {
+  return isPackageVersionPublished(packageName, version);
 }
 
 /**
@@ -247,7 +241,7 @@ async function attemptPublish(
   // Verify the package is actually on npm (ultimate verification)
   console.log('Verifying package was published to npm...');
   await sleep(2000); // Wait for npm registry to propagate
-  const isPublished = await verifyPublished(shell, packageName, currentVersion);
+  const isPublished = await verifyPublished(packageName, currentVersion);
 
   if (isPublished) {
     return { success: true, error: null };
@@ -278,16 +272,12 @@ async function main() {
     console.log(
       `Checking if version ${currentVersion} is already published...`
     );
-    const checkResult =
-      await $`npm view "${formatNpmPackageVersion(packageName, currentVersion)}" version`.run(
-        {
-          capture: true,
-        }
-      );
+    const isAlreadyPublished = await isPackageVersionPublished(
+      packageName,
+      currentVersion
+    );
 
-    // command-stream returns { code: 0 } on success, { code: 1 } on failure (e.g., E404)
-    // Exit code 0 means version exists, non-zero means version not found
-    if (checkResult.code === 0) {
+    if (isAlreadyPublished) {
       console.log(`Version ${currentVersion} is already published to npm`);
       setOutput('published', 'true');
       setOutput('published_version', currentVersion);

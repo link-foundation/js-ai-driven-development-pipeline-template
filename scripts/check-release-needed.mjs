@@ -37,9 +37,9 @@
  */
 
 import { appendFileSync } from 'fs';
-import { execSync } from 'child_process';
 
 import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+import { isPackageVersionPublished } from './npm-registry.mjs';
 import { readPackageInfo } from './package-info.mjs';
 
 const jsRootConfig = parseJsRootConfig();
@@ -70,21 +70,13 @@ function getPackageInfo() {
  * Check if a specific version is published on npm
  * @param {string} packageName
  * @param {string} version
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
 function checkVersionOnNpm(packageName, version) {
-  try {
-    const result = execSync(`npm view "${packageName}@${version}" version`, {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return result.trim().includes(version);
-  } catch {
-    return false;
-  }
+  return isPackageVersionPublished(packageName, version);
 }
 
-function main() {
+async function main() {
   const hasChangesets = process.env.HAS_CHANGESETS === 'true';
   const { name: packageName, version: currentVersion } = getPackageInfo();
 
@@ -102,7 +94,7 @@ function main() {
   console.log(
     `Checking if ${packageName}@${currentVersion} is published on npm...`
   );
-  const isPublished = checkVersionOnNpm(packageName, currentVersion);
+  const isPublished = await checkVersionOnNpm(packageName, currentVersion);
   console.log(`Published on npm: ${isPublished}`);
 
   if (isPublished) {
@@ -120,4 +112,7 @@ function main() {
   }
 }
 
-main();
+main().catch((error) => {
+  console.error('Error:', error.message);
+  process.exit(1);
+});
