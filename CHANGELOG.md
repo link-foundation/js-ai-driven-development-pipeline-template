@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.15
+
+### Patch Changes
+
+- f04c820: Quiet release logs by checking npm package versions through the registry HTTP API and removing deprecated setup-node `always-auth` config before publish-job npm commands run.
+
 ## 0.11.14
 
 ### Patch Changes
