@@ -126,6 +126,25 @@ describe('workflow reliability policy', () => {
     }
   });
 
+  it('sets Git default branch config before checkout initializes repositories', () => {
+    const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
+    const gitDefaultBranchEnv = [
+      'env:',
+      "  GIT_CONFIG_COUNT: '1'",
+      '  GIT_CONFIG_KEY_0: init.defaultBranch',
+      '  GIT_CONFIG_VALUE_0: main',
+    ].join('\n');
+
+    expect(releaseWorkflow).toContain(gitDefaultBranchEnv);
+    expectOrdered(releaseWorkflow, [
+      'workflow_dispatch:',
+      gitDefaultBranchEnv,
+      'concurrency:',
+      'jobs:',
+      '- uses: actions/checkout@v6',
+    ]);
+  });
+
   it('excludes Vite source HTML from raw lychee file scans', () => {
     const linksWorkflow = readWorkflow('.github/workflows/links.yml');
     const viteSourceHtmlPath = 'examples/universal-app/index.html';
