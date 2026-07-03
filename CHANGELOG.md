@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.14
+
+### Patch Changes
+
+- 63b31c3: Harden generated preview-image pushes against main branch non-fast-forward races.
+
 ## 0.11.13
 
 ### Patch Changes
