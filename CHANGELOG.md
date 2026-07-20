@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.19
+
+### Patch Changes
+
+- 8608672: Split publish and verification failure domains in `publish-to-npm.mjs`: verification now polls the npm registry with exponential backoff, and a verification miss no longer re-runs `changeset publish`.
+
 ## 0.11.18
 
 ### Patch Changes
