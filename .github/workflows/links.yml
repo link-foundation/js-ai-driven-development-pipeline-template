@@ -25,6 +25,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Least-privilege default; jobs escalate individually when needed.
+permissions:
+  contents: read
+
 jobs:
   link-checker:
     name: Check Links
