@@ -23,7 +23,8 @@
   },
   "scripts": {
     "test": "node --test --test-timeout=30000 tests/*.test.js",
-    "lint": "eslint .",
+    "lint": "node scripts/lint.mjs",
+    "lint:all": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
