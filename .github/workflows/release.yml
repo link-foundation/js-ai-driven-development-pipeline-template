@@ -32,6 +32,11 @@ on:
         required: false
         type: string
 
+# Least-privilege default for the highest-value token in the repository.
+# Every job starts read-only; the publishing jobs escalate individually.
+permissions:
+  contents: read
+
 # Provide Git config to actions/checkout itself; checkout runs git init before
 # any workflow step can configure Git.
 env:
