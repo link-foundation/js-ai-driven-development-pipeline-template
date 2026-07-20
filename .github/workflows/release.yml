@@ -333,6 +333,47 @@ jobs:
         if: matrix.runtime == 'deno'
         run: deno test --allow-read
 
+  # === DOCKER IMAGE BUILD CHECK (pull requests) ===
+  # Builds the Dockerfile without pushing so a broken image fails the pull
+  # request instead of surfacing only after publish (issue #106).
+  # push: false + load: true keeps this working for fork pull requests,
+  # which have no registry credentials. Skipped when no Dockerfile exists.
+  docker-build:
+    name: Docker Image Build Check
+    runs-on: ubuntu-latest
+    # Typical run: a few minutes with a warm GHA layer cache. 30min covers
+    # a cold, uncached build without allowing a 6h hang.
+    timeout-minutes: 30
+    needs: [detect-changes]
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
+    permissions:
+      contents: read
+    env:
+      DOCKER_CONTEXT: ${{ vars.DOCKER_CONTEXT }}
+      DOCKERFILE: ${{ vars.DOCKERFILE }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check Docker build configuration
+        id: docker_config
+        run: node scripts/check-docker-build.mjs
+
+      - name: Set up Docker Buildx (resilient)
+        if: steps.docker_config.outputs.enabled == 'true'
+        uses: ./.github/actions/setup-buildx-resilient
+
+      - name: Build Docker image (no push)
+        if: steps.docker_config.outputs.enabled == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ steps.docker_config.outputs.context }}
+          file: ${{ steps.docker_config.outputs.dockerfile }}
+          push: false
+          load: true
+          tags: pr-check:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # === DOCUMENTATION VALIDATION ===
   # Validate documentation files when docs change (hive-mind principle #12)
   validate-docs:
