@@ -101,6 +101,17 @@ export default [
     },
   },
   {
+    // Case studies preserve historical wording on purpose, and the rule's own
+    // tests contain fixtures the rule is designed to flag.
+    files: [
+      'docs/case-studies/**/*.{js,mjs,cjs}',
+      'tests/no-changelog-comments.test.js',
+    ],
+    rules: {
+      'local/no-changelog-comments': 'off',
+    },
+  },
+  {
     ignores: [
       'node_modules/**',
       '**/node_modules/**',
