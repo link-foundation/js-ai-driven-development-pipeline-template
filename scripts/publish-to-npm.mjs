@@ -14,10 +14,8 @@
  * - command-stream: Modern shell command execution with streaming support
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
  *
- * Addresses issues documented in:
- * - Issue #21: Supporting both single and multi-language repository structures
- * - Reference: link-assistant/agent PR #112 (--legacy-peer-deps fix)
- * - Reference: link-assistant/agent PR #114 (configurable package root)
+ * Supports both single and multi-language repository structures via a
+ * configurable package root.
  */
 
 import { appendFileSync } from 'fs';
@@ -29,6 +27,11 @@ import {
   buildAuthFailureGuidance,
   isNonRetryableFailure,
 } from './publish-failure-classifier.mjs';
+import {
+  isAlreadyPublishedError,
+  publishWithRetry,
+  sleep,
+} from './publish-retry.mjs';
 
 // Load use-m dynamically
 const { use } = eval(
@@ -70,7 +73,7 @@ const RETRY_DELAY = 10000; // 10 seconds
 const originalCwd = process.cwd();
 
 // Patterns that indicate publish failure in changeset output
-// Reference: link-assistant/agent PR #116 - prevent false positives in CI/CD
+// Guards against false positives in CI/CD output parsing.
 const FAILURE_PATTERNS = [
   'packages failed to publish',
   'error occurred while publishing',
@@ -83,16 +86,7 @@ const FAILURE_PATTERNS = [
 ];
 
 /**
- * Sleep for specified milliseconds
- * @param {number} ms
- */
-function sleep(ms) {
-  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
-}
-
-/**
  * Check if the output contains any failure patterns
- * Reference: link-assistant/agent PR #116
  * @param {string} output - Combined stdout and stderr
  * @returns {string|null} - The matched failure pattern or null if no failure detected
  */
@@ -108,7 +102,6 @@ function detectPublishFailure(output) {
 
 /**
  * Verify that a package version is published on npm
- * Reference: link-assistant/agent PR #116
  * @param {string} packageName
  * @param {string} version
  * @returns {Promise<boolean>}
@@ -165,7 +158,6 @@ async function runChangesetPublish(shell, jsRoot, originalCwd) {
 
 /**
  * Analyze publish result for failures using multi-layer detection
- * Reference: link-assistant/agent PR #116
  * @param {object|null} publishResult - The result from runChangesetPublish
  * @param {Error|null} commandError - Error thrown by the command
  * @returns {Error|null} - Error if failure detected, null otherwise
@@ -201,57 +193,37 @@ function analyzePublishResult(publishResult, commandError) {
 }
 
 /**
- * Perform a single publish attempt with verification
- * @param {string} currentVersion
- * @param {string} packageName
+ * Run a single publish command invocation (no verification).
+ * Verification is a separate failure domain handled by publishWithRetry.
  * @param {Function} shell
  * @param {string} jsRoot
  * @param {string} originalCwd
- * @returns {Promise<{success: boolean, error: Error|null}>}
+ * @returns {Promise<{success: boolean, error: Error|null, output: string}>}
  */
-async function attemptPublish(
-  currentVersion,
-  packageName,
-  shell,
-  jsRoot,
-  originalCwd
-) {
+async function runPublishCommand(shell, jsRoot, originalCwd) {
   const { result, error } = await runChangesetPublish(
     shell,
     jsRoot,
     originalCwd
   );
   const analysisError = analyzePublishResult(result, error);
+  const output = [
+    analysisError?.message || '',
+    result?.stdout || '',
+    result?.stderr || '',
+  ].join('\n');
 
   if (analysisError) {
     // Mark authentication / registry-configuration failures as non-retryable so
-    // the retry loop can fail fast with actionable guidance instead of burning
-    // through MAX_RETRIES (issue #77).
-    const combinedOutput = [
-      analysisError.message || '',
-      result?.stdout || '',
-      result?.stderr || '',
-    ].join('\n');
-    if (isNonRetryableFailure(combinedOutput)) {
+    // the retry loop can fail fast with actionable guidance without burning
+    // through MAX_RETRIES.
+    if (!isAlreadyPublishedError(output) && isNonRetryableFailure(output)) {
       analysisError.nonRetryable = true;
     }
-    return { success: false, error: analysisError };
+    return { success: false, error: analysisError, output };
   }
 
-  // Verify the package is actually on npm (ultimate verification)
-  console.log('Verifying package was published to npm...');
-  await sleep(2000); // Wait for npm registry to propagate
-  const isPublished = await verifyPublished(packageName, currentVersion);
-
-  if (isPublished) {
-    return { success: true, error: null };
-  }
-
-  console.error('Verification failed: package not found on npm after publish');
-  return {
-    success: false,
-    error: new Error('Package not found on npm after publish attempt'),
-  };
+  return { success: true, error: null, output };
 }
 
 async function main() {
@@ -291,43 +263,34 @@ async function main() {
     );
 
     // Publish to npm using OIDC trusted publishing with retry logic
-    // Multi-layer failure detection based on link-assistant/agent PR #116
-    for (let i = 1; i <= MAX_RETRIES; i++) {
-      console.log(`Publish attempt ${i} of ${MAX_RETRIES}...`);
-      const { success, error } = await attemptPublish(
-        currentVersion,
-        packageName,
-        $,
-        jsRoot,
-        originalCwd
-      );
+    // Multi-layer failure detection guards against a publish command that
+    // reports success without actually publishing.
+    //
+    // The publish command is retried only when the publish itself failed.
+    // A verification miss is handled by bounded polling and never triggers a
+    // republish.
+    const { success, error } = await publishWithRetry({
+      publish: () => runPublishCommand($, jsRoot, originalCwd),
+      verify: () => verifyPublished(packageName, currentVersion),
+      maxRetries: MAX_RETRIES,
+      retryDelay: RETRY_DELAY,
+      sleepFn: sleep,
+      log: (message) => console.log(message),
+    });
 
-      if (success) {
-        setOutput('published', 'true');
-        setOutput('published_version', currentVersion);
-        console.log(`\u2705 Published ${packageName}@${currentVersion} to npm`);
-        return;
-      }
-
-      // Authentication / registry-configuration errors will not be fixed by
-      // retrying, so fail fast with actionable guidance instead of burning
-      // through MAX_RETRIES (which previously hid the real cause behind a
-      // generic "Failed to publish after 3 attempts" message). See issue #77.
-      if (error?.nonRetryable) {
-        console.error(`Publish failed: ${error.message}`);
-        console.error(buildAuthFailureGuidance(packageName));
-        process.exit(1);
-      }
-
-      if (i < MAX_RETRIES) {
-        console.log(
-          `Publish failed: ${error.message}, waiting ${RETRY_DELAY / 1000}s before retry...`
-        );
-        await sleep(RETRY_DELAY);
-      }
+    if (success) {
+      setOutput('published', 'true');
+      setOutput('published_version', currentVersion);
+      console.log(`\u2705 Published ${packageName}@${currentVersion} to npm`);
+      return;
     }
 
-    console.error(`\u274C Failed to publish after ${MAX_RETRIES} attempts`);
+    console.error(`\u274C Publish failed: ${error.message}`);
+    // Authentication / registry-configuration errors will not be fixed by
+    // retrying, so print actionable guidance for the operator.
+    if (error?.nonRetryable && !error?.verificationFailed) {
+      console.error(buildAuthFailureGuidance(packageName));
+    }
     process.exit(1);
   } catch (error) {
     // Restore cwd on error
