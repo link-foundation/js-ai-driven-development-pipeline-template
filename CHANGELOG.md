@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.20
+
+### Patch Changes
+
+- dfd681f: Report ESLint warnings only on lines changed relative to the base branch, so unchanged findings such as `local/no-changelog-comments` stop repeating on every run. Errors are still reported for all files.
+
 ## 0.11.19
 
 ### Patch Changes
