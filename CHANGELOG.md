@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.17
+
+### Patch Changes
+
+- ebaa52a: Add a least-privilege top-level `permissions: contents: read` block to `release.yml` and `links.yml` so jobs no longer inherit the repository default `GITHUB_TOKEN` scope, with write access escalated only on the publishing jobs.
+
 ## 0.11.16
 
 ### Patch Changes
