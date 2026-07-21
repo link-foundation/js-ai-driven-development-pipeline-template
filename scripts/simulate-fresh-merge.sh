@@ -37,7 +37,7 @@ echo "Latest base branch ($BASE_REF): $BASE_SHA"
 echo ""
 
 # Check if base branch has new commits not in the merge preview
-BEHIND_COUNT=$(git rev-list --count HEAD..origin/$BASE_REF)
+BEHIND_COUNT=$(git rev-list --count "HEAD..origin/$BASE_REF")
 
 if [ "$BEHIND_COUNT" -eq 0 ]; then
   echo "Merge preview is up-to-date with $BASE_REF. No simulation needed."
@@ -47,7 +47,7 @@ else
   echo ""
 
   # Attempt to merge the latest base branch
-  if git merge origin/$BASE_REF --no-edit; then
+  if git merge "origin/$BASE_REF" --no-edit; then
     echo ""
     echo "Fresh merge simulation successful!"
     echo "Checks will now run against the up-to-date merged state."
