@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.21
+
+### Patch Changes
+
+- 5bf9619: Quote the fresh merge base ref to prevent shell word splitting.
+
 ## 0.11.20
 
 ### Patch Changes
