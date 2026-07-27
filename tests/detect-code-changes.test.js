@@ -66,7 +66,7 @@ function createMergeCommitFixture() {
   return root;
 }
 
-function createExcludedChangeFixture(filePath, eventName) {
+function createChangeFixture(filePath, eventName) {
   const root = mkdtempSync(path.join(tmpdir(), 'detect-code-changes-'));
 
   runGit(root, ['init', '-b', 'main']);
@@ -149,7 +149,7 @@ describe('detect-code-changes CLI', () => {
         'docs/case-studies/issue-113/repro.md',
       ]) {
         it(`ignores ${filePath} changes on ${eventName}`, () => {
-          const root = createExcludedChangeFixture(filePath, eventName);
+          const root = createChangeFixture(filePath, eventName);
 
           try {
             const { outputs, result } = runDetectCodeChanges(root, eventName);
@@ -166,6 +166,24 @@ describe('detect-code-changes CLI', () => {
           }
         });
       }
+    }
+
+    for (const [filePath, expectedOutput] of [
+      ['src/relevant.mjs', 'js-changed=true\n'],
+      ['docs/relevant.md', 'docs-changed=true\n'],
+    ]) {
+      it(`keeps detecting non-ignored ${filePath} changes`, () => {
+        const root = createChangeFixture(filePath, 'push');
+
+        try {
+          const { outputs, result } = runDetectCodeChanges(root, 'push');
+
+          expect(result.status).toBe(0);
+          expect(outputs).toContain(expectedOutput);
+        } finally {
+          rmSync(root, { force: true, recursive: true });
+        }
+      });
     }
   }
 });
