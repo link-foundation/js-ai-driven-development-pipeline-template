@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.22
+
+### Patch Changes
+
+- d0b42fa: Keep excluded-directory changes from activating change-gated CI jobs on pull
+  requests and direct pushes.
+
 ## 0.11.21
 
 ### Patch Changes
