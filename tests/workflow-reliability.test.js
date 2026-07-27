@@ -88,10 +88,8 @@ function createTestJobContext({
       'detect-changes': {
         outputs: {
           'any-code-changed': 'false',
-          'mjs-changed': 'false',
           'js-changed': 'false',
-          'package-changed': 'false',
-          'workflow-changed': 'false',
+          'docs-changed': 'false',
           ...outputs,
         },
       },
@@ -272,13 +270,29 @@ describe('release workflow change gates', () => {
     const workflowPullRequest = createTestJobContext({
       outputs: {
         'any-code-changed': 'true',
-        'workflow-changed': 'true',
       },
       result: 'success',
     });
 
     expect(evaluateWorkflowIf(testCondition, workflowPullRequest)).toBe(true);
   });
+
+  for (const jobName of [
+    'test-compilation',
+    'check-file-line-limits',
+    'lint',
+    'test',
+    'validate-docs',
+  ]) {
+    it(`skips ${jobName} for excluded-only pushes`, () => {
+      const workflow = readWorkflow('.github/workflows/release.yml');
+      const job = getJobBlock(workflow, jobName);
+      const condition = getMultilineIfExpression(job);
+      const excludedOnlyPush = createTestJobContext({ eventName: 'push' });
+
+      expect(evaluateWorkflowIf(condition, excludedOnlyPush)).toBe(false);
+    });
+  }
 });
 
 describe('npm publish token bootstrap', () => {
