@@ -13,19 +13,30 @@
 // This lets PR synchronize runs skip slow checks when the latest PR head
 // commit is docs-only, while real merge pushes still evaluate the whole merge.
 //
-// Excluded from code changes (don't require changesets):
-// - Markdown files in any folder
+// Ignored for every change-gating output:
 // - .changeset/ folder (changeset metadata)
-// - docs/ folder (documentation)
+// - docs/case-studies/ folder (research documents)
+// - dev/log/ folder (development logs)
 // - experiments/ folder (experimental scripts)
 // - examples/ folder (example scripts)
 //
+// Additionally excluded from code changes (don't require changesets):
+// - Markdown files in any folder
+// - docs/ folder (documentation)
+//
 // Outputs (written to GITHUB_OUTPUT):
-//   mjs-changed, js-changed, package-changed, docs-changed,
-//   workflow-changed, any-code-changed
+//   js-changed, docs-changed, any-code-changed
 
 import { execFileSync } from 'child_process';
 import { appendFileSync } from 'fs';
+
+const ignoredPathPrefixes = [
+  '.changeset/',
+  'dev/log/',
+  'docs/case-studies/',
+  'examples/',
+  'experiments/',
+];
 
 function execGit(args) {
   try {
@@ -108,15 +119,7 @@ function isExcludedFromCodeChanges(filePath) {
     return true;
   }
 
-  const excludedFolders = ['.changeset/', 'docs/', 'experiments/', 'examples/'];
-
-  for (const folder of excludedFolders) {
-    if (filePath.startsWith(folder)) {
-      return true;
-    }
-  }
-
-  return false;
+  return filePath.startsWith('docs/');
 }
 
 function detectChanges() {
@@ -132,26 +135,19 @@ function detectChanges() {
   }
   console.log('');
 
-  const mjsChanged = changedFiles.some((file) => file.endsWith('.mjs'));
-  setOutput('mjs-changed', mjsChanged ? 'true' : 'false');
+  const relevantChangedFiles = changedFiles.filter(
+    (file) => !ignoredPathPrefixes.some((prefix) => file.startsWith(prefix))
+  );
 
-  const jsChanged = changedFiles.some(
-    (file) => file.endsWith('.js') || file.endsWith('.cjs')
+  const jsChanged = relevantChangedFiles.some((file) =>
+    /\.(mjs|cjs|js)$/.test(file)
   );
   setOutput('js-changed', jsChanged ? 'true' : 'false');
 
-  const packageChanged = changedFiles.some((file) => file === 'package.json');
-  setOutput('package-changed', packageChanged ? 'true' : 'false');
-
-  const docsChanged = changedFiles.some((file) => file.endsWith('.md'));
+  const docsChanged = relevantChangedFiles.some((file) => file.endsWith('.md'));
   setOutput('docs-changed', docsChanged ? 'true' : 'false');
 
-  const workflowChanged = changedFiles.some((file) =>
-    file.startsWith('.github/workflows/')
-  );
-  setOutput('workflow-changed', workflowChanged ? 'true' : 'false');
-
-  const codeChangedFiles = changedFiles.filter(
+  const codeChangedFiles = relevantChangedFiles.filter(
     (file) => !isExcludedFromCodeChanges(file)
   );
 

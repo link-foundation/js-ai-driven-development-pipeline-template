@@ -63,11 +63,8 @@ jobs:
     timeout-minutes: 5
     if: github.event_name != 'workflow_dispatch'
     outputs:
-      mjs-changed: ${{ steps.changes.outputs.mjs-changed }}
       js-changed: ${{ steps.changes.outputs.js-changed }}
-      package-changed: ${{ steps.changes.outputs.package-changed }}
       docs-changed: ${{ steps.changes.outputs.docs-changed }}
-      workflow-changed: ${{ steps.changes.outputs.workflow-changed }}
       any-code-changed: ${{ steps.changes.outputs.any-code-changed }}
     steps:
       - uses: actions/checkout@v6
@@ -89,8 +86,6 @@ jobs:
     timeout-minutes: 5
     needs: [detect-changes]
     if: |
-      github.event_name == 'push' ||
-      needs.detect-changes.outputs.mjs-changed == 'true' ||
       needs.detect-changes.outputs.js-changed == 'true'
     steps:
       - uses: actions/checkout@v6
@@ -106,11 +101,8 @@ jobs:
     timeout-minutes: 5
     needs: [detect-changes]
     if: |
-      github.event_name == 'push' ||
-      needs.detect-changes.outputs.mjs-changed == 'true' ||
-      needs.detect-changes.outputs.js-changed == 'true' ||
       needs.detect-changes.outputs.docs-changed == 'true' ||
-      needs.detect-changes.outputs.workflow-changed == 'true'
+      needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -200,12 +192,8 @@ jobs:
     timeout-minutes: 10
     needs: [detect-changes]
     if: |
-      github.event_name == 'push' ||
-      needs.detect-changes.outputs.mjs-changed == 'true' ||
-      needs.detect-changes.outputs.js-changed == 'true' ||
       needs.detect-changes.outputs.docs-changed == 'true' ||
-      needs.detect-changes.outputs.package-changed == 'true' ||
-      needs.detect-changes.outputs.workflow-changed == 'true'
+      needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -258,20 +246,13 @@ jobs:
         check-file-line-limits,
       ]
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
-    # Run on pushes, or PRs with code/package/workflow changes that can affect
-    # test results. Skipped fast checks still count as non-failures only after
-    # this positive change-detector gate passes.
+    # Run for relevant code/package/workflow changes that can affect test
+    # results. Skipped fast checks count as non-failures only after this
+    # positive change-detector gate passes.
     if: |
       !cancelled() &&
-      (
-        github.event_name == 'push' ||
-        needs.detect-changes.outputs.any-code-changed == 'true' ||
-        needs.detect-changes.outputs.mjs-changed == 'true' ||
-        needs.detect-changes.outputs.js-changed == 'true' ||
-        needs.detect-changes.outputs.package-changed == 'true' ||
-        needs.detect-changes.outputs.workflow-changed == 'true'
-      ) &&
-      (github.event_name == 'push' || needs.changeset-check.result == 'success' || needs.changeset-check.result == 'skipped') &&
+      needs.detect-changes.outputs.any-code-changed == 'true' &&
+      (needs.changeset-check.result == 'success' || needs.changeset-check.result == 'skipped') &&
       (needs.test-compilation.result == 'success' || needs.test-compilation.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
       (needs.check-file-line-limits.result == 'success' || needs.check-file-line-limits.result == 'skipped')
@@ -383,7 +364,6 @@ jobs:
     timeout-minutes: 5
     needs: [detect-changes]
     if: |
-      github.event_name == 'push' ||
       needs.detect-changes.outputs.docs-changed == 'true'
     steps:
       - uses: actions/checkout@v6

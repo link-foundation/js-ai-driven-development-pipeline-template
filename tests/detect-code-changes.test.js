@@ -66,6 +66,32 @@ function createMergeCommitFixture() {
   return root;
 }
 
+function createExcludedChangeFixture(filePath, eventName) {
+  const root = mkdtempSync(path.join(tmpdir(), 'detect-code-changes-'));
+
+  runGit(root, ['init', '-b', 'main']);
+  runGit(root, ['config', 'user.email', 'ci@example.com']);
+  runGit(root, ['config', 'user.name', 'CI Test']);
+
+  writeFileSync(path.join(root, 'README.md'), '# Fixture\n');
+  commit(root, 'Initial commit');
+
+  if (eventName === 'pull_request') {
+    runGit(root, ['checkout', '-b', 'feature']);
+  }
+
+  mkdirSync(path.dirname(path.join(root, filePath)), { recursive: true });
+  writeFileSync(path.join(root, filePath), 'export const ignored = true;\n');
+  commit(root, 'Add excluded file');
+
+  if (eventName === 'pull_request') {
+    runGit(root, ['checkout', 'main']);
+    runGit(root, ['merge', '--no-ff', 'feature', '-m', 'Synthetic PR merge']);
+  }
+
+  return root;
+}
+
 function runDetectCodeChanges(root, eventName) {
   const outputFile = path.join(root, 'github-output.txt');
   const result = spawnSync(process.execPath, [scriptPath], {
@@ -93,7 +119,7 @@ describe('detect-code-changes CLI', () => {
         const { outputs, result } = runDetectCodeChanges(root, 'push');
 
         expect(result.status).toBe(0);
-        expect(outputs).toContain('mjs-changed=true\n');
+        expect(outputs).toContain('js-changed=true\n');
         expect(outputs).toContain('docs-changed=true\n');
         expect(outputs).toContain('any-code-changed=true\n');
       } finally {
@@ -108,12 +134,38 @@ describe('detect-code-changes CLI', () => {
         const { outputs, result } = runDetectCodeChanges(root, 'pull_request');
 
         expect(result.status).toBe(0);
-        expect(outputs).toContain('mjs-changed=false\n');
+        expect(outputs).toContain('js-changed=false\n');
         expect(outputs).toContain('docs-changed=true\n');
         expect(outputs).toContain('any-code-changed=false\n');
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
     });
+
+    for (const eventName of ['pull_request', 'push']) {
+      for (const filePath of [
+        'experiments/repro.mjs',
+        'dev/log/repro.js',
+        'docs/case-studies/issue-113/repro.md',
+      ]) {
+        it(`ignores ${filePath} changes on ${eventName}`, () => {
+          const root = createExcludedChangeFixture(filePath, eventName);
+
+          try {
+            const { outputs, result } = runDetectCodeChanges(root, eventName);
+
+            expect(result.status).toBe(0);
+            expect(outputs).toContain('js-changed=false\n');
+            expect(outputs).toContain('docs-changed=false\n');
+            expect(outputs).toContain('any-code-changed=false\n');
+            expect(outputs).not.toContain('mjs-changed=');
+            expect(outputs).not.toContain('package-changed=');
+            expect(outputs).not.toContain('workflow-changed=');
+          } finally {
+            rmSync(root, { force: true, recursive: true });
+          }
+        });
+      }
+    }
   }
 });
