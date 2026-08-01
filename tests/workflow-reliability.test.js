@@ -1,8 +1,56 @@
 import { describe, it, expect } from 'test-anywhere';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+
+const WORKFLOW_DIRECTORY = '.github/workflows';
+const SUPPORTED_CONCURRENCY_KEYS = new Set(['group', 'cancel-in-progress']);
 
 function readWorkflow(filePath) {
   return readFileSync(filePath, 'utf8').replaceAll('\r\n', '\n');
+}
+
+function listWorkflowPaths() {
+  return readdirSync(WORKFLOW_DIRECTORY)
+    .filter((fileName) => /\.ya?ml$/.test(fileName))
+    .map((fileName) => `${WORKFLOW_DIRECTORY}/${fileName}`);
+}
+
+function getUnsupportedConcurrencyKeys(workflow) {
+  const lines = workflow.split('\n');
+  const unsupportedKeys = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const concurrency = lines[index].match(/^(\s*)concurrency:\s*$/);
+
+    if (!concurrency) {
+      continue;
+    }
+
+    const keyIndentation = concurrency[1].length + 2;
+
+    for (const line of lines.slice(index + 1)) {
+      if (line.trim() === '' || line.trimStart().startsWith('#')) {
+        continue;
+      }
+
+      const indentation = line.match(/^\s*/)[0].length;
+
+      if (indentation <= concurrency[1].length) {
+        break;
+      }
+
+      if (indentation !== keyIndentation) {
+        continue;
+      }
+
+      const key = line.trimStart().match(/^([a-zA-Z0-9_-]+):/)?.[1];
+
+      if (key && !SUPPORTED_CONCURRENCY_KEYS.has(key)) {
+        unsupportedKeys.push(key);
+      }
+    }
+  }
+
+  return unsupportedKeys;
 }
 
 function getJobBlock(workflow, jobName) {
@@ -112,6 +160,34 @@ function createTestJobContext({
 }
 
 describe('workflow concurrency policy', () => {
+  it('detects unsupported keys in a concurrency block', () => {
+    const invalidWorkflow = [
+      'jobs:',
+      '  publish:',
+      '    concurrency:',
+      '      group: main-writer',
+      '      cancel-in-progress: false',
+      '      queue: max',
+      '    steps: []',
+    ].join('\n');
+
+    expect(getUnsupportedConcurrencyKeys(invalidWorkflow)).toEqual(['queue']);
+  });
+
+  it('uses only keys supported by GitHub Actions', () => {
+    const violations = [];
+
+    for (const workflowPath of listWorkflowPaths()) {
+      const workflow = readWorkflow(workflowPath);
+
+      for (const key of getUnsupportedConcurrencyKeys(workflow)) {
+        violations.push(`${workflowPath}: ${key}`);
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
   it('uses job-level concurrency so stale checks cannot cancel active writers', () => {
     const workflowPaths = [
       '.github/workflows/example-app.yml',

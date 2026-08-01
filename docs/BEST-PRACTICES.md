@@ -110,7 +110,10 @@ Do not apply cancellable concurrency at workflow level when a workflow contains
 write jobs: cancelling the workflow would also terminate a publisher that has
 already started. Likewise, do not use one shared group for every read-only job,
 because unrelated checks would cancel each other instead of running in
-parallel.
+parallel. GitHub Actions concurrency blocks support only `group` and
+`cancel-in-progress`; options such as `queue` are invalid. With
+`cancel-in-progress: false`, GitHub preserves the running job and manages one
+pending job for the group.
 
 See [DETAILED-COMPARISON.md](./case-studies/issue-25/DETAILED-COMPARISON.md) for the full analysis of best practices from both repositories.
 
