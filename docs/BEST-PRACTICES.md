@@ -87,15 +87,30 @@ The workflow implements several critical features from hive-mind issues #1274 an
 #### Concurrency Control
 
 ```yaml
+# Read-only job: newer work on the same ref supersedes stale work.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: check-${{ github.workflow }}-${{ github.ref }}-lint
+  cancel-in-progress: true
+
+# Write/deploy job: all repository writers use one protected queue.
+concurrency:
+  group: main-writer-${{ github.repository }}-main
+  cancel-in-progress: false
 ```
 
-This configuration (implemented in this template) ensures:
+Concurrency is configured at job level rather than workflow level. This
+separation ensures:
 
-- **Main branch**: Runs finish without newer pushes cancelling in-flight release work
-- **PR branches**: Newer pushes cancel stale runs to save CI minutes and avoid racing checks
+- **Read-only jobs**: New pushes cancel stale checks on both pull requests and `main`, reducing runner load.
+- **Dependent writers**: A cancelled prerequisite prevents its release or deploy job from starting.
+- **Active writers**: Release, Docker, Pages, changeset-PR, and generated-preview jobs all share one non-cancelling queue, so a newer workflow cannot interrupt a write already in progress.
+- **Matrix checks**: Runtime and operating-system values are part of the group, preserving parallel matrix execution while cancelling only the matching stale entry.
+
+Do not apply cancellable concurrency at workflow level when a workflow contains
+write jobs: cancelling the workflow would also terminate a publisher that has
+already started. Likewise, do not use one shared group for every read-only job,
+because unrelated checks would cancel each other instead of running in
+parallel.
 
 See [DETAILED-COMPARISON.md](./case-studies/issue-25/DETAILED-COMPARISON.md) for the full analysis of best practices from both repositories.
 

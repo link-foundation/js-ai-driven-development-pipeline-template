@@ -44,15 +44,6 @@ env:
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
 
-# Concurrency: Only one workflow run per branch at a time
-# - For main branch (releases): let runs finish so a newer push does not cancel
-#   an in-flight publish or release update.
-# - For PR branches: cancel older runs so new pushes supersede stale checks.
-# See: docs/case-studies/issue-25/DETAILED-COMPARISON.md for context
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   # === DETECT CHANGES - determines which jobs should run ===
   detect-changes:
@@ -61,6 +52,9 @@ jobs:
     # Typical run: ~6s. Cap at 5min so a hung detection step
     # surfaces quickly instead of stalling the whole pipeline.
     timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-detect-changes
+      cancel-in-progress: true
     if: github.event_name != 'workflow_dispatch'
     outputs:
       js-changed: ${{ steps.changes.outputs.js-changed }}
@@ -84,6 +78,9 @@ jobs:
     runs-on: ubuntu-latest
     # Typical run: <10s. Tight cap fails fast on syntax-check hangs.
     timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-test-compilation
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.js-changed == 'true'
@@ -99,6 +96,9 @@ jobs:
     runs-on: ubuntu-latest
     # Typical run: <10s. This job only walks tracked files and counts lines.
     timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-check-file-line-limits
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.docs-changed == 'true' ||
@@ -127,6 +127,9 @@ jobs:
     runs-on: ubuntu-latest
     # Typical run: ~6s. Read-only package.json diff inspection.
     timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-version-check
+      cancel-in-progress: true
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
@@ -146,6 +149,9 @@ jobs:
     runs-on: ubuntu-latest
     # Typical run: <30s including npm install. 10min covers cold runners.
     timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-changeset-check
+      cancel-in-progress: true
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
@@ -166,10 +172,11 @@ jobs:
           # Pass PR context to the validation script
           GITHUB_BASE_REF: ${{ github.base_ref }}
           GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
           GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Skip changeset check for automated version PRs
-          if [[ "${{ github.head_ref }}" == "changeset-release/"* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == "changeset-release/"* ]]; then
             echo "Skipping changeset check for automated release PR"
             exit 0
           fi
@@ -190,6 +197,9 @@ jobs:
     # Typical run: <1min including install, ESLint, Prettier, jscpd,
     # and secretlint. 10min protects against a hung lint plugin.
     timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-lint
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.docs-changed == 'true' ||
@@ -237,6 +247,9 @@ jobs:
     # sometimes slower on cold starts. 10min fails hung tests well
     # before GitHub Actions' 6h default.
     timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-test-${{ matrix.runtime }}-${{ matrix.os }}
+      cancel-in-progress: true
     needs:
       [
         detect-changes,
@@ -325,6 +338,9 @@ jobs:
     # Typical run: a few minutes with a warm GHA layer cache. 30min covers
     # a cold, uncached build without allowing a 6h hang.
     timeout-minutes: 30
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-docker-build
+      cancel-in-progress: true
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     permissions:
@@ -362,6 +378,9 @@ jobs:
     runs-on: ubuntu-latest
     # Typical run: <10s. Pure shell checks over documentation files.
     timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-validate-docs
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.docs-changed == 'true'
@@ -544,7 +563,10 @@ jobs:
 
       - name: Version packages and commit to main
         id: version
-        run: node scripts/version-and-commit.mjs --mode instant --bump-type "${{ github.event.inputs.bump_type }}" --description "${{ github.event.inputs.description }}"
+        env:
+          BUMP_TYPE: ${{ github.event.inputs.bump_type }}
+          RELEASE_DESCRIPTION: ${{ github.event.inputs.description }}
+        run: node scripts/version-and-commit.mjs --mode instant --bump-type "$BUMP_TYPE" --description "$RELEASE_DESCRIPTION"
 
       - name: Publish to npm
         # Run if version was committed OR if a previous attempt already committed (for re-runs)
@@ -579,6 +601,9 @@ jobs:
     name: Optional Docker Hub Publish
     needs: [release, instant-release]
     timeout-minutes: 30
+    concurrency:
+      group: main-writer-${{ github.repository }}-main
+      cancel-in-progress: false
     if: |
       !cancelled() &&
       (
@@ -624,6 +649,9 @@ jobs:
     runs-on: ubuntu-latest
     # PR creation only: install, create a changeset, format, and open a PR.
     timeout-minutes: 10
+    concurrency:
+      group: main-writer-${{ github.repository }}-main
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
@@ -641,7 +669,10 @@ jobs:
         run: npm install
 
       - name: Create changeset file
-        run: node scripts/create-manual-changeset.mjs --bump-type "${{ github.event.inputs.bump_type }}" --description "${{ github.event.inputs.description }}"
+        env:
+          BUMP_TYPE: ${{ github.event.inputs.bump_type }}
+          RELEASE_DESCRIPTION: ${{ github.event.inputs.description }}
+        run: node scripts/create-manual-changeset.mjs --bump-type "$BUMP_TYPE" --description "$RELEASE_DESCRIPTION"
 
       - name: Format changeset with Prettier
         run: |
