@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.23
+
+### Patch Changes
+
+- e73716a: Harden workflow inputs, checkout configuration, and deployment concurrency.
+
 ## 0.11.22
 
 ### Patch Changes
