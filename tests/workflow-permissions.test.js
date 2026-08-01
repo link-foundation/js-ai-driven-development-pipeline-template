@@ -14,6 +14,35 @@ function listWorkflowFiles() {
   return readdirSync(WORKFLOW_DIR).filter((file) => /\.ya?ml$/.test(file));
 }
 
+function getRunBlocks(workflow) {
+  const lines = workflow.split('\n');
+  const blocks = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(\s*)run:\s*(?:[|>-]+)?\s*(.*)$/);
+
+    if (!match) {
+      continue;
+    }
+
+    const indentation = match[1].length;
+    const block = [match[2]];
+
+    while (
+      index + 1 < lines.length &&
+      (lines[index + 1].trim() === '' ||
+        lines[index + 1].match(/^\s*/)[0].length > indentation)
+    ) {
+      block.push(lines[index + 1]);
+      index += 1;
+    }
+
+    blocks.push(block.join('\n'));
+  }
+
+  return blocks;
+}
+
 // Returns the top-level `permissions:` block body, or undefined when the
 // workflow has none (in which case jobs inherit the repository default,
 // which is read/write-all on many organisations).
@@ -44,10 +73,12 @@ describe('workflow token permissions', () => {
     expect(missing).toEqual([]);
   });
 
-  it('defaults release.yml to read-only repository contents', () => {
-    const permissions = getTopLevelPermissions(readWorkflow('release.yml'));
-
-    expect(permissions).toBe('  contents: read');
+  it('defaults every workflow to read-only repository contents', () => {
+    for (const file of listWorkflowFiles()) {
+      expect(getTopLevelPermissions(readWorkflow(file))).toBe(
+        '  contents: read'
+      );
+    }
   });
 
   it('keeps write escalation on the publishing jobs only', () => {
@@ -64,5 +95,23 @@ describe('workflow token permissions', () => {
 
       expect(block.includes('      contents: write')).toBe(true);
     }
+  });
+});
+
+describe('workflow command injection policy', () => {
+  it('never interpolates contributor-controlled inputs directly into run scripts', () => {
+    const unsafeExpression =
+      /\$\{\{\s*(?:inputs\.|github\.event\.inputs\.|github\.head_ref)[^}]*\}\}/;
+    const violations = [];
+
+    for (const file of listWorkflowFiles()) {
+      getRunBlocks(readWorkflow(file)).forEach((runBlock, index) => {
+        if (unsafeExpression.test(runBlock)) {
+          violations.push(`${file}:run-block-${index + 1}`);
+        }
+      });
+    }
+
+    expect(violations).toEqual([]);
   });
 });

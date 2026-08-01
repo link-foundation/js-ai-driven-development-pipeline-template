@@ -24,18 +24,22 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+# Provide Git config to actions/checkout itself; checkout runs git init before
+# any workflow step can configure Git.
+env:
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
 
 jobs:
   web-build:
     name: Build web app
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-web-build
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
 
@@ -81,6 +85,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: main-writer-${{ github.repository }}-main
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
@@ -96,6 +103,9 @@ jobs:
     name: Package desktop app (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-desktop-package-${{ matrix.os }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -145,6 +155,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && vars.EXAMPLE_APP_ENABLE_ANDROID_BUILD == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-android-build
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
 
@@ -187,6 +200,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && vars.EXAMPLE_APP_ENABLE_IOS_BUILD == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-ios-build
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
 

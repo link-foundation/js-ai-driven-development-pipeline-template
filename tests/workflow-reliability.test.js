@@ -74,6 +74,16 @@ function expectMainWriterConcurrency(jobBlock) {
   );
 }
 
+function expectCancellableCheckConcurrency(
+  jobBlock,
+  jobName,
+  matrixSuffix = ''
+) {
+  expect(jobBlock).toContain(
+    `    concurrency:\n      group: check-\${{ github.workflow }}-\${{ github.ref }}-${jobName}${matrixSuffix}\n      cancel-in-progress: true`
+  );
+}
+
 function createTestJobContext({
   eventName = 'pull_request',
   outputs = {},
@@ -101,8 +111,8 @@ function createTestJobContext({
   };
 }
 
-describe('workflow reliability policy', () => {
-  it('cancels superseded non-main runs without cancelling main runs', () => {
+describe('workflow concurrency policy', () => {
+  it('uses job-level concurrency so stale checks cannot cancel active writers', () => {
     const workflowPaths = [
       '.github/workflows/example-app.yml',
       '.github/workflows/release.yml',
@@ -112,20 +122,61 @@ describe('workflow reliability policy', () => {
     for (const workflowPath of workflowPaths) {
       const workflow = readWorkflow(workflowPath);
 
-      expect(workflow).toContain(
-        'group: ${{ github.workflow }}-${{ github.ref }}'
-      );
-      expect(workflow).toContain(
-        "cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}"
-      );
-      expect(workflow).not.toContain(
-        "cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}"
+      expect(workflow).not.toMatch(/^concurrency:/m);
+    }
+
+    const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
+    const exampleAppWorkflow = readWorkflow(
+      '.github/workflows/example-app.yml'
+    );
+    const linksWorkflow = readWorkflow('.github/workflows/links.yml');
+
+    for (const jobName of [
+      'detect-changes',
+      'test-compilation',
+      'check-file-line-limits',
+      'version-check',
+      'changeset-check',
+      'lint',
+      'docker-build',
+      'validate-docs',
+    ]) {
+      expectCancellableCheckConcurrency(
+        getJobBlock(releaseWorkflow, jobName),
+        jobName
       );
     }
-  });
+    expectCancellableCheckConcurrency(
+      getJobBlock(releaseWorkflow, 'test'),
+      'test',
+      '-${{ matrix.runtime }}-${{ matrix.os }}'
+    );
 
+    for (const jobName of ['web-build', 'android-build', 'ios-build']) {
+      expectCancellableCheckConcurrency(
+        getJobBlock(exampleAppWorkflow, jobName),
+        jobName
+      );
+    }
+    expectCancellableCheckConcurrency(
+      getJobBlock(exampleAppWorkflow, 'desktop-package'),
+      'desktop-package',
+      '-${{ matrix.os }}'
+    );
+    expectCancellableCheckConcurrency(
+      getJobBlock(linksWorkflow, 'link-checker'),
+      'link-checker'
+    );
+  });
+});
+
+describe('workflow reliability policy', () => {
   it('sets Git default branch config before checkout initializes repositories', () => {
-    const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
+    const workflowPaths = [
+      '.github/workflows/example-app.yml',
+      '.github/workflows/release.yml',
+      '.github/workflows/links.yml',
+    ];
     const gitDefaultBranchEnv = [
       'env:',
       "  GIT_CONFIG_COUNT: '1'",
@@ -133,14 +184,16 @@ describe('workflow reliability policy', () => {
       '  GIT_CONFIG_VALUE_0: main',
     ].join('\n');
 
-    expect(releaseWorkflow).toContain(gitDefaultBranchEnv);
-    expectOrdered(releaseWorkflow, [
-      'workflow_dispatch:',
-      gitDefaultBranchEnv,
-      'concurrency:',
-      'jobs:',
-      '- uses: actions/checkout@v6',
-    ]);
+    for (const workflowPath of workflowPaths) {
+      const workflow = readWorkflow(workflowPath);
+      expect(workflow).toContain(gitDefaultBranchEnv);
+      expectOrdered(workflow, [
+        'workflow_dispatch:',
+        gitDefaultBranchEnv,
+        'jobs:',
+        '- uses: actions/checkout@v6',
+      ]);
+    }
   });
 
   it('excludes Vite source HTML from raw lychee file scans', () => {
@@ -208,10 +261,16 @@ describe('workflow reliability policy', () => {
     const previewRegenJob = getJobBlock(exampleAppWorkflow, 'preview-regen');
     const releaseJob = getJobBlock(releaseWorkflow, 'release');
     const instantReleaseJob = getJobBlock(releaseWorkflow, 'instant-release');
+    const dockerPublishJob = getJobBlock(releaseWorkflow, 'docker-publish');
+    const changesetPrJob = getJobBlock(releaseWorkflow, 'changeset-pr');
+    const pagesDeployJob = getJobBlock(exampleAppWorkflow, 'pages-deploy');
 
     expectMainWriterConcurrency(previewRegenJob);
+    expectMainWriterConcurrency(pagesDeployJob);
     expectMainWriterConcurrency(releaseJob);
     expectMainWriterConcurrency(instantReleaseJob);
+    expectMainWriterConcurrency(dockerPublishJob);
+    expectMainWriterConcurrency(changesetPrJob);
     expect(previewRegenJob).toContain(
       'bash scripts/push-main-with-rebase-retry.sh'
     );
