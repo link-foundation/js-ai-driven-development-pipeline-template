@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.24
+
+### Patch Changes
+
+- dd8a969: Reject unsupported keys in generated workflow concurrency blocks.
+
 ## 0.11.23
 
 ### Patch Changes
