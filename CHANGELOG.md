@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.25
+
+### Patch Changes
+
+- 8af8547: Require successful lint and test quality gates before manual releases can publish.
+
 ## 0.11.24
 
 ### Patch Changes
