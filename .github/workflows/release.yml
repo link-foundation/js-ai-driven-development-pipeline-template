@@ -202,8 +202,12 @@ jobs:
       cancel-in-progress: true
     needs: [detect-changes]
     if: |
-      needs.detect-changes.outputs.docs-changed == 'true' ||
-      needs.detect-changes.outputs.any-code-changed == 'true'
+      !cancelled() &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        needs.detect-changes.outputs.docs-changed == 'true' ||
+        needs.detect-changes.outputs.any-code-changed == 'true'
+      )
     steps:
       - uses: actions/checkout@v6
         with:
@@ -259,12 +263,18 @@ jobs:
         check-file-line-limits,
       ]
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
-    # Run for relevant code/package/workflow changes that can affect test
-    # results. Skipped fast checks count as non-failures only after this
-    # positive change-detector gate passes.
+    # Run for relevant code/package/workflow changes, or for an instant manual
+    # release. Skipped fast checks count as non-failures only after one of
+    # those positive gates passes.
     if: |
       !cancelled() &&
-      needs.detect-changes.outputs.any-code-changed == 'true' &&
+      (
+        needs.detect-changes.outputs.any-code-changed == 'true' ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.release_mode == 'instant'
+        )
+      ) &&
       (needs.changeset-check.result == 'success' || needs.changeset-check.result == 'skipped') &&
       (needs.test-compilation.result == 'success' || needs.test-compilation.result == 'skipped') &&
       (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
@@ -526,7 +536,14 @@ jobs:
   # only allows one workflow file to be registered as a trusted publisher
   instant-release:
     name: Instant Release
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'instant'
+    # Publishing must wait for both quality gates and require explicit success.
+    needs: [lint, test]
+    if: |
+      !cancelled() &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.release_mode == 'instant' &&
+      needs.lint.result == 'success' &&
+      needs.test.result == 'success'
     runs-on: ubuntu-latest
     # Same publish envelope as the automated release path.
     timeout-minutes: 30
@@ -645,7 +662,13 @@ jobs:
   # Manual Changeset PR - creates a pull request with the changeset for review
   changeset-pr:
     name: Create Changeset PR
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'changeset-pr'
+    # PR creation does not publish, but it must still pass the fast lint gate.
+    needs: [lint]
+    if: |
+      !cancelled() &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.release_mode == 'changeset-pr' &&
+      needs.lint.result == 'success'
     runs-on: ubuntu-latest
     # PR creation only: install, create a changeset, format, and open a PR.
     timeout-minutes: 10
