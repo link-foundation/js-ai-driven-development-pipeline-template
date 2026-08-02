@@ -94,6 +94,10 @@ function evaluateWorkflowIf(expression, context) {
   const javaScriptExpression = expression
     .replaceAll('!cancelled()', '!context.cancelled')
     .replaceAll('github.event_name', 'context.github.event_name')
+    .replaceAll(
+      'github.event.inputs.release_mode',
+      'context.github.event.inputs.release_mode'
+    )
     .replace(
       /needs\.([a-zA-Z0-9_-]+)\.outputs\.([a-zA-Z0-9_-]+)/g,
       'context.needs["$1"].outputs["$2"]'
@@ -134,6 +138,7 @@ function expectCancellableCheckConcurrency(
 
 function createTestJobContext({
   eventName = 'pull_request',
+  releaseMode,
   outputs = {},
   result = 'skipped',
 } = {}) {
@@ -141,6 +146,11 @@ function createTestJobContext({
     cancelled: false,
     github: {
       event_name: eventName,
+      event: {
+        inputs: {
+          release_mode: releaseMode,
+        },
+      },
     },
     needs: {
       'detect-changes': {
@@ -426,6 +436,112 @@ describe('release workflow change gates', () => {
       const excludedOnlyPush = createTestJobContext({ eventName: 'push' });
 
       expect(evaluateWorkflowIf(condition, excludedOnlyPush)).toBe(false);
+    });
+  }
+});
+
+describe('manual release quality gates', () => {
+  function getManualReleaseContext({
+    releaseMode,
+    lintResult = 'success',
+    testResult = 'success',
+    cancelled = false,
+  }) {
+    const context = createTestJobContext({
+      eventName: 'workflow_dispatch',
+      releaseMode,
+      result: 'skipped',
+    });
+
+    context.cancelled = cancelled;
+    context.needs.lint.result = lintResult;
+    context.needs.test = { result: testResult };
+    return context;
+  }
+
+  it('runs lint and tests before an instant manual release', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const lintJob = getJobBlock(workflow, 'lint');
+    const testJob = getJobBlock(workflow, 'test');
+    const instantReleaseJob = getJobBlock(workflow, 'instant-release');
+    const context = getManualReleaseContext({ releaseMode: 'instant' });
+
+    expect(evaluateWorkflowIf(getMultilineIfExpression(lintJob), context)).toBe(
+      true
+    );
+    expect(evaluateWorkflowIf(getMultilineIfExpression(testJob), context)).toBe(
+      true
+    );
+    expect(instantReleaseJob).toContain('    needs: [lint, test]');
+    expect(
+      evaluateWorkflowIf(getMultilineIfExpression(instantReleaseJob), context)
+    ).toBe(true);
+  });
+
+  it('blocks an instant manual release after either quality gate fails', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const condition = getMultilineIfExpression(
+      getJobBlock(workflow, 'instant-release')
+    );
+
+    expect(
+      evaluateWorkflowIf(
+        condition,
+        getManualReleaseContext({
+          releaseMode: 'instant',
+          lintResult: 'failure',
+        })
+      )
+    ).toBe(false);
+    expect(
+      evaluateWorkflowIf(
+        condition,
+        getManualReleaseContext({
+          releaseMode: 'instant',
+          testResult: 'failure',
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('waits for successful lint before creating a manual changeset PR', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const changesetPrJob = getJobBlock(workflow, 'changeset-pr');
+    const condition = getMultilineIfExpression(changesetPrJob);
+
+    expect(changesetPrJob).toContain('    needs: [lint]');
+    expect(
+      evaluateWorkflowIf(
+        condition,
+        getManualReleaseContext({ releaseMode: 'changeset-pr' })
+      )
+    ).toBe(true);
+    expect(
+      evaluateWorkflowIf(
+        condition,
+        getManualReleaseContext({
+          releaseMode: 'changeset-pr',
+          lintResult: 'failure',
+        })
+      )
+    ).toBe(false);
+  });
+
+  for (const jobName of ['instant-release', 'changeset-pr']) {
+    it(`does not run ${jobName} after cancellation`, () => {
+      const workflow = readWorkflow('.github/workflows/release.yml');
+      const condition = getMultilineIfExpression(
+        getJobBlock(workflow, jobName)
+      );
+      const releaseMode =
+        jobName === 'instant-release' ? 'instant' : 'changeset-pr';
+
+      expect(
+        evaluateWorkflowIf(
+          condition,
+          getManualReleaseContext({ releaseMode, cancelled: true })
+        )
+      ).toBe(false);
     });
   }
 });
