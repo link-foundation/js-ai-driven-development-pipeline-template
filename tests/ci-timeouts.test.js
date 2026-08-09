@@ -61,6 +61,7 @@ describe('CI timeout policy', () => {
       'docker-build': 30,
       'docker-publish': 30,
       'changeset-pr': 10,
+      'pipeline-status': 5,
     };
 
     expect(listWorkflowJobs(releaseWorkflow).sort()).toEqual(

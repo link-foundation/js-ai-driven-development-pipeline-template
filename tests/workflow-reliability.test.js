@@ -129,10 +129,11 @@ function expectMainWriterConcurrency(jobBlock) {
 function expectCancellableCheckConcurrency(
   jobBlock,
   jobName,
-  matrixSuffix = ''
+  matrixSuffix = '',
+  cancelInProgress = 'true'
 ) {
   expect(jobBlock).toContain(
-    `    concurrency:\n      group: check-\${{ github.workflow }}-\${{ github.ref }}-${jobName}${matrixSuffix}\n      cancel-in-progress: true`
+    `    concurrency:\n      group: check-\${{ github.workflow }}-\${{ github.ref }}-${jobName}${matrixSuffix}\n      cancel-in-progress: ${cancelInProgress}`
   );
 }
 
@@ -229,13 +230,16 @@ describe('workflow concurrency policy', () => {
     ]) {
       expectCancellableCheckConcurrency(
         getJobBlock(releaseWorkflow, jobName),
-        jobName
+        jobName,
+        '',
+        "${{ github.ref != 'refs/heads/main' }}"
       );
     }
     expectCancellableCheckConcurrency(
       getJobBlock(releaseWorkflow, 'test'),
       'test',
-      '-${{ matrix.runtime }}-${{ matrix.os }}'
+      '-${{ matrix.runtime }}-${{ matrix.os }}',
+      "${{ github.ref != 'refs/heads/main' }}"
     );
 
     for (const jobName of ['web-build', 'android-build', 'ios-build']) {

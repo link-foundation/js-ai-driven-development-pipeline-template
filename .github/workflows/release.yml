@@ -54,7 +54,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-detect-changes
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     if: github.event_name != 'workflow_dispatch'
     outputs:
       js-changed: ${{ steps.changes.outputs.js-changed }}
@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-test-compilation
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.js-changed == 'true'
@@ -98,7 +98,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-check-file-line-limits
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.docs-changed == 'true' ||
@@ -129,7 +129,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-version-check
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
@@ -151,7 +151,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-changeset-check
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
@@ -199,7 +199,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-lint
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: |
       !cancelled() &&
@@ -253,7 +253,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-test-${{ matrix.runtime }}-${{ matrix.os }}
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs:
       [
         detect-changes,
@@ -350,7 +350,7 @@ jobs:
     timeout-minutes: 30
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-docker-build
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     permissions:
@@ -390,7 +390,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-validate-docs
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.docs-changed == 'true'
@@ -727,3 +727,42 @@ jobs:
             2. Merge this PR to main
             3. The automated release workflow will create a version PR
             4. Merge the version PR to publish to npm and create a GitHub release
+
+  # GitHub reports jobs killed by timeout-minutes as cancelled rather than
+  # failed. Observe every job so those cancellations become visible failures
+  # on main, where concurrency never supersedes an in-progress run.
+  pipeline-status:
+    name: Pipeline Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-pipeline-status
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+    if: always()
+    needs:
+      - detect-changes
+      - test-compilation
+      - check-file-line-limits
+      - version-check
+      - changeset-check
+      - lint
+      - test
+      - docker-build
+      - validate-docs
+      - release
+      - instant-release
+      - docker-publish
+      - changeset-pr
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+
+      - name: Fail the run when a required job was cancelled or failed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+        run: bash scripts/check-pipeline-status.sh
