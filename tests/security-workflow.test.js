@@ -61,7 +61,7 @@ describe('security workflow', () => {
     );
     expect(dependencyReview).toContain('      pull-requests: write');
     expect(dependencyReview).toContain(
-      'uses: actions/dependency-review-action@v4'
+      'uses: actions/dependency-review-action@v5'
     );
     expect(dependencyReview).toContain('          fail-on-severity: high');
     expect(dependencyReview).toContain(
