@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.26
+
+### Patch Changes
+
+- 328d858: Add CodeQL analysis for JavaScript and GitHub Actions plus high-severity dependency review for pull requests.
+
 ## 0.11.25
 
 ### Patch Changes
