@@ -80,6 +80,7 @@ describe('pipeline status gate', () => {
     const gate = getJobBlock(workflow, 'pipeline-status');
 
     expect(gate).toContain('    if: always()');
+    expect(gate).toContain('uses: actions/setup-node@v6');
     expect(gate).toContain('NEEDS_JSON: ${{ toJSON(needs) }}');
     expect(gate).toContain(
       "IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}"
