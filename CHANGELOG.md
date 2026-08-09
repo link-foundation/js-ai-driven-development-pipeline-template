@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.27
+
+### Patch Changes
+
+- 53519f1: Report release pipeline timeout cancellations as visible failures on the default branch.
+
 ## 0.11.26
 
 ### Patch Changes
