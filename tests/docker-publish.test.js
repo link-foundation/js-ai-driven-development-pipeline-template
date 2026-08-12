@@ -35,33 +35,37 @@ function expectOrdered(text, markers) {
 
 describe('optional Docker Hub publishing workflow', () => {
   it('adds a Docker publish job downstream of npm release jobs', () => {
-    const dockerJob = getWorkflowJob(releaseWorkflow, 'docker-publish');
+    const configJob = getWorkflowJob(releaseWorkflow, 'docker-publish-config');
 
-    expect(dockerJob).toContain('needs: [release, instant-release]');
-    expect(dockerJob).toContain('DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}');
-    expect(dockerJob).toContain(
+    expect(configJob).toContain('needs: [release, instant-release]');
+    expect(configJob).toContain('DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}');
+    expect(configJob).toContain(
       'DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}'
     );
-    expect(dockerJob).toContain(
+    expect(configJob).toContain(
       'DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}'
     );
-    expect(dockerJob).toContain(
+    expect(configJob).toContain(
       'RELEASE_VERSION: ${{ needs.release.outputs.published_version || needs.instant-release.outputs.published_version }}'
     );
   });
 
   it('waits for the exact npm version before publishing Docker tags', () => {
-    const dockerJob = getWorkflowJob(releaseWorkflow, 'docker-publish');
+    const configJob = getWorkflowJob(releaseWorkflow, 'docker-publish-config');
+    const buildJob = getWorkflowJob(releaseWorkflow, 'docker-publish-build');
+    const manifestJob = getWorkflowJob(releaseWorkflow, 'docker-publish');
 
-    expectOrdered(dockerJob, [
+    expectOrdered(configJob, [
       '- name: Check Docker publish configuration',
       '- name: Wait for npm package availability before Docker publish',
-      '- name: Publish Docker image to Docker Hub',
     ]);
-    expect(dockerJob).toContain(
+    expect(configJob).toContain(
       'node scripts/wait-for-npm.mjs --release-version "${{ env.RELEASE_VERSION }}"'
     );
-    expect(dockerHubAction).toContain('type=raw,value=${{ inputs.version }}');
+    expect(buildJob).toContain('uses: ./.github/actions/publish-dockerhub');
+    expect(manifestJob).toContain('docker buildx imagetools create');
+    expect(manifestJob).toContain('--tag "${IMAGE}:latest"');
+    expect(manifestJob).toContain('--tag "${IMAGE}:${VERSION}"');
     expect(dockerHubAction).toContain(
       'org.opencontainers.image.version=${{ inputs.version }}'
     );
@@ -78,6 +82,19 @@ describe('optional Docker Hub publishing workflow', () => {
     expect(dockerHubAction).toContain('password: ${{ inputs.token }}');
     expect(dockerHubAction).toContain('uses: docker/metadata-action@v6');
     expect(dockerHubAction).toContain('uses: docker/build-push-action@v7');
+  });
+
+  it('builds amd64 and arm64 images concurrently on native runners', () => {
+    const buildJob = getWorkflowJob(releaseWorkflow, 'docker-publish-build');
+
+    expect(buildJob).toContain('platform: linux/amd64');
+    expect(buildJob).toContain('runner: ubuntu-latest');
+    expect(buildJob).toContain('platform: linux/arm64');
+    expect(buildJob).toContain('runner: ubuntu-24.04-arm');
+    expect(buildJob).toContain('runs-on: ${{ matrix.runner }}');
+    expect(dockerHubAction).toContain('platforms: ${{ inputs.platform }}');
+    expect(dockerHubAction).toContain('push-by-digest=true');
+    expect(releaseWorkflow).not.toContain('docker/setup-qemu-action');
   });
 });
 

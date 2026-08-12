@@ -45,8 +45,11 @@ describe('pull-request Docker build check', () => {
   it('builds the image before any release job runs', () => {
     // The publish job is gated on a successful release; the build check
     // must not be, otherwise a broken Dockerfile cannot fail a PR.
-    const publishJob = getWorkflowJob(releaseWorkflow, 'docker-publish');
-    expect(publishJob).toContain('needs: [release, instant-release]');
+    const publishConfigJob = getWorkflowJob(
+      releaseWorkflow,
+      'docker-publish-config'
+    );
+    expect(publishConfigJob).toContain('needs: [release, instant-release]');
     expect(dockerBuildJob).not.toContain('release');
   });
 });
