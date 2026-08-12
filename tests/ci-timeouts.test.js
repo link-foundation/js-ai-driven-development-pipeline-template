@@ -59,6 +59,8 @@ describe('CI timeout policy', () => {
       release: 30,
       'instant-release': 30,
       'docker-build': 30,
+      'docker-publish-config': 10,
+      'docker-publish-build': 30,
       'docker-publish': 30,
       'changeset-pr': 10,
       'pipeline-status': 5,
