@@ -23,7 +23,9 @@
  *   - 1: Some broken links have no web archive version
  */
 
-import { readFileSync, appendFileSync, existsSync } from 'fs';
+import { readFileSync, appendFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 const WAYBACK_API = 'https://archive.org/wayback/available?url=';
 
@@ -48,8 +50,22 @@ function setOutput(name, value) {
  * @param {string} content - The markdown content from lychee
  * @returns {string[]} Array of broken URLs
  */
-function extractBrokenUrls(content) {
+export function extractBrokenUrls(content) {
   const urls = [];
+
+  // Lychee Markdown reports group failures under this heading. Limit parsing
+  // to that section so later sections, such as successful redirects, cannot be
+  // mistaken for failures. Heading-less output is parsed as a full document.
+  const errorsHeading = /^## Errors per input\s*$/im.exec(content);
+  let errorContent = content;
+  if (errorsHeading) {
+    const sectionStart = errorsHeading.index + errorsHeading[0].length;
+    const nextHeading = /^##\s+/m.exec(content.slice(sectionStart));
+    const sectionEnd = nextHeading
+      ? sectionStart + nextHeading.index
+      : content.length;
+    errorContent = content.slice(sectionStart, sectionEnd);
+  }
 
   // Match lines with error status codes or ERROR markers followed by URLs
   // Lychee output format: [STATUS_CODE] URL or bullet points with links
@@ -57,7 +73,7 @@ function extractBrokenUrls(content) {
     /\[(?:4\d\d|5\d\d|ERROR|TIMEOUT|UNKNOWN)\]\s+(https?:\/\/[^\s)]+)/gi;
   let match;
 
-  while ((match = urlPattern.exec(content)) !== null) {
+  while ((match = urlPattern.exec(errorContent)) !== null) {
     const url = match[1].trim();
     if (url && !urls.includes(url)) {
       urls.push(url);
@@ -69,7 +85,7 @@ function extractBrokenUrls(content) {
   const linePattern = /^\s*(?:\*|-)\s+.*?(https?:\/\/[^\s|)>\]]+)/gm;
   let lineMatch;
 
-  while ((lineMatch = linePattern.exec(content)) !== null) {
+  while ((lineMatch = linePattern.exec(errorContent)) !== null) {
     const url = lineMatch[1].trim().replace(/[.,;!?]+$/, '');
     if (url && !urls.includes(url) && url.startsWith('http')) {
       urls.push(url);
@@ -129,9 +145,9 @@ async function checkWaybackMachine(url) {
 }
 
 /**
- * Format a timestamp from Wayback Machine (YYYYMMDDHHmmss) to readable date
+ * Render a Wayback Machine timestamp (YYYYMMDDHHmmss) as a readable date
  * @param {string} timestamp - e.g. "20231015143022"
- * @returns {string} - e.g. "2023-10-15"
+ * @returns {string} Date formatted as YYYY-MM-DD
  */
 function formatTimestamp(timestamp) {
   if (!timestamp || timestamp.length < 8) {
@@ -257,7 +273,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('Unexpected error:', error);
-  process.exit(1);
-});
+const isDirectExecution =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    console.error('Unexpected error:', error);
+    process.exit(1);
+  });
+}
