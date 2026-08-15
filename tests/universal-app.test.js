@@ -82,7 +82,9 @@ describe('universal React example app', () => {
       'npm --prefix examples/universal-app run mobile:sync'
     );
 
-    expect(workflow).toContain('npm ci --prefix examples/universal-app');
+    expect(workflow).toContain(
+      'npm ci --prefix examples/universal-app --no-audit --no-fund'
+    );
     expect(workflow).toContain('npm run example:web:build');
     expect(workflow).toContain('npm run example:desktop:package');
     expect(workflow).toContain('actions/configure-pages@v6');
