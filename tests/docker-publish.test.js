@@ -23,6 +23,31 @@ function getWorkflowJob(workflow, jobName) {
   return lines.slice(start, nextJob === -1 ? lines.length : nextJob).join('\n');
 }
 
+function getActionSteps(workflow, action) {
+  const lines = workflow.replaceAll('\r\n', '\n').split('\n');
+  const steps = [];
+
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index].trim() !== `uses: ${action}`) {
+      continue;
+    }
+
+    let start = index;
+    while (start > 0 && !/^\s+- /.test(lines[start])) {
+      start--;
+    }
+
+    let end = index + 1;
+    while (end < lines.length && !/^\s+- /.test(lines[end])) {
+      end++;
+    }
+
+    steps.push(lines.slice(start, end).join('\n'));
+  }
+
+  return steps;
+}
+
 function expectOrdered(text, markers) {
   let lastIndex = -1;
 
@@ -95,6 +120,18 @@ describe('optional Docker Hub publishing workflow', () => {
     expect(dockerHubAction).toContain('platforms: ${{ inputs.platform }}');
     expect(dockerHubAction).toContain('push-by-digest=true');
     expect(releaseWorkflow).not.toContain('docker/setup-qemu-action');
+  });
+
+  it('suppresses only DEP0005 warnings from download-artifact v8', () => {
+    const downloadSteps = getActionSteps(
+      releaseWorkflow,
+      'actions/download-artifact@v8'
+    );
+
+    expect(downloadSteps.length).toBeGreaterThan(0);
+    for (const step of downloadSteps) {
+      expect(step).toContain('NODE_OPTIONS: --disable-warning=DEP0005');
+    }
   });
 });
 

@@ -733,6 +733,8 @@ jobs:
 
       - name: Download image digests
         uses: actions/download-artifact@v8
+        env:
+          NODE_OPTIONS: --disable-warning=DEP0005
         with:
           path: /tmp/digests
           pattern: docker-digest-*
