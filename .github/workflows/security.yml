@@ -69,3 +69,25 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
+
+  npm-audit:
+    name: Audit npm lock (${{ matrix.directory }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-npm-audit-${{ matrix.directory }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        directory: ['.', examples/universal-app]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Audit current lock
+        working-directory: ${{ matrix.directory }}
+        run: npm audit --package-lock-only --audit-level=high

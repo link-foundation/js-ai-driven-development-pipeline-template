@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'test-anywhere';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 const workflowPath = '.github/workflows/security.yml';
 const workflow = existsSync(workflowPath)
@@ -19,6 +20,25 @@ function getJobBlock(jobName) {
   );
 
   return lines.slice(start, end === -1 ? lines.length : end).join('\n');
+}
+
+function listPackageLocks(directory = '.') {
+  const locks = [];
+
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === '.git' || entry.name === 'node_modules') {
+      continue;
+    }
+
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      locks.push(...listPackageLocks(path));
+    } else if (entry.name === 'package-lock.json') {
+      locks.push(relative('.', path).replaceAll('\\', '/'));
+    }
+  }
+
+  return locks.sort();
 }
 
 describe('security workflow', () => {
@@ -66,6 +86,30 @@ describe('security workflow', () => {
     expect(dependencyReview).toContain('          fail-on-severity: high');
     expect(dependencyReview).toContain(
       '          comment-summary-in-pr: on-failure'
+    );
+  });
+
+  it('fails closed on high-severity advisories in every npm lock', () => {
+    const audit = getJobBlock('npm-audit');
+    const directoryList = audit.match(/directory: \[([^\]]+)\]/)?.[1] ?? '';
+    const auditedLocks = directoryList
+      .split(',')
+      .map((directory) => directory.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean)
+      .map((directory) =>
+        directory === '.'
+          ? 'package-lock.json'
+          : `${directory}/package-lock.json`
+      )
+      .sort();
+
+    expect(auditedLocks).toEqual(listPackageLocks());
+    expect(audit).toContain('    timeout-minutes: 10');
+    expect(audit).toContain('uses: actions/setup-node@v6');
+    expect(audit).toContain('node-version: 24');
+    expect(audit).toContain('working-directory: ${{ matrix.directory }}');
+    expect(audit).toContain(
+      'run: npm audit --package-lock-only --audit-level=high'
     );
   });
 });

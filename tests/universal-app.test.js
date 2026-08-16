@@ -31,14 +31,12 @@ describe('universal React example app', () => {
     expect(Boolean(packageJson.dependencies['@capacitor/core'])).toBe(true);
     expect(Boolean(packageJson.devDependencies.vite)).toBe(true);
     expect(Boolean(packageJson.devDependencies.electron)).toBe(true);
-    expect(Boolean(packageJson.devDependencies['@electron-forge/cli'])).toBe(
-      true
-    );
+    expect(Boolean(packageJson.devDependencies['electron-builder'])).toBe(true);
     expect(Boolean(packageJson.devDependencies['@capacitor/cli'])).toBe(true);
 
     expect(packageJson.scripts.build).toBe('vite build');
     expect(packageJson.scripts['desktop:package']).toContain(
-      'electron-forge package'
+      'electron-builder --dir'
     );
     expect(packageJson.scripts['mobile:sync']).toContain('cap sync');
     expect(packageJson.scripts['mobile:android:build']).toContain(
@@ -82,7 +80,9 @@ describe('universal React example app', () => {
       'npm --prefix examples/universal-app run mobile:sync'
     );
 
-    expect(workflow).toContain('npm ci --prefix examples/universal-app');
+    expect(workflow).toContain(
+      'npm ci --prefix examples/universal-app --no-audit --no-fund'
+    );
     expect(workflow).toContain('npm run example:web:build');
     expect(workflow).toContain('npm run example:desktop:package');
     expect(workflow).toContain('actions/configure-pages@v6');
