@@ -52,6 +52,8 @@ jobs:
           # in this repository (similar exclusion pattern as eslint.config.js)
           # Exclude the Vite source HTML because its root-relative app asset
           # URLs are only valid when served by Vite.
+          # Exclude tests/fixtures - the captured lychee reports there contain
+          # deliberately broken links used as parser test input.
           args: >-
             --verbose
             --no-progress
@@ -61,6 +63,7 @@ jobs:
             --timeout 30
             --exclude-path docs/case-studies
             --exclude-path examples/universal-app/index.html
+            --exclude-path tests/fixtures
             './**/*.md'
             './**/*.html'
           # Don't fail the workflow immediately - we want to check web archive first
