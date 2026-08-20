@@ -22,6 +22,12 @@ const report = readFileSync(
   'utf-8'
 );
 
+// The Deno test run is granted --allow-read only, so spawning the script and
+// writing its fixtures is limited to the Node.js and Bun runs.
+const isDenoRuntime = typeof Deno !== 'undefined';
+const canRunCliFixtures =
+  !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
+
 describe('extractErrorsSection', () => {
   it('stops at the next top-level heading', () => {
     const section = extractErrorsSection(report);
@@ -116,6 +122,10 @@ describe('extractBrokenLinks', () => {
 });
 
 describe('check-web-archive.mjs end to end', () => {
+  if (!canRunCliFixtures) {
+    return;
+  }
+
   it('fails when the only lychee errors have no http URL to archive', async () => {
     const scriptPath = join(here, '..', 'scripts', 'check-web-archive.mjs');
     const workDir = mkdtempSync(join(tmpdir(), 'web-archive-'));
