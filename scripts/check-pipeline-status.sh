@@ -33,7 +33,7 @@ if [ -n "$cancelled" ]; then
     echo "::error::Pipeline has cancelled jobs on main: ${cancelled}. A job killed by 'timeout-minutes' is reported as cancelled, which would otherwise hide the failure."
     status=1
   else
-    echo "::warning::Cancelled jobs: ${cancelled}. On a non-default ref this is usually a superseded run."
+    echo "::warning::Cancelled jobs: ${cancelled}. On a non-default ref this is usually a superseded run. A genuine overrun should surface as a step budget failure instead (see docs/CI-TIMEOUT-BUDGETS.md)."
   fi
 fi
 

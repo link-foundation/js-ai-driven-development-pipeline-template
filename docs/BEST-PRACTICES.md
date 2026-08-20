@@ -193,12 +193,20 @@ Current timeout bands:
 | `validate-docs`           | 5 min  |
 | `changeset-check`         | 10 min |
 | `lint`                    | 10 min |
-| `test` per runtime and OS | 10 min |
+| `test` per runtime and OS | 15 min |
 | `links.yml` link checker  | 10 min |
 | `changeset-pr`            | 10 min |
 | `release`                 | 30 min |
 | `instant-release`         | 30 min |
 | `docker-publish`          | 30 min |
+
+`timeout-minutes` is a backstop, never the deadline: GitHub reports a
+job it kills as **cancelled**, not **failed**, so the overrun can pass
+unnoticed on a pull request. Long steps therefore own an explicit
+budget through `scripts/run-with-budget-warning.sh` (or a step-level
+`timeout-minutes` for `uses:` steps), and `tests/ci-timeouts.test.js`
+asserts every budget stays at or under 70% of the job cap it sits
+under. See [CI-TIMEOUT-BUDGETS.md](CI-TIMEOUT-BUDGETS.md).
 
 Per-test timeouts are also enforced inside the runners that support a
 global budget:
@@ -208,9 +216,13 @@ node --test --test-timeout=30000 tests/*.test.js
 bun test --timeout 30000
 ```
 
+These bound an _individual_ test, not the suite: 25 tests of 29s each
+pass every per-test check. The step budgets above are what bound the
+whole run.
+
 Deno does not currently provide an equivalent single global per-test
-timeout flag, so Deno tests are protected by the 10-minute matrix job
-timeout.
+timeout flag, so Deno tests are protected by their step budget and the
+matrix job backstop.
 
 ### 14. Proper Cancellation Propagation
 

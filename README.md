@@ -185,11 +185,18 @@ in minutes instead of reaching the GitHub Actions default of six hours.
 Fast checks use 5-10 minute caps, release jobs use 30 minutes, and the
 link checker uses 10 minutes for external network variance.
 
+That cap is a backstop, never the deadline: GitHub reports a job it
+kills as **cancelled**, not **failed**. Long steps therefore own an
+explicit budget via `scripts/run-with-budget-warning.sh`, which warns at
+70% of the budget and fails the step with exit code 124 when it expires.
+See [CI-TIMEOUT-BUDGETS.md](docs/CI-TIMEOUT-BUDGETS.md).
+
 Individual tests are also capped inside supported runners:
 `npm test` runs `node --test --test-timeout=30000`, and the CI Bun
-runner uses `bun test --timeout 30000`. Deno does not provide a single
-global per-test timeout flag, so Deno tests are protected by the
-10-minute matrix job cap.
+runner uses `bun test --timeout 30000`. Both bound a _single test_, not
+the suite, which is why the suite budget above exists. Deno does not
+provide a single global per-test timeout flag, so Deno tests are
+protected by their step budget and the matrix job backstop.
 
 See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) for detailed explanations of each practice.
 
