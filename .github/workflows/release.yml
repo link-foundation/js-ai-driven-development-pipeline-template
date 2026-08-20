@@ -248,9 +248,12 @@ jobs:
     name: Test (${{ matrix.runtime }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Typical run: <1min per runtime/OS on warm runners, with Windows
-    # sometimes slower on cold starts. 10min fails hung tests well
-    # before GitHub Actions' 6h default.
-    timeout-minutes: 10
+    # sometimes slower on cold starts. Each test step owns an explicit
+    # budget below (see scripts/run-with-budget-warning.sh); this cap is
+    # only the backstop behind those budgets, sized so the budgets always
+    # expire first. A job killed by timeout-minutes reports *cancelled*,
+    # which hides the failure -- see docs/CI-TIMEOUT-BUDGETS.md.
+    timeout-minutes: 15
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-test-${{ matrix.runtime }}-${{ matrix.os }}
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -309,7 +312,8 @@ jobs:
 
       - name: Run tests (Node.js)
         if: matrix.runtime == 'node'
-        run: npm test
+        shell: bash
+        run: bash scripts/run-with-budget-warning.sh 300 "Node.js test suite" npm test
 
       - name: Setup Bun
         if: matrix.runtime == 'bun'
@@ -323,9 +327,13 @@ jobs:
 
       - name: Run tests (Bun)
         if: matrix.runtime == 'bun'
-        # --timeout caps an individual test at 30s, matching Node's
+        shell: bash
+        # --timeout caps an *individual* test at 30s, matching Node's
         # --test-timeout budget while leaving headroom for cold runners.
-        run: bun test --timeout 30000
+        # It is a per-test bound and does not bound the suite: 25 tests of
+        # 29s each pass every per-test check. The suite budget below is
+        # what bounds the whole run.
+        run: bash scripts/run-with-budget-warning.sh 200 "Bun test suite" bun test --timeout 30000
 
       - name: Setup Deno
         if: matrix.runtime == 'deno'
@@ -335,7 +343,8 @@ jobs:
 
       - name: Run tests (Deno)
         if: matrix.runtime == 'deno'
-        run: deno test --allow-read
+        shell: bash
+        run: bash scripts/run-with-budget-warning.sh 100 "Deno test suite" deno test --allow-read
 
   # === DOCKER IMAGE BUILD CHECK (pull requests) ===
   # Builds the Dockerfile without pushing so a broken image fails the pull
@@ -371,6 +380,11 @@ jobs:
 
       - name: Build Docker image (no push)
         if: steps.docker_config.outputs.enabled == 'true'
+        # A `uses:` step cannot be wrapped by run-with-budget-warning.sh, so
+        # it declares its deadline with a step-level timeout-minutes: an
+        # exhausted step budget fails the step, while an exhausted job cap
+        # only cancels the job.
+        timeout-minutes: 20
         uses: docker/build-push-action@v7
         with:
           context: ${{ steps.docker_config.outputs.context }}
@@ -470,7 +484,7 @@ jobs:
         run: node scripts/sanitize-npm-userconfig.mjs
 
       - name: Install dependencies
-        run: npm install
+        run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm install
 
       - name: Update npm for OIDC trusted publishing
         run: node scripts/setup-npm.mjs
@@ -513,11 +527,11 @@ jobs:
         # See issue #77.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/publish-to-npm.mjs --should-pull
+        run: bash scripts/run-with-budget-warning.sh 420 "npm publish" node scripts/publish-to-npm.mjs --should-pull
 
       - name: Smoke-test published npm package
         if: steps.publish.outputs.published == 'true'
-        run: node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
+        run: bash scripts/run-with-budget-warning.sh 300 "npm package smoke test" node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
@@ -683,6 +697,9 @@ jobs:
 
       - name: Build and push platform image by digest
         id: build
+        # Step-level budget below the job's timeout-minutes backstop; see
+        # docs/CI-TIMEOUT-BUDGETS.md.
+        timeout-minutes: 20
         uses: ./.github/actions/publish-dockerhub
         with:
           context: ${{ needs.docker-publish-config.outputs.context }}
