@@ -66,7 +66,8 @@ function createMergeCommitFixture() {
   return root;
 }
 
-function createChangeFixture(filePath, eventName) {
+function createChangeFixture(filePath, eventName, options = {}) {
+  const { packageRoot = '.' } = options;
   const root = mkdtempSync(path.join(tmpdir(), 'detect-code-changes-'));
 
   runGit(root, ['init', '-b', 'main']);
@@ -74,6 +75,11 @@ function createChangeFixture(filePath, eventName) {
   runGit(root, ['config', 'user.name', 'CI Test']);
 
   writeFileSync(path.join(root, 'README.md'), '# Fixture\n');
+  mkdirSync(path.join(root, packageRoot), { recursive: true });
+  writeFileSync(
+    path.join(root, packageRoot, 'package.json'),
+    '{ "name": "fixture" }\n'
+  );
   commit(root, 'Initial commit');
 
   if (eventName === 'pull_request') {
@@ -185,5 +191,74 @@ describe('detect-code-changes CLI', () => {
         }
       });
     }
+
+    // git prints repository-root-relative paths, so in the multi-language
+    // layout (package.json in js/) the package-relative ignore list matches
+    // only after the js/ prefix has been stripped.
+    for (const eventName of ['pull_request', 'push']) {
+      for (const filePath of [
+        'js/examples/demo.mjs',
+        'js/.changeset/tidy-cats-shine.md',
+        'js/experiments/repro.mjs',
+        'js/dev/log/repro.js',
+        'js/docs/case-studies/issue-141/repro.md',
+      ]) {
+        it(`ignores ${filePath} changes on ${eventName} in the multi-language layout`, () => {
+          const root = createChangeFixture(filePath, eventName, {
+            packageRoot: 'js',
+          });
+
+          try {
+            const { outputs, result } = runDetectCodeChanges(root, eventName);
+
+            expect(result.status).toBe(0);
+            expect(outputs).toContain('js-changed=false\n');
+            expect(outputs).toContain('docs-changed=false\n');
+            expect(outputs).toContain('any-code-changed=false\n');
+          } finally {
+            rmSync(root, { force: true, recursive: true });
+          }
+        });
+      }
+    }
+
+    for (const [filePath, expectedOutputs] of [
+      ['js/src/relevant.mjs', ['js-changed=true\n', 'any-code-changed=true\n']],
+      ['js/docs/relevant.md', ['docs-changed=true\n']],
+      ['.github/workflows/ci.yml', ['any-code-changed=true\n']],
+    ]) {
+      it(`keeps detecting ${filePath} changes in the multi-language layout`, () => {
+        const root = createChangeFixture(filePath, 'push', {
+          packageRoot: 'js',
+        });
+
+        try {
+          const { outputs, result } = runDetectCodeChanges(root, 'push');
+
+          expect(result.status).toBe(0);
+          for (const expected of expectedOutputs) {
+            expect(outputs).toContain(expected);
+          }
+        } finally {
+          rmSync(root, { force: true, recursive: true });
+        }
+      });
+    }
+
+    it('ignores changes belonging to another language package', () => {
+      const root = createChangeFixture('rust/Cargo.toml', 'push', {
+        packageRoot: 'js',
+      });
+
+      try {
+        const { outputs, result } = runDetectCodeChanges(root, 'push');
+
+        expect(result.status).toBe(0);
+        expect(outputs).toContain('js-changed=false\n');
+        expect(outputs).toContain('any-code-changed=false\n');
+      } finally {
+        rmSync(root, { force: true, recursive: true });
+      }
+    });
   }
 });
