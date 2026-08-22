@@ -218,11 +218,10 @@ function detectChanges() {
   }
   console.log('');
 
-  const codePattern = new RegExp(
-    `\\.(mjs|cjs|js|json|yml|yaml)$|^${workflowPathPrefix.replace(/\./g, '\\.')}`
-  );
-  const anyCodeChanged = codeChangedFiles.some((file) =>
-    codePattern.test(file)
+  const codeFileExtensionPattern = /\.(mjs|cjs|js|json|yml|yaml)$/;
+  const anyCodeChanged = codeChangedFiles.some(
+    (file) =>
+      codeFileExtensionPattern.test(file) || file.startsWith(workflowPathPrefix)
   );
   setOutput('any-code-changed', anyCodeChanged ? 'true' : 'false');
 
