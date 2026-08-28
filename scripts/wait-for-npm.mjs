@@ -8,14 +8,16 @@
  * version.
  */
 
-import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildPackageMetadataUrl } from './npm-registry.mjs';
 import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
 
 const DEFAULT_MAX_ATTEMPTS = 30;
+const NPM_REGISTRY_USER_AGENT =
+  'js-ai-driven-development-pipeline-template wait-for-npm';
 const DEFAULT_SLEEP_SECONDS = 10;
 const USAGE =
   'Usage: node scripts/wait-for-npm.mjs --release-version <version> [--package-name <name>] [--max-attempts <count>] [--sleep-seconds <count>] [--js-root <path>]';
@@ -79,17 +81,135 @@ export function parseArgs(argv, env = process.env) {
   return config;
 }
 
-export function checkNpmVersion(packageName, version) {
-  try {
-    const publishedVersion = execFileSync(
-      'npm',
-      ['view', formatNpmPackageVersion(packageName, version), 'version'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-    ).trim();
+/**
+ * Build the registry URL for a single package version document.
+ * @param {string} packageName
+ * @param {string} version
+ * @param {string} [registryUrl]
+ * @returns {string}
+ */
+export function buildPackageVersionUrl(packageName, version, registryUrl) {
+  return `${buildPackageMetadataUrl(packageName, registryUrl)}/${encodeURIComponent(version)}`;
+}
 
-    return publishedVersion === version;
-  } catch {
-    return false;
+/**
+ * Normalize a check result so callers always see the same shape.
+ * A boolean from an injected `checkAvailability` is also accepted.
+ * @param {boolean|object} result
+ * @returns {{available: boolean, status: string, error?: string, url?: string, httpStatus?: number}}
+ */
+export function normalizeCheckResult(result) {
+  if (typeof result === 'boolean') {
+    return { available: result, status: result ? 'ok' : 'not-published' };
+  }
+
+  return {
+    available: Boolean(result?.available),
+    status: result?.status ?? 'unknown',
+    ...(result?.error === undefined ? {} : { error: result.error }),
+    ...(result?.url === undefined ? {} : { url: result.url }),
+    ...(result?.httpStatus === undefined
+      ? {}
+      : { httpStatus: result.httpStatus }),
+  };
+}
+
+/**
+ * Describe a check result for a per-attempt log line.
+ * @param {{status: string, httpStatus?: number, error?: string}} result
+ * @returns {string}
+ */
+export function describeCheckResult(result) {
+  const httpStatus =
+    result.httpStatus === undefined ? '' : `HTTP ${result.httpStatus}`;
+
+  if (result.status === 'ok') {
+    return result.available
+      ? `available${httpStatus ? ` (${httpStatus})` : ''}`
+      : `version mismatch${httpStatus ? ` (${httpStatus})` : ''}`;
+  }
+
+  if (result.status === 'not-published') {
+    return `not published yet${httpStatus ? ` (${httpStatus})` : ''}`;
+  }
+
+  return `check failed: ${[httpStatus, result.error].filter(Boolean).join(' ')}`;
+}
+
+/**
+ * Ask the npm registry whether a package version exists.
+ *
+ * Queries the registry over HTTP so the real status code is available: a
+ * genuine "not published" (404) is reported separately from "we could not get
+ * an answer" (5xx, rate limits, DNS, proxy errors), which says nothing about
+ * whether the publish succeeded.
+ *
+ * @param {string} packageName
+ * @param {string} version
+ * @param {object} [options]
+ * @param {Function} [options.fetchFn]
+ * @param {string} [options.registryUrl]
+ * @returns {Promise<{available: boolean, status: 'ok'|'not-published'|'unknown', httpStatus?: number, url: string, error?: string}>}
+ */
+export async function checkNpmVersion(
+  packageName,
+  version,
+  { fetchFn = fetch, registryUrl } = {}
+) {
+  let url;
+  try {
+    url = buildPackageVersionUrl(packageName, version, registryUrl);
+  } catch (error) {
+    return { available: false, status: 'unknown', error: error.message };
+  }
+
+  try {
+    const response = await fetchFn(url, {
+      headers: {
+        accept: 'application/json',
+        // Some registries reject requests without a User-Agent with 403.
+        'user-agent': NPM_REGISTRY_USER_AGENT,
+      },
+    });
+
+    if (response.status === 404) {
+      return {
+        available: false,
+        status: 'not-published',
+        httpStatus: 404,
+        url,
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        available: false,
+        status: 'unknown',
+        httpStatus: response.status,
+        url,
+        error: `${response.status} ${response.statusText ?? ''}`.trim(),
+      };
+    }
+
+    const metadata = await response.json();
+    return {
+      available: metadata?.version === version,
+      status: 'ok',
+      httpStatus: response.status,
+      url,
+    };
+  } catch (error) {
+    // `fetch` reports transport failures as a bare "fetch failed"; the cause
+    // holds the actual reason (ECONNREFUSED, EAI_AGAIN, certificate errors).
+    const cause = error?.cause?.message;
+    const message = error?.message ?? String(error);
+
+    return {
+      available: false,
+      status: 'unknown',
+      url,
+      error: cause && cause !== message ? `${message}: ${cause}` : message,
+    };
   }
 }
 
@@ -99,30 +219,56 @@ function sleep(seconds) {
   );
 }
 
+function readGithubOutputPath() {
+  try {
+    return process.env.GITHUB_OUTPUT || '';
+  } catch {
+    // Runtimes with restricted environment access (Deno without --allow-env)
+    // throw here; step outputs are simply unavailable then.
+    return '';
+  }
+}
+
 function setOutput(name, value) {
-  const outputFile = process.env.GITHUB_OUTPUT;
+  const outputFile = readGithubOutputPath();
   if (outputFile) {
     appendFileSync(outputFile, `${name}=${value}\n`);
   }
   console.log(`Output: ${name}=${value}`);
 }
 
+/**
+ * Poll the registry until the version shows up or attempts run out.
+ * @returns {Promise<{available: boolean, status: string, error?: string, url?: string, httpStatus?: number, attempts: number}>}
+ */
 export async function waitForNpmVersion({
   checkAvailability = checkNpmVersion,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
   packageName,
+  registryUrl,
   sleepFn = sleep,
   sleepSeconds = DEFAULT_SLEEP_SECONDS,
   stdout = console.log,
   version,
 }) {
+  let lastResult = {
+    available: false,
+    status: 'unknown',
+    error: 'no attempts were made',
+  };
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    stdout(
-      `Checking npm for ${formatNpmPackageVersion(packageName, version)} (attempt ${attempt}/${maxAttempts})`
+    lastResult = normalizeCheckResult(
+      await checkAvailability(packageName, version, { registryUrl })
     );
 
-    if (checkAvailability(packageName, version)) {
-      return true;
+    stdout(
+      `Checking npm for ${formatNpmPackageVersion(packageName, version)} ` +
+        `(attempt ${attempt}/${maxAttempts}): ${describeCheckResult(lastResult)}`
+    );
+
+    if (lastResult.available) {
+      return { ...lastResult, attempts: attempt };
     }
 
     if (attempt < maxAttempts) {
@@ -130,7 +276,29 @@ export async function waitForNpmVersion({
     }
   }
 
-  return false;
+  return { ...lastResult, attempts: maxAttempts };
+}
+
+/**
+ * Build the failure message for an exhausted wait.
+ * @param {string} packageSpecifier
+ * @param {{status: string, error?: string, url?: string}} result
+ * @param {number} maxAttempts
+ * @returns {string}
+ */
+export function formatFailureMessage(packageSpecifier, result, maxAttempts) {
+  if (result.status !== 'unknown') {
+    return `${packageSpecifier} did not become available on npm`;
+  }
+
+  const reason = result.error ? ` The last error was: ${result.error}.` : '';
+  const where = result.url ? ` Check ${result.url} directly.` : '';
+
+  return (
+    `Could not determine whether ${packageSpecifier} is on npm: ` +
+    `all ${maxAttempts} attempts failed to reach the registry.${reason} ` +
+    `This does NOT mean the publish failed.${where}`
+  );
 }
 
 function isCliEntryPoint() {
@@ -159,26 +327,32 @@ export async function main({
       ? { name: config.packageName }
       : readPackageInfo({ jsRoot: config.jsRoot || undefined });
 
-    const available = await waitForNpmVersion({
+    const result = await waitForNpmVersion({
       maxAttempts: config.maxAttempts,
       packageName: packageInfo.name,
+      registryUrl:
+        env.NPM_CONFIG_REGISTRY || env.npm_config_registry || undefined,
       sleepSeconds: config.sleepSeconds,
       stdout,
       version: config.releaseVersion,
     });
 
-    setOutput('npm_available', available ? 'true' : 'false');
+    const packageSpecifier = formatNpmPackageVersion(
+      packageInfo.name,
+      config.releaseVersion
+    );
 
-    if (!available) {
+    setOutput('npm_available', result.available ? 'true' : 'false');
+    setOutput('npm_check_status', result.status);
+
+    if (!result.available) {
       stderr(
-        `${formatNpmPackageVersion(packageInfo.name, config.releaseVersion)} did not become available on npm`
+        formatFailureMessage(packageSpecifier, result, config.maxAttempts)
       );
       return 1;
     }
 
-    stdout(
-      `${formatNpmPackageVersion(packageInfo.name, config.releaseVersion)} is available on npm`
-    );
+    stdout(`${packageSpecifier} is available on npm`);
     return 0;
   } catch (error) {
     stderr(`Error: ${error.message}`);
