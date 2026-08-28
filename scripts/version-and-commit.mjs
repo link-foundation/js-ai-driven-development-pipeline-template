@@ -264,8 +264,23 @@ async function main() {
       await $`git commit -m "${escapedMessage}"`;
 
       // Push directly to main, rebasing and retrying if another main writer won
-      // the race between this commit and the push.
-      await $`bash scripts/push-main-with-rebase-retry.sh`;
+      // the race between this commit and the push, and landing the commit
+      // through a pull request when a repository ruleset declines direct
+      // pushes to main (link-foundation/js-ai-driven-development-pipeline-template#143).
+      //
+      // command-stream's `$` resolves (it does not throw) on a non-zero exit
+      // code, so the exit code is checked explicitly: reporting
+      // version_committed=true for a push that never landed would let the
+      // publish job work from a version that exists only in the runner.
+      const pushResult =
+        await $`node scripts/push-main-with-rebase-retry.mjs origin main --label ${newVersion}`.run(
+          { capture: true, mirror: true }
+        );
+      if (pushResult.code !== 0) {
+        throw new Error(
+          `Failed to push version ${newVersion} to main (exit ${pushResult.code})`
+        );
+      }
 
       console.log('\u2705 Version bump committed and pushed to main');
       setOutput('version_committed', 'true');
