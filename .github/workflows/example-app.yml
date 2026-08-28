@@ -238,6 +238,9 @@ jobs:
       github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
+      # The push helper opens and merges a pull request when a repository
+      # ruleset declines the direct push to main (issue #143).
+      pull-requests: write
     env:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
@@ -291,7 +294,7 @@ jobs:
           # [skip ci] prevents an infinite re-run loop; the next push to main
           # will pick up these fresh images for the regular pages-build.
           git commit -m "chore(preview): regenerate example-app preview images [skip ci]"
-          bash scripts/push-main-with-rebase-retry.sh
+          node scripts/push-main-with-rebase-retry.mjs origin main --label preview-images
 
       - name: Upload screenshot failure artifacts
         if: failure()

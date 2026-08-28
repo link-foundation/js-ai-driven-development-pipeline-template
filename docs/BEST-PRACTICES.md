@@ -117,6 +117,32 @@ pending job for the group.
 
 See [DETAILED-COMPARISON.md](./case-studies/issue-25/DETAILED-COMPARISON.md) for the full analysis of best practices from both repositories.
 
+#### Pushing to a `main` That Refuses Direct Pushes
+
+Every job that writes to `main` pushes through
+`scripts/push-main-with-rebase-retry.mjs`, which classifies a rejected push
+before it reacts:
+
+- **Lost race** (`! [rejected] main -> main (non-fast-forward)`) — another main
+  writer pushed first. The helper rebases onto the new remote head and pushes
+  again.
+- **Repository rule violation** (`GH013: Repository rule violations found`,
+  `Changes must be made through a pull request`, or the legacy `GH006`) — the
+  branch refuses direct pushes. No rebase can satisfy a rule, so the helper
+  pushes the same commit to a run-scoped branch, opens a pull request, merges it
+  with `--merge`, and fast-forwards the checkout to the merged `main` so later
+  steps in the same job see the merged tree.
+
+Both rejections print "rejected", so the classification matters: reading a rule
+violation as a race makes a release die after the version bump has already been
+committed in the runner, with a log that blames a race that never happened
+(link-foundation/js-ai-driven-development-pipeline-template#143).
+
+The fallback needs `pull-requests: write` and a `GH_TOKEN` in the job. The
+temporary branch is never force-pushed and never deleted, so it stays compatible
+with rulesets that forbid destruction on `~ALL` refs, and the merge never assumes
+squash or rebase is allowed.
+
 #### Fresh Merge Simulation
 
 Before running checks on PRs, the workflow:
