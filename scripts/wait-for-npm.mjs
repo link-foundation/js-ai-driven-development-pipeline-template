@@ -219,8 +219,18 @@ function sleep(seconds) {
   );
 }
 
+function readGithubOutputPath() {
+  try {
+    return process.env.GITHUB_OUTPUT || '';
+  } catch {
+    // Runtimes with restricted environment access (Deno without --allow-env)
+    // throw here; step outputs are simply unavailable then.
+    return '';
+  }
+}
+
 function setOutput(name, value) {
-  const outputFile = process.env.GITHUB_OUTPUT;
+  const outputFile = readGithubOutputPath();
   if (outputFile) {
     appendFileSync(outputFile, `${name}=${value}\n`);
   }
