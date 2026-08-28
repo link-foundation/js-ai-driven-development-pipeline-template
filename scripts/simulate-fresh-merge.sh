@@ -21,7 +21,11 @@ echo "This prevents stale merge preview issues (see docs/case-studies/issue-23)"
 echo ""
 
 # Configure git for merge
-git config user.email "github-actions[bot]@users.noreply.github.com"
+# The 41898282+ prefix is what links the commit to the github-actions[bot]
+# account. Without it the commit is "unattributed", and a ruleset with
+# require_extra_approval_for_unattributed_changes will demand a human
+# approval before an automated release pull request can be merged.
+git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 git config user.name "github-actions[bot]"
 
 # Fetch the latest base branch

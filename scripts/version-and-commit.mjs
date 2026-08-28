@@ -170,8 +170,12 @@ async function getVersion(source = 'local') {
 async function main() {
   try {
     // Configure git
+    // The 41898282+ prefix is what links the commit to the github-actions[bot]
+    // account. Without it the commit is "unattributed", and a ruleset with
+    // require_extra_approval_for_unattributed_changes will demand a human
+    // approval before an automated release pull request can be merged.
     await $`git config user.name "github-actions[bot]"`;
-    await $`git config user.email "github-actions[bot]@users.noreply.github.com"`;
+    await $`git config user.email "41898282+github-actions[bot]@users.noreply.github.com"`;
 
     // Check if remote main has advanced (handles re-runs after partial success)
     console.log('Checking for remote changes...');
