@@ -508,6 +508,10 @@ jobs:
       - name: Version packages and commit to main
         if: steps.check_changesets.outputs.has_changesets == 'true'
         id: version
+        env:
+          # Lets the push helper land the version commit through a pull request
+          # when a repository ruleset declines the direct push (issue #143).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/version-and-commit.mjs --mode changeset
 
       - name: Publish to npm
@@ -597,6 +601,8 @@ jobs:
         env:
           BUMP_TYPE: ${{ github.event.inputs.bump_type }}
           RELEASE_DESCRIPTION: ${{ github.event.inputs.description }}
+          # See the release job above (issue #143).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/version-and-commit.mjs --mode instant --bump-type "$BUMP_TYPE" --description "$RELEASE_DESCRIPTION"
 
       - name: Publish to npm

@@ -346,7 +346,7 @@ describe('workflow reliability policy', () => {
       '.github/workflows/example-app.yml'
     );
     const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
-    const pushHelper = readWorkflow('scripts/push-main-with-rebase-retry.sh');
+    const pushHelper = readWorkflow('scripts/push-main-with-rebase-retry.mjs');
     const versionAndCommit = readWorkflow('scripts/version-and-commit.mjs');
     const previewRegenJob = getJobBlock(exampleAppWorkflow, 'preview-regen');
     const releaseJob = getJobBlock(releaseWorkflow, 'release');
@@ -362,15 +362,24 @@ describe('workflow reliability policy', () => {
     expectMainWriterConcurrency(dockerPublishJob);
     expectMainWriterConcurrency(changesetPrJob);
     expect(previewRegenJob).toContain(
-      'bash scripts/push-main-with-rebase-retry.sh'
+      'node scripts/push-main-with-rebase-retry.mjs'
     );
     expect(previewRegenJob).not.toContain('git push origin HEAD:main');
     expect(versionAndCommit).toContain(
-      'bash scripts/push-main-with-rebase-retry.sh'
+      'node scripts/push-main-with-rebase-retry.mjs'
     );
     expect(versionAndCommit).not.toContain('git push origin main');
-    expect(pushHelper).toContain('git push "$remote" "HEAD:$branch"');
-    expect(pushHelper).toContain('git pull --rebase "$remote" "$branch"');
+    expect(pushHelper).toContain("['push', remote, `HEAD:${branch}`]");
+    expect(pushHelper).toContain("'pull', '--rebase', remote, branch");
+    // A ruleset rejection is not a lost race: it must reach the pull-request
+    // fallback, never a rebase and retry
+    // (link-foundation/js-ai-driven-development-pipeline-template#143).
+    expect(pushHelper).toContain('isBlockedByRepositoryRule');
+    expect(pushHelper).toContain('landViaPullRequest');
+    // command-stream's `$` resolves on a non-zero exit code, so the caller has
+    // to check it: a swallowed push failure would report a version that only
+    // exists in the runner as released.
+    expect(versionAndCommit).toContain('pushResult.code !== 0');
   });
 
   it('verifies desktop package output before uploading artifacts', () => {
