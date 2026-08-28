@@ -2,7 +2,10 @@ export const DEFAULT_NPM_REGISTRY_URL = 'https://registry.npmjs.org';
 
 function getNpmRegistryFromEnv() {
   try {
-    return process.env.NPM_CONFIG_REGISTRY || '';
+    // npm itself reads the lowercase `npm_config_registry` form, so honor both.
+    return (
+      process.env.NPM_CONFIG_REGISTRY || process.env.npm_config_registry || ''
+    );
   } catch {
     return '';
   }

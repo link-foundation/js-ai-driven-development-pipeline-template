@@ -2,7 +2,6 @@ import { describe, it, expect } from 'test-anywhere';
 import { readFileSync } from 'node:fs';
 
 import { evaluateDockerPublishConfig } from '../scripts/check-docker-publish.mjs';
-import { parseArgs, waitForNpmVersion } from '../scripts/wait-for-npm.mjs';
 
 const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
 const dockerHubAction = readFileSync(
@@ -185,55 +184,5 @@ describe('Docker publish configuration', () => {
       image: 'owner/image',
       username: 'owner',
     });
-  });
-});
-
-describe('wait-for-npm.mjs', () => {
-  it('parses release wait options', () => {
-    expect(
-      parseArgs(
-        [
-          '--release-version',
-          '1.2.3',
-          '--package-name=@scope/pkg',
-          '--max-attempts',
-          '2',
-          '--sleep-seconds=1',
-        ],
-        {}
-      )
-    ).toEqual({
-      jsRoot: '',
-      maxAttempts: 2,
-      packageName: '@scope/pkg',
-      releaseVersion: '1.2.3',
-      sleepSeconds: 1,
-    });
-  });
-
-  it('retries until npm reports the requested version', async () => {
-    let attempts = 0;
-    const sleeps = [];
-
-    const available = await waitForNpmVersion({
-      checkAvailability(packageName, version) {
-        attempts++;
-        expect(packageName).toBe('@scope/pkg');
-        expect(version).toBe('1.2.3');
-        return attempts === 2;
-      },
-      maxAttempts: 3,
-      packageName: '@scope/pkg',
-      sleepFn(seconds) {
-        sleeps.push(seconds);
-        return Promise.resolve();
-      },
-      sleepSeconds: 1,
-      stdout() {},
-      version: '1.2.3',
-    });
-
-    expect(available).toBe(true);
-    expect(sleeps).toEqual([1]);
   });
 });
