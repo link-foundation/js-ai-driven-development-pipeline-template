@@ -128,6 +128,7 @@ jobs:
         run: |
           npm run example:desktop:package
           for attempt in {1..30}; do
+            echo "Waiting for the packaged app (attempt ${attempt}/30)"
             if [[ -d examples/universal-app/out ]] &&
               [[ -n "$(find examples/universal-app/out -mindepth 1 -print -quit)" ]]; then
               find examples/universal-app/out -maxdepth 2 -mindepth 1 -print
@@ -172,7 +173,7 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
 
       - name: Install app dependencies
         run: npm ci --prefix examples/universal-app --no-audit --no-fund
@@ -251,10 +252,12 @@ jobs:
       - name: Install example app dependencies
         run: npm ci --prefix examples/universal-app --no-audit --no-fund
 
+      # Deliberately installed outside the lockfile: these tools are only used
+      # by this preview-image job and both versions are pinned exactly.
       - name: Install browser automation dependencies
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-        run: npm install --no-save --package-lock=false --no-audit --no-fund browser-commander@0.8.1 playwright@1.59.1
+        run: npm install --no-save --package-lock=false --no-audit --no-fund browser-commander@0.8.1 playwright@1.59.1 # zizmor: ignore[adhoc-packages]
 
       - name: Regenerate preview images
         run: node scripts/update-preview-images.mjs

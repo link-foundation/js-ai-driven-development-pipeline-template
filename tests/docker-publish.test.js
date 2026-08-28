@@ -84,8 +84,10 @@ describe('optional Docker Hub publishing workflow', () => {
       '- name: Check Docker publish configuration',
       '- name: Wait for npm package availability before Docker publish',
     ]);
+    // The version reaches the script through the environment, keeping the
+    // workflow expression out of the shell (zizmor template-injection).
     expect(configJob).toContain(
-      'node scripts/wait-for-npm.mjs --release-version "${{ env.RELEASE_VERSION }}"'
+      'node scripts/wait-for-npm.mjs --release-version "${VERSION}"'
     );
     expect(buildJob).toContain('uses: ./.github/actions/publish-dockerhub');
     expect(manifestJob).toContain('docker buildx imagetools create');
