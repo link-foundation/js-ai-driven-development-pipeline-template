@@ -13,6 +13,10 @@
 // This lets PR synchronize runs skip slow checks when the latest PR head
 // commit is docs-only, while real merge pushes still evaluate the whole merge.
 //
+// Paths are compared package-relative: in a multi-language repository
+// (package.json in js/) the js/ prefix is stripped first and files belonging
+// to other languages are ignored, so the lists below match in both layouts.
+//
 // Ignored for every change-gating output:
 // - .changeset/ folder (changeset metadata)
 // - docs/case-studies/ folder (research documents)
@@ -30,6 +34,8 @@
 import { execFileSync } from 'child_process';
 import { appendFileSync } from 'fs';
 
+import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
+
 const ignoredPathPrefixes = [
   '.changeset/',
   'dev/log/',
@@ -37,6 +43,54 @@ const ignoredPathPrefixes = [
   'examples/',
   'experiments/',
 ];
+
+const workflowPathPrefix = '.github/workflows/';
+
+/**
+ * Path prefix of the JavaScript package relative to the repository root:
+ * `js/` in a multi-language repository, `''` in a single-package one.
+ *
+ * `git diff --name-only` prints repository-root-relative paths, while the
+ * ignore list is package-relative, so this prefix has to be stripped before
+ * the two are compared.
+ *
+ * @returns {string} Prefix ending with `/`, or an empty string.
+ */
+function getPackagePathPrefix() {
+  let jsRoot;
+  try {
+    jsRoot = getJsRoot({ jsRoot: parseJsRootConfig() });
+  } catch {
+    // No package.json anywhere: treat the repository root as the package root.
+    return '';
+  }
+  return !jsRoot || jsRoot === '.' ? '' : `${jsRoot.replace(/\/+$/, '')}/`;
+}
+
+/**
+ * Re-express repository-root-relative paths as package-relative ones.
+ *
+ * Files belonging to another language's package (`rust/Cargo.toml`) are
+ * dropped, since they are not JavaScript code changes. Workflow files are
+ * genuinely repository-root-relative and are kept as they are.
+ *
+ * @param {string[]} changedFiles Repository-root-relative paths.
+ * @param {string} prefix Package prefix from {@link getPackagePathPrefix}.
+ * @returns {string[]} Package-relative paths plus root-level workflow files.
+ */
+function toPackagePaths(changedFiles, prefix) {
+  if (!prefix) {
+    return changedFiles;
+  }
+
+  return changedFiles
+    .filter(
+      (file) => file.startsWith(prefix) || file.startsWith(workflowPathPrefix)
+    )
+    .map((file) =>
+      file.startsWith(prefix) ? file.slice(prefix.length) : file
+    );
+}
 
 function execGit(args) {
   try {
@@ -135,7 +189,12 @@ function detectChanges() {
   }
   console.log('');
 
-  const relevantChangedFiles = changedFiles.filter(
+  const packageChangedFiles = toPackagePaths(
+    changedFiles,
+    getPackagePathPrefix()
+  );
+
+  const relevantChangedFiles = packageChangedFiles.filter(
     (file) => !ignoredPathPrefixes.some((prefix) => file.startsWith(prefix))
   );
 
@@ -159,9 +218,10 @@ function detectChanges() {
   }
   console.log('');
 
-  const codePattern = /\.(mjs|cjs|js|json|yml|yaml)$|\.github\/workflows\//;
-  const anyCodeChanged = codeChangedFiles.some((file) =>
-    codePattern.test(file)
+  const codeFileExtensionPattern = /\.(mjs|cjs|js|json|yml|yaml)$/;
+  const anyCodeChanged = codeChangedFiles.some(
+    (file) =>
+      codeFileExtensionPattern.test(file) || file.startsWith(workflowPathPrefix)
   );
   setOutput('any-code-changed', anyCodeChanged ? 'true' : 'false');
 
