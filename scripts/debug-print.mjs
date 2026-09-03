@@ -22,14 +22,41 @@
  */
 
 /**
+ * Read one environment variable without ever throwing.
+ *
+ * Deno denies `process.env` access unless the run was granted `--allow-env`
+ * (the Deno test job only passes `--allow-read`), and the denial surfaces as a
+ * `NotCapable` error on the property read itself. Tracing must never be the
+ * reason a script or a test fails, so an unreadable variable counts as unset.
+ *
+ * @param {string} name variable to read
+ * @param {Record<string, string | undefined>} [env] explicit source, for tests
+ * @returns {string | undefined}
+ */
+export function readEnvVar(name, env) {
+  const source =
+    env ?? (typeof process === 'undefined' ? undefined : process.env);
+  if (!source) {
+    return undefined;
+  }
+  try {
+    return source[name];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * @param {Record<string, string | undefined>} [env] explicit source, for tests
  * @returns {boolean} true when debug output is enabled for this process
  */
-export function isDebugEnabled(env = process.env) {
+export function isDebugEnabled(env) {
+  const flag = readEnvVar('CI_SCRIPTS_DEBUG', env);
   return (
-    env.CI_SCRIPTS_DEBUG === '1' ||
-    env.CI_SCRIPTS_DEBUG === 'true' ||
-    env.RUNNER_DEBUG === '1' ||
-    env.ACTIONS_STEP_DEBUG === 'true'
+    flag === '1' ||
+    flag === 'true' ||
+    readEnvVar('RUNNER_DEBUG', env) === '1' ||
+    readEnvVar('ACTIONS_STEP_DEBUG', env) === 'true'
   );
 }
 
@@ -45,15 +72,42 @@ function format(value) {
 }
 
 /**
+ * Render the lines `debug()` would print, without printing them.
+ * @param {unknown[]} parts values to join into one message
+ * @returns {string[]} `::debug::`-prefixed lines
+ */
+export function formatDebugLines(parts) {
+  return parts
+    .map(format)
+    .join(' ')
+    .split('\n')
+    .map((chunk) => `::debug::${chunk}`);
+}
+
+/**
+ * Print a debug line through injected collaborators, but only when debug
+ * output is enabled. `debug()` is the production binding of this function.
+ *
+ * @param {{env?: Record<string, string | undefined>, log?: (line: string) => void}} options
+ * @param {...unknown} parts values to join into one message
+ * @returns {string[]} the lines printed, empty when debug output is off
+ */
+export function debugWith(options, ...parts) {
+  const { env, log = console.log } = options ?? {};
+  if (!isDebugEnabled(env)) {
+    return [];
+  }
+  const lines = formatDebugLines(parts);
+  for (const line of lines) {
+    log(line);
+  }
+  return lines;
+}
+
+/**
  * Print a debug line, but only when debug output is enabled.
  * @param {...unknown} parts values to join into one message
  */
 export function debug(...parts) {
-  if (!isDebugEnabled()) {
-    return;
-  }
-  const line = parts.map(format).join(' ');
-  for (const chunk of line.split('\n')) {
-    console.log(`::debug::${chunk}`);
-  }
+  return debugWith({}, ...parts);
 }
