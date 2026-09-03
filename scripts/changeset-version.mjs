@@ -24,14 +24,10 @@
  */
 
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
-
-// Load use-m dynamically
-const { use } = eval(
-  await (await fetch('https://unpkg.com/use-m/use.js')).text()
-);
+import { loadCommandStream } from './use-module.mjs';
 
 // Import command-stream for shell command execution
-const { $ } = await use('command-stream');
+const { $ } = await loadCommandStream();
 
 // Store the original working directory to restore after cd commands
 // IMPORTANT: command-stream's cd is a virtual command that calls process.chdir()
