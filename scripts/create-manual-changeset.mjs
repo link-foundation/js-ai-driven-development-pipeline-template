@@ -16,15 +16,11 @@ import { join } from 'path';
 
 import { getChangesetDir, getJsRoot, parseJsRootConfig } from './js-paths.mjs';
 import { formatChangesetHeader, readPackageInfo } from './package-info.mjs';
-
-// Load use-m dynamically
-const { use } = eval(
-  await (await fetch('https://unpkg.com/use-m/use.js')).text()
-);
+import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 
 // Import link-foundation libraries
-const { $ } = await use('command-stream');
-const { makeConfig } = await use('lino-arguments');
+const { $ } = await loadCommandStream();
+const { makeConfig } = await loadLinoArguments();
 
 // Parse CLI arguments using lino-arguments
 const config = makeConfig({

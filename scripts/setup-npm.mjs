@@ -250,12 +250,11 @@ if (isMainModule()) {
       failUnsupportedNodeVersion(process.version);
     }
 
-    // Load use-m dynamically only for CLI execution, so tests can import the
-    // pure version helpers without fetching dependencies or mutating npm.
-    const { use } = eval(
-      await (await fetch('https://unpkg.com/use-m/use.js')).text()
-    );
-    const { $ } = await use('command-stream');
+    // Load command-stream dynamically only for CLI execution, so tests can
+    // import the pure version helpers without fetching dependencies or
+    // mutating npm.
+    const { loadCommandStream } = await import('./use-module.mjs');
+    const { $ } = await loadCommandStream();
 
     await setupNpm($);
   } catch (error) {
