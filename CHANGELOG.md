@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.11.28
+
+### Patch Changes
+
+- Configure the release and merge-simulation commit author as `41898282+github-actions[bot]@users.noreply.github.com` in `scripts/version-and-commit.mjs` and `scripts/simulate-fresh-merge.sh`, so those commits are attributed to the `github-actions[bot]` account and no longer require an extra approval under rulesets with `require_extra_approval_for_unattributed_changes`.
+
+  Add a scheduled fail-closed high-severity audit for every committed npm lock.
+
+  Ignore successful redirects when checking Lychee reports for broken links.
+
+  Lint the workflows themselves: a new `workflows` check runs `actionlint` (from the Docker image that bundles shellcheck) and `zizmor`, and the findings they reported are fixed — the manifest digest list is built as an array, the packaging retry logs its attempt number, the npm wait passes the release version through the environment, and third-party actions are pinned to commit hashes.
+
+  Fail the web archive check on lychee errors that have no http(s) URL
+
+  `scripts/check-web-archive.mjs` only extracted `http(s)` links from the lychee
+  report, so errors such as a missing local file or an unresolvable root-relative
+  link were silently dropped. When those were the only errors the script printed
+  "No broken URLs found" and set `all_archived=true`, masking a failing lychee
+  run. The parser now matches the status marker instead of the URL and splits the
+  results into archivable URLs and links the Wayback Machine cannot answer; the
+  latter are annotated as errors and force `all_archived=false` with exit code 1.
+  Adds regression tests over a captured lychee report fixture.
+
+  Compare change detection paths package-relative so the ignore list (`examples/`, `.changeset/`, `experiments/`, `dev/log/`, `docs/case-studies/`) also matches in the multi-language layout, and stop reporting other languages' files as JavaScript code changes.
+
+  Publish Docker images for both amd64 and arm64 using native runners and a multi-architecture manifest.
+
+  Suppress the reviewed DEP0005 warning from the Docker manifest artifact download step.
+
+  Land the release version bump through a pull request when a repository ruleset declines the direct push to `main`, and stop reporting a GH013 rule violation as a lost push race.
+
+  Give long CI steps their own execution budget so an overrun reports `failure` instead of `cancelled`.
+
+  Fail broken-link checks until archived replacements are applied to dead links.
+
+  Load `command-stream` and `lino-arguments` through a shared use-m interop shim so the release scripts work on Node 24.
+
+  Node 22.12+ adds a synthetic `module.exports` named export to CommonJS namespaces whose names cannot be inferred, which stops use-m from unwrapping the callable default. Destructuring `$` off the result therefore yields `undefined` and every release script fails with `TypeError: $ is not a function` on the Node 24 runners the workflows request. `scripts/use-module.mjs` normalises the namespace, reports the HTTP status when `use.js` cannot be fetched, names the observed keys when no callable export is found, and traces the resolved shape under `CI_SCRIPTS_DEBUG=1`.
+
+  Report why `scripts/wait-for-npm.mjs` could not confirm a release. The check
+  queries the npm registry over HTTP and returns `{ available, status, httpStatus,
+url, error }`, so an HTTP 404 ("not published") is distinguished from an
+  unanswered probe (5xx, rate limit, proxy, DNS). Every attempt logs its outcome,
+  and an unanswered probe no longer claims the version "did not become available
+  on npm" — it says the publish status is unknown and points at the registry URL
+  to check. The step also exposes an `npm_check_status` output.
+
 ## 0.11.27
 
 ### Patch Changes
