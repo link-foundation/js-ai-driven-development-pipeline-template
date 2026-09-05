@@ -75,9 +75,45 @@ describe('isAlreadyPublishedError', () => {
     expect(isAlreadyPublishedError('npm error code E401')).toBe(false);
     expect(isAlreadyPublishedError(undefined)).toBe(false);
   });
+
+  it('detects the E409 "previously staged version" wording', () => {
+    expect(
+      isAlreadyPublishedError(
+        'npm error code E409\n' +
+          'npm error 409 Conflict - PUT https://registry.npmjs.org/pkg - ' +
+          'Cannot publish over previously staged version "0.20.1"'
+      )
+    ).toBe(true);
+    expect(
+      isAlreadyPublishedError(
+        '\u{1F98B}  error an error occurred while publishing command-stream: ' +
+          'E409 409 Conflict - PUT https://registry.npmjs.org/command-stream - ' +
+          'Cannot publish over the previously staged version "0.20.0".'
+      )
+    ).toBe(true);
+  });
 });
 
 describe('publishWithRetry', () => {
+  it('treats an E409 staged-version conflict as a cue to verify', async () => {
+    const result = await publishWithRetry({
+      publish: async () => ({
+        success: false,
+        error: new Error(
+          'npm error code E409\nnpm error 409 Conflict - PUT ' +
+            'https://registry.npmjs.org/pkg - Cannot publish over previously ' +
+            'staged version "0.20.1"'
+        ),
+        output: '',
+      }),
+      verify: async () => true,
+      sleepFn: noSleep,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.publishAttempts).toBe(1);
+  });
+
   it('never republishes when only verification lags', async () => {
     let publishes = 0;
     let checks = 0;
