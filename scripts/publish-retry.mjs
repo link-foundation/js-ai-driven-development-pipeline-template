@@ -28,12 +28,25 @@ export function sleep(ms) {
 /**
  * Patterns that mean "this exact version is already on the registry".
  * Such an error is a cue to verify, not to fail.
+ *
+ * Matching the registry's prose is inherently fragile, and this list is not
+ * authoritative: a match only decides whether to poll the registry, and the
+ * poll is the actual proof that the version is live. A missed wording costs a
+ * false failure, an over-eager match costs one bounded polling loop.
  */
 const ALREADY_PUBLISHED_PATTERNS = [
   'epublishconflict',
   'cannot publish over the previously published version',
   'cannot publish over previously published version',
   'you cannot publish over the previously published versions',
+  // npm returns E409 with this wording while the version is accepted but not
+  // yet visible on the public read path - the same "it is already there"
+  // situation the patterns above describe, and the window this retry loop
+  // exists to ride out. The bare phrase keeps matching if npm reworks the
+  // sentence prefix again.
+  'cannot publish over the previously staged version',
+  'cannot publish over previously staged version',
+  'previously staged version',
   'already published',
 ];
 
@@ -108,7 +121,9 @@ function shouldVerify({ success, error, output, log }) {
   if (!isAlreadyPublishedError(output || error?.message || '')) {
     return false;
   }
-  log('Publish reported the version is already published, verifying registry.');
+  log(
+    'Publish reported the version is already published or staged, verifying registry.'
+  );
   return true;
 }
 
