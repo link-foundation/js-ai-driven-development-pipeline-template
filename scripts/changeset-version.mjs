@@ -17,17 +17,19 @@
  * - use-m: Dynamic package loading without package.json dependencies
  * - command-stream: Modern shell command execution with streaming support
  *
- * Addresses issues documented in:
- * - Issue #21: Supporting both single and multi-language repository structures
- * - Reference: link-assistant/agent PR #112 (--legacy-peer-deps fix)
- * - Reference: link-assistant/agent PR #114 (configurable package root)
+ * Repository layout: single-language and multi-language repositories are both
+ * supported through a configurable JavaScript package root.
  */
 
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
+import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream } from './use-module.mjs';
 
 // Import command-stream for shell command execution
-const { $ } = await loadCommandStream();
+// Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
+// this script reports the failure and writes its outputs, and the process
+// does not die inside module initialisation.
+const [{ $ }] = await bootstrapDependencies([loadCommandStream]);
 
 // Store the original working directory to restore after cd commands
 // IMPORTANT: command-stream's cd is a virtual command that calls process.chdir()
@@ -51,7 +53,8 @@ try {
   console.log('\nSynchronizing package-lock.json...');
 
   // Use --legacy-peer-deps to handle peer dependency conflicts
-  // This addresses npm ERESOLVE errors documented in issue #111 / PR #112
+  // --legacy-peer-deps keeps a peer-dependency conflict from failing the
+  // lockfile refresh with npm ERESOLVE.
   if (needsCd({ jsRoot })) {
     await $`cd ${jsRoot} && npm install --package-lock-only --legacy-peer-deps`;
     process.chdir(originalCwd);
