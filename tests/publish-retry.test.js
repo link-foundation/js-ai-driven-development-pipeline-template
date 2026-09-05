@@ -113,9 +113,7 @@ describe('publishWithRetry', () => {
     expect(result.success).toBe(true);
     expect(result.publishAttempts).toBe(1);
   });
-});
 
-describe('publishWithRetry', () => {
   it('never republishes when only verification lags', async () => {
     let publishes = 0;
     let checks = 0;
