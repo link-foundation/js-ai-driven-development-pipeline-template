@@ -97,40 +97,147 @@ export function resolveNamedExport(loaded, exportName, moduleName) {
 }
 
 /**
- * Fetch and evaluate use-m, caching the result for the whole process.
+ * Per-attempt deadline. Without it a stalled CDN connection is bounded only by
+ * undici's 300 s `headersTimeout`, so one fetch can burn five minutes of a
+ * job's `timeout-minutes`.
+ */
+export const DEFAULT_TIMEOUT_MS = 15000;
+
+/** Total attempts, including the first one. */
+export const DEFAULT_ATTEMPTS = 3;
+
+/** Delay before the second attempt; doubled for each attempt after it. */
+export const DEFAULT_RETRY_DELAY_MS = 2000;
+
+/**
+ * One fetch-and-evaluate attempt, with a deadline on the request.
+ *
+ * The deadline is an `AbortController` armed by a timer that is always
+ * cleared. `AbortSignal.timeout()` would leave the deadline unref'd, so a
+ * stalled fetch would go unaborted when nothing else keeps the event loop
+ * alive.
  *
  * A non-2xx response is reported as an HTTP failure; eval-ing an error page as
  * JavaScript would only produce an opaque `SyntaxError`.
  *
- * @param {{fetchImpl?: typeof fetch, url?: string}} [options] injection seam for tests
+ * @param {{fetchImpl: typeof fetch, url: string, timeoutMs: number}} options
+ * @returns {Promise<(name: string) => Promise<unknown>>}
+ */
+async function fetchUseOnce({ fetchImpl, url, timeoutMs }) {
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(
+        () =>
+          controller.abort(
+            new Error(
+              `Timed out after ${timeoutMs}ms while fetching use-m from ${url}`
+            )
+          ),
+        timeoutMs
+      )
+    : null;
+  try {
+    const response = await (controller
+      ? fetchImpl(url, { signal: controller.signal })
+      : fetchImpl(url));
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch use-m from ${url}: ${response.status} ${response.statusText || ''}`.trim()
+      );
+    }
+    const source = await response.text();
+    // use-m ships as an eval-able bundle; this is its documented entry point.
+    const evaluated = await eval(source);
+    const use = evaluated?.use ?? evaluated?.default?.use;
+    if (typeof use !== 'function') {
+      throw new Error(
+        `use-m loaded from ${url} did not export a callable "use". ` +
+          `Received ${describeModule(evaluated)}.`
+      );
+    }
+    return use;
+  } catch (error) {
+    // `fetch` reports an abort as its own error; the reason says what happened.
+    throw controller?.signal.aborted ? controller.signal.reason : error;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/**
+ * Fill in the load defaults, keeping every knob injectable from a test.
+ * @param {Record<string, unknown>} options
+ * @returns {{fetchImpl: typeof fetch, url: string, attempts: number,
+ *   timeoutMs: number, retryDelayMs: number,
+ *   sleep: (ms: number) => Promise<void>}}
+ */
+function loadSettings(options) {
+  return {
+    fetchImpl: options.fetchImpl ?? fetch,
+    url: options.url ?? USE_M_URL,
+    attempts: options.attempts ?? DEFAULT_ATTEMPTS,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    retryDelayMs: options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS,
+    sleep:
+      options.sleep ??
+      ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+  };
+}
+
+/**
+ * Fetch and evaluate use-m, caching the result for the whole process.
+ *
+ * The load is a network dependency of every release script, so it is bounded
+ * on both axes: each attempt carries a deadline and a transient failure is
+ * retried with exponential backoff. The worst case stays well inside a job's
+ * `timeout-minutes` (3 x 15 s + 2 s + 4 s = 51 s by default).
+ *
+ * The final error names the CDN, the URL and the attempt count. A bare
+ * `TypeError: fetch failed` names neither, which makes a third-party outage
+ * look like a defect in the release logic.
+ *
+ * @param {{fetchImpl?: typeof fetch, url?: string, attempts?: number,
+ *   timeoutMs?: number, retryDelayMs?: number,
+ *   sleep?: (ms: number) => Promise<void>}} [options] injection seam for tests
  * @returns {Promise<(name: string) => Promise<unknown>>}
  */
 export async function loadUse(options = {}) {
-  const { fetchImpl = fetch, url = USE_M_URL } = options;
+  const settings = loadSettings(options);
+  const { url, attempts } = settings;
   if (cachedUse && !options.fetchImpl) {
     return cachedUse;
   }
-  const response = await fetchImpl(url);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch use-m from ${url}: ${response.status} ${response.statusText || ''}`.trim()
-    );
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const use = await fetchUseOnce(settings);
+      debug('loaded use-m', { url, attempt });
+      if (!options.fetchImpl) {
+        cachedUse = use;
+      }
+      return use;
+    } catch (error) {
+      lastError = error;
+      debug('use-m load attempt failed', {
+        url,
+        attempt,
+        attempts,
+        error: error?.message,
+      });
+      if (attempt < attempts) {
+        await settings.sleep(settings.retryDelayMs * 2 ** (attempt - 1));
+      }
+    }
   }
-  const source = await response.text();
-  // use-m ships as an eval-able bundle; this is its documented entry point.
-  const evaluated = await eval(source);
-  const use = evaluated?.use ?? evaluated?.default?.use;
-  if (typeof use !== 'function') {
-    throw new Error(
-      `use-m loaded from ${url} did not export a callable "use". ` +
-        `Received ${describeModule(evaluated)}.`
-    );
-  }
-  debug('loaded use-m', { url });
-  if (!options.fetchImpl) {
-    cachedUse = use;
-  }
-  return use;
+  throw new Error(
+    `Failed to load use-m from ${url} after ${attempts} attempt(s): ` +
+      `${lastError?.message ?? String(lastError)}. This is a network ` +
+      'dependency of the release scripts, not a defect in the published ' +
+      'package; re-run the job when the CDN answers again.',
+    { cause: lastError }
+  );
 }
 
 /**

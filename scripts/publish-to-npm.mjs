@@ -32,11 +32,17 @@ import {
   publishWithRetry,
   sleep,
 } from './publish-retry.mjs';
+import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 
 // Import link-foundation libraries
-const { $ } = await loadCommandStream();
-const { makeConfig } = await loadLinoArguments();
+// Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
+// this script reports the failure and writes its outputs, and the process
+// does not die inside module initialisation.
+const [{ $ }, { makeConfig }] = await bootstrapDependencies(
+  [loadCommandStream, loadLinoArguments],
+  { outputs: { published: 'false' } }
+);
 
 // Parse CLI arguments using lino-arguments
 const config = makeConfig({

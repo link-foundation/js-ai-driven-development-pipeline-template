@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 
 /**
- * Instant version bump script for manual releases
- * Bypasses the changeset workflow and directly updates version and changelog
+ * Instant version bump script for manual releases.
+ * Updates the version and the changelog directly, without the changeset
+ * workflow.
  *
  * Usage: node scripts/instant-version-bump.mjs --bump-type <major|minor|patch> [--description <description>] [--js-root <path>]
  *
@@ -15,10 +16,8 @@
  * - command-stream: Modern shell command execution with streaming support
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
  *
- * Addresses issues documented in:
- * - Issue #21: Supporting both single and multi-language repository structures
- * - Reference: link-assistant/agent PR #112 (--legacy-peer-deps fix)
- * - Reference: link-assistant/agent PR #114 (configurable package root)
+ * Repository layout: single-language and multi-language repositories are both
+ * supported through a configurable JavaScript package root.
  */
 
 import { readFileSync, writeFileSync } from 'fs';
@@ -30,11 +29,17 @@ import {
   needsCd,
   parseJsRootConfig,
 } from './js-paths.mjs';
+import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 
 // Import link-foundation libraries
-const { $ } = await loadCommandStream();
-const { makeConfig } = await loadLinoArguments();
+// Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
+// this script reports the failure and writes its outputs, and the process
+// does not die inside module initialisation.
+const [{ $ }, { makeConfig }] = await bootstrapDependencies([
+  loadCommandStream,
+  loadLinoArguments,
+]);
 
 // Parse CLI arguments using lino-arguments
 const config = makeConfig({
@@ -146,7 +151,8 @@ try {
   console.log('\nSynchronizing package-lock.json...');
 
   // Use --legacy-peer-deps to handle peer dependency conflicts
-  // This addresses npm ERESOLVE errors documented in issue #111 / PR #112
+  // --legacy-peer-deps keeps a peer-dependency conflict from failing the
+  // lockfile refresh with npm ERESOLVE.
   // IMPORTANT: cd is a virtual command that calls process.chdir(), so we restore after
   if (needsCd({ jsRoot })) {
     await $`cd ${jsRoot} && npm install --package-lock-only --legacy-peer-deps`;
