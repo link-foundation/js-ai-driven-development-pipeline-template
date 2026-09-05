@@ -55,6 +55,22 @@ function textResponse(
   };
 }
 
+/**
+ * Whether this runtime may bind a local socket. Deno denies it unless the run
+ * was granted --allow-net, and the denial is not catchable at the listen call.
+ * @returns {Promise<boolean>}
+ */
+async function canListen() {
+  if (typeof Deno === 'undefined') {
+    return true;
+  }
+  const status = await Deno.permissions.query({
+    name: 'net',
+    host: '127.0.0.1',
+  });
+  return status.state === 'granted';
+}
+
 describe('use-module interop shim', () => {
   it('reproduces the Node 24 namespace that breaks destructuring', () => {
     const { $ } = nodeTwentyFourNamespace();
@@ -333,8 +349,20 @@ describe('use-m load is bounded in time and retried', () => {
 
 describe('use-m load survives a stalled connection', () => {
   it('bounds a real connection that is accepted and never answered', async () => {
-    // Reproduction 2 from issue #161: undici's headersTimeout default is 300s,
-    // so without a deadline one stalled fetch burns five minutes of the job.
+    // A stalled connection is bounded only by undici's 300s headersTimeout
+    // default, so without a per-attempt deadline one fetch can burn five
+    // minutes of the job's budget.
+    //
+    // Binding a socket needs a permission the Deno job does not grant (it runs
+    // with --allow-read alone) and the denial surfaces as an uncaught
+    // NotCapable from inside the listen handle, so the check is skipped there;
+    // the Node and Bun runs of this same test keep the coverage.
+    if (!(await canListen())) {
+      console.log(
+        'Skipping: this runtime is not allowed to listen on 127.0.0.1.'
+      );
+      return;
+    }
     const server = createServer(() => {});
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${server.address().port}/use-m/use.js`;
