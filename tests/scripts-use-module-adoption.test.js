@@ -21,10 +21,13 @@ const scriptsDir = join(
   'scripts'
 );
 const SHIM = 'use-module.mjs';
+const BOOTSTRAP = 'bootstrap-dependencies.mjs';
 
 function scriptSources() {
   return readdirSync(scriptsDir)
-    .filter((name) => name.endsWith('.mjs') && name !== SHIM)
+    .filter(
+      (name) => name.endsWith('.mjs') && name !== SHIM && name !== BOOTSTRAP
+    )
     .map((name) => ({
       name,
       source: readFileSync(join(scriptsDir, name), 'utf8'),
@@ -45,6 +48,20 @@ describe('pipeline scripts load use-m through the interop shim', () => {
     const offenders = scriptSources()
       .filter(({ source }) =>
         /eval\(\s*\n?\s*await\s*\(await\s*fetch\(/.test(source)
+      )
+      .map(({ name }) => name);
+    expect(offenders).toEqual([]);
+  });
+
+  it('never awaits a loader at module scope outside the bootstrap', () => {
+    // A module-scope `await loadCommandStream()` that fails kills the script
+    // during initialisation: no log line, no GITHUB_OUTPUT, only a loader
+    // stack. bootstrapDependencies() turns that into a reported failure.
+    const offenders = scriptSources()
+      .filter(({ source }) =>
+        /^const\s[^\n]*await\s+load(CommandStream|LinoArguments)\(/m.test(
+          source
+        )
       )
       .map(({ name }) => name);
     expect(offenders).toEqual([]);

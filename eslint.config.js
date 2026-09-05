@@ -33,6 +33,9 @@ export default [
         // Node.js 18+ globals
         fetch: 'readonly',
         AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
         // Runtime-specific globals
         Bun: 'readonly',
         Deno: 'readonly',

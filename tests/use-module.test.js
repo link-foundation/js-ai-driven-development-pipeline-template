@@ -1,8 +1,13 @@
 /* eslint local/no-changelog-comments: "off" */
 
+import { createServer } from 'node:http';
+
 import { describe, it, expect } from 'test-anywhere';
 
 import {
+  DEFAULT_ATTEMPTS,
+  DEFAULT_RETRY_DELAY_MS,
+  DEFAULT_TIMEOUT_MS,
   describeModule,
   loadCommandStream,
   loadLinoArguments,
@@ -48,6 +53,22 @@ function textResponse(
       return body;
     },
   };
+}
+
+/**
+ * Whether this runtime may bind a local socket. Deno denies it unless the run
+ * was granted --allow-net, and the denial is not catchable at the listen call.
+ * @returns {Promise<boolean>}
+ */
+async function canListen() {
+  if (typeof Deno === 'undefined') {
+    return true;
+  }
+  const status = await Deno.permissions.query({
+    name: 'net',
+    host: '127.0.0.1',
+  });
+  return status.state === 'granted';
 }
 
 describe('use-module interop shim', () => {
@@ -161,6 +182,7 @@ describe('use-module interop shim', () => {
             status: 404,
             statusText: 'Not Found',
           }),
+        attempts: 1,
       });
     } catch (error) {
       message = error.message;
@@ -172,7 +194,10 @@ describe('use-module interop shim', () => {
   it('reports a use.js payload that exposes no callable use()', async () => {
     let message = '';
     try {
-      await loadUse({ fetchImpl: async () => textResponse('({ nope: 1 })') });
+      await loadUse({
+        fetchImpl: async () => textResponse('({ nope: 1 })'),
+        attempts: 1,
+      });
     } catch (error) {
       message = error.message;
     }
@@ -184,5 +209,184 @@ describe('use-module interop shim', () => {
       fetchImpl: async () => textResponse('({ use: async () => ({}) })'),
     });
     expect(typeof use).toBe('function');
+  });
+});
+
+describe('use-m load is bounded in time and retried', () => {
+  it('passes a deadline to every attempt', async () => {
+    const signals = [];
+    await loadUse({
+      fetchImpl: async (_url, init) => {
+        signals.push(init?.signal);
+        return textResponse('({ use: async () => ({}) })');
+      },
+      timeoutMs: 15000,
+    });
+    expect(signals.length).toBe(1);
+    expect(signals[0] instanceof AbortSignal).toBe(true);
+  });
+
+  it('retries a transient failure and returns the later success', async () => {
+    const delays = [];
+    let attempts = 0;
+    const use = await loadUse({
+      fetchImpl: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new TypeError('fetch failed');
+        }
+        return textResponse('({ use: async () => ({}) })');
+      },
+      retryDelayMs: 10,
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+    });
+    expect(attempts).toBe(3);
+    expect(typeof use).toBe('function');
+    // Exponential backoff: 10ms then 20ms.
+    expect(delays).toEqual([10, 20]);
+  });
+
+  it('stops after the configured number of attempts', async () => {
+    let attempts = 0;
+    await loadUse({
+      fetchImpl: async () => {
+        attempts += 1;
+        throw new TypeError('fetch failed');
+      },
+      attempts: 2,
+      sleep: async () => {},
+    }).catch(() => {});
+    expect(attempts).toBe(2);
+  });
+
+  it('names the URL, the attempt count and the last reason', async () => {
+    let error;
+    try {
+      await loadUse({
+        fetchImpl: async () => {
+          throw new TypeError('fetch failed');
+        },
+        url: 'https://203.0.113.1/use-m/use.js',
+        attempts: 2,
+        sleep: async () => {},
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error.message.includes('https://203.0.113.1/use-m/use.js')).toBe(
+      true
+    );
+    expect(error.message.includes('after 2 attempt(s)')).toBe(true);
+    expect(error.message.includes('fetch failed')).toBe(true);
+    expect(error.message.includes('network dependency')).toBe(true);
+  });
+
+  it('preserves the original failure as the error cause', async () => {
+    const original = new TypeError('fetch failed');
+    let error;
+    try {
+      await loadUse({
+        fetchImpl: async () => {
+          throw original;
+        },
+        attempts: 1,
+        sleep: async () => {},
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error.cause).toBe(original);
+  });
+
+  it('retries a non-2xx response instead of eval-ing an error page', async () => {
+    let attempts = 0;
+    let error;
+    try {
+      await loadUse({
+        fetchImpl: async () => {
+          attempts += 1;
+          return textResponse('<html>Bad Gateway</html>', {
+            ok: false,
+            status: 502,
+            statusText: 'Bad Gateway',
+          });
+        },
+        attempts: 2,
+        sleep: async () => {},
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(attempts).toBe(2);
+    expect(error.message.includes('502')).toBe(true);
+  });
+
+  it('aborts an attempt that exceeds the deadline', async () => {
+    let error;
+    try {
+      await loadUse({
+        // Never settles on its own; only the deadline can end it.
+        fetchImpl: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () =>
+              reject(new Error('aborted'))
+            );
+          }),
+        url: 'https://unpkg.com/use-m/use.js',
+        attempts: 1,
+        timeoutMs: 50,
+        sleep: async () => {},
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error.message.includes('after 1 attempt(s)')).toBe(true);
+    expect(error.cause.message.includes('Timed out after 50ms')).toBe(true);
+  });
+});
+
+describe('use-m load survives a stalled connection', () => {
+  it('bounds a real connection that is accepted and never answered', async () => {
+    // A stalled connection is bounded only by undici's 300s headersTimeout
+    // default, so without a per-attempt deadline one fetch can burn five
+    // minutes of the job's budget.
+    //
+    // Binding a socket needs a permission the Deno job does not grant (it runs
+    // with --allow-read alone) and the denial surfaces as an uncaught
+    // NotCapable from inside the listen handle, so the check is skipped there;
+    // the Node and Bun runs of this same test keep the coverage.
+    if (!(await canListen())) {
+      console.log(
+        'Skipping: this runtime is not allowed to listen on 127.0.0.1.'
+      );
+      return;
+    }
+    const server = createServer(() => {});
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${server.address().port}/use-m/use.js`;
+    const started = Date.now();
+    let error;
+    try {
+      await loadUse({
+        url,
+        attempts: 1,
+        timeoutMs: 300,
+        sleep: async () => {},
+      });
+    } catch (caught) {
+      error = caught;
+    } finally {
+      server.close();
+    }
+    expect(error.message.includes(url)).toBe(true);
+    expect(Date.now() - started < 10000).toBe(true);
+  });
+
+  it('exposes the defaults that keep the worst case inside a job budget', () => {
+    // 3 x 15s of attempts plus 2s + 4s of backoff = 51s.
+    expect(DEFAULT_ATTEMPTS * DEFAULT_TIMEOUT_MS).toBe(45000);
+    expect(DEFAULT_RETRY_DELAY_MS).toBe(2000);
   });
 });
