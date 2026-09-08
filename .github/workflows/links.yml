@@ -8,12 +8,24 @@ on:
       - '**.md'
       - '**.html'
       - '.github/workflows/links.yml'
+      - '.lycheeignore'
+      - 'scripts/check-web-archive.mjs'
+      - 'scripts/recheck-broken-links.mjs'
+      - 'tests/fixtures/lychee-report.md'
+      - 'tests/links-workflow.test.js'
+      - 'tests/recheck-broken-links.test.js'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - '**.md'
       - '**.html'
       - '.github/workflows/links.yml'
+      - '.lycheeignore'
+      - 'scripts/check-web-archive.mjs'
+      - 'scripts/recheck-broken-links.mjs'
+      - 'tests/fixtures/lychee-report.md'
+      - 'tests/links-workflow.test.js'
+      - 'tests/recheck-broken-links.test.js'
   workflow_dispatch:
 
 # Least-privilege default; jobs escalate individually when needed.
@@ -77,15 +89,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check broken links against Web Archive
+      - name: Re-check links that never got an answer
+        # --max-retries never retries a failure during the connect phase
+        # (lycheeverse/lychee#2297), so a healthy URL behind a connection
+        # reset is reported broken without one retry. Ask those URLs again
+        # outside lychee. A failure carrying a status code is a host's
+        # answer and stays final.
         if: steps.lychee.outputs.exit_code != 0
+        id: recheck
+        run: node scripts/recheck-broken-links.mjs
+        env:
+          LYCHEE_OUTPUT: lychee/out.md
+          RECOVERED_OUTPUT: lychee/recovered.txt
+
+      - name: Check broken links against Web Archive
+        # `!= 'true'`, never `== 'false'`: a skipped re-check leaves the
+        # output empty, and only the != form fails safe.
+        if: >-
+          steps.lychee.outputs.exit_code != 0 &&
+          steps.recheck.outputs.all_recovered != 'true'
         id: webarchive
         run: node scripts/check-web-archive.mjs
         env:
           LYCHEE_OUTPUT: lychee/out.md
+          RECOVERED_URLS: lychee/recovered.txt
 
       - name: Fail if broken links were found
-        if: always() && steps.lychee.outputs.exit_code != 0
+        if: >-
+          always() &&
+          steps.lychee.outputs.exit_code != 0 &&
+          steps.recheck.outputs.all_recovered != 'true'
         run: |
           echo "::error::Broken live links were detected."
           echo ""

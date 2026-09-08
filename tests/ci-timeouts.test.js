@@ -403,7 +403,12 @@ describe('CI execution budgets', () => {
       `BUDGET_WARN_PERCENT:-${MAX_BUDGET_SHARE_PERCENT}`
     );
   });
+});
 
+// Fixtures for the grouping rules behind the invariant: exclusive legs,
+// unconditional-plus-largest-group totals, env resolution, unreadable
+// budgets.
+describe('step budget grouping', () => {
   // A single matrix job runs exactly one leg, so legs guarded by distinct
   // `if:` conditions never share a job clock. Raising one leg past its
   // allowance while the others still fit must not be rejected as a sequence.
@@ -511,7 +516,7 @@ describe('CI execution budgets', () => {
     expect(budgets.map((budget) => budget.seconds)).toEqual([70, 60, 50]);
   });
 
-  it('reports a budget it cannot read instead of skipping it', () => {
+  it('reports a budget it cannot read and never skips one silently', () => {
     const workflow = [
       'name: Fixture',
       '',
