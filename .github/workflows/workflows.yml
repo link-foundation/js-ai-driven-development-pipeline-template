@@ -53,6 +53,25 @@ jobs:
         with:
           args: -color
 
+  # The terminal status job of release.yml keys branch protection; its
+  # needs list is hand-maintained, so a job left out of it could fail while
+  # the gate reports success. This derives the requirement from the
+  # workflow itself.
+  status-gate-coverage:
+    name: Status Gate Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-status-gate-coverage
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check the status gate covers every job
+        run: node scripts/check-status-gate-covers-all-jobs.mjs .github/workflows/release.yml
+
   zizmor:
     name: zizmor
     runs-on: ubuntu-latest

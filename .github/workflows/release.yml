@@ -425,34 +425,14 @@ jobs:
 
       # Documentation line limits (1500 lines, matching the architecture
       # limit) are enforced by the check-file-line-limits job, which scans
-      # every .md file. This job only validates required-file presence.
-      - name: Check required documentation files exist
-        run: |
-          REQUIRED_FILES=(
-            "docs/BEST-PRACTICES.md"
-            "docs/CONTRIBUTING.md"
-            "README.md"
-            "CHANGELOG.md"
-          )
-
-          MISSING=()
-          for file in "${REQUIRED_FILES[@]}"; do
-            if [ ! -f "$file" ]; then
-              echo "ERROR: Required documentation file missing: $file"
-              MISSING+=("$file")
-            else
-              echo "Found: $file"
-            fi
-          done
-
-          if [ "${#MISSING[@]}" -gt 0 ]; then
-            echo ""
-            echo "Missing required documentation files:"
-            printf '  %s\n' "${MISSING[@]}"
-            exit 1
-          else
-            echo "All required documentation files present."
-          fi
+      # every .md file. This job validates that the required documents
+      # exist AND still carry the sections readers depend on -- a deleted
+      # section is an ordinary diff hunk, and is exactly what review skims
+      # past. The requirement table lives in
+      # scripts/check-required-docs.sh; `--list` prints it for tests and
+      # reviewers.
+      - name: Check required documentation sections
+        run: bash scripts/check-required-docs.sh
 
   # Principle 16 of the shared CI/CD best practices: prove the release
   # credentials can write before the expensive jobs spend their minutes

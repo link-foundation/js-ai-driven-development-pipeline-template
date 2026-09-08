@@ -68,10 +68,11 @@ describe('workflow linting job', () => {
     expect(workflowsWorkflow).toContain('--min-confidence high');
   });
 
-  it('bounds both jobs with a timeout backstop', () => {
+  it('bounds every job with a timeout backstop', () => {
     const timeouts = workflowsWorkflow.match(/^ {4}timeout-minutes: \d+$/gm);
 
     expect(timeouts).toEqual([
+      '    timeout-minutes: 10',
       '    timeout-minutes: 10',
       '    timeout-minutes: 10',
     ]);
