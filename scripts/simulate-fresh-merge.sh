@@ -30,7 +30,32 @@ git config user.name "github-actions[bot]"
 
 # Fetch the latest base branch
 echo "Fetching latest $BASE_REF..."
-git fetch origin "$BASE_REF"
+
+# A transient failure of this one fetch used to end the job under
+# set -e (a runner-side DNS blip turned a required check red). Retry with
+# backoff; a base branch that truly cannot be fetched must still fail,
+# because silently skipping the merge simulation is the false negative this
+# check exists to prevent.
+fetch_with_retry() {
+  local attempt=1
+  local max_attempts=5
+  local delay="${FRESH_MERGE_RETRY_DELAY_SECONDS:-5}"
+
+  while :; do
+    if git fetch origin "$@"; then
+      return 0
+    fi
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      echo "::error::git fetch origin $* failed $max_attempts times; the base branch could not be read" >&2
+      return 1
+    fi
+    echo "git fetch origin $* failed (attempt $attempt/$max_attempts); retrying in $((delay * attempt))s" >&2
+    sleep "$((delay * attempt))"
+    attempt=$((attempt + 1))
+  done
+}
+
+fetch_with_retry "$BASE_REF"
 
 # Get current and base branch info
 CURRENT_SHA=$(git rev-parse HEAD)

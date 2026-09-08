@@ -48,6 +48,16 @@ grace_seconds="${BUDGET_GRACE_SECONDS:-10}"
 poll_seconds="${BUDGET_POLL_SECONDS:-1}"
 warn_seconds=$((budget_seconds * warn_percent / 100))
 
+# A fractional value is legitimate, but it must be a number: the grace loop
+# sleeps on it, and a typo would otherwise sit here undiscovered until the
+# first overrun.
+case "$poll_seconds" in
+  '' | *[!0-9.]* | *.*.*)
+    echo "BUDGET_POLL_SECONDS must be a positive number, got: ${poll_seconds}" >&2
+    exit 2
+    ;;
+esac
+
 status_dir="$(mktemp -d "${TMPDIR:-/tmp}/budget-status.XXXXXX")"
 status_file="${status_dir}/status"
 trap 'rm -rf "${status_dir}"' EXIT
@@ -79,18 +89,25 @@ signal_command() {
     true
 }
 
+# Liveness is tracked on the process group, never on command_pid alone: the
+# pid belongs to the wrapper subshell, which dies on SIGTERM as soon as it
+# is delivered even when the command itself ignores the signal -- a group
+# that still has a live member is the only reliable "still running" answer.
 command_is_running() {
-  [ ! -f "${status_file}" ] && kill -0 "${command_pid}" 2>/dev/null
+  [ ! -f "${status_file}" ] &&
+    kill -0 -- "-${command_pid}" 2>/dev/null
 }
 
 terminate_over_budget() {
   echo "::error title=${label} exceeded its execution budget::${label} did not finish within its ${budget_seconds}s budget and was terminated. Shorten the step or raise its budget (keeping it below the job's timeout-minutes backstop)."
   signal_command TERM
 
-  local waited=0
-  while command_is_running && [ "${waited}" -lt "${grace_seconds}" ]; do
+  # The step's own SECONDS clock, not an accumulation of the (possibly
+  # fractional) poll interval: bash arithmetic is integer-only, so summing
+  # poll_seconds would abort this function before the SIGKILL escalation.
+  local grace_deadline=$((SECONDS + grace_seconds))
+  while command_is_running && [ "${SECONDS}" -lt "${grace_deadline}" ]; do
     sleep "${poll_seconds}"
-    waited=$((waited + poll_seconds))
   done
 
   if command_is_running; then

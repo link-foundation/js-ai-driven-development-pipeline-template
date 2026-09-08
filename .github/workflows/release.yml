@@ -402,8 +402,13 @@ jobs:
           push: false
           load: true
           tags: pr-check:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scoped so this build cannot overwrite or be overwritten by the
+          # unscoped default `buildkit` scope: the GitHub Actions cache is a
+          # 10 GB repository-wide pool with LRU eviction, and unscoped
+          # mode=max exports of every intermediate layer crowd out the caches
+          # the rest of the pipeline reads.
+          cache-from: type=gha,scope=docker-image
+          cache-to: type=gha,mode=max,scope=docker-image
 
   # === DOCUMENTATION VALIDATION ===
   # Validate documentation files when docs change (hive-mind principle #12)

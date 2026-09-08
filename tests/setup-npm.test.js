@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'test-anywhere';
+import { readFileSync } from 'node:fs';
 
 import {
   NODE_MIN_VERSION,
@@ -60,5 +61,32 @@ describe('setup-npm version requirements', () => {
       version: '11.10.0',
       tarballUrl: 'https://registry.npmjs.org/npm/-/npm-11.10.0.tgz',
     });
+  });
+});
+
+describe('setup-npm tarball strategy', () => {
+  const script = readFileSync('scripts/setup-npm.mjs', 'utf8');
+
+  it('downloads to a file with retries, then extracts', () => {
+    // Piping curl straight into tar meant a truncated transfer (curl exit
+    // 18, which plain --retry does not cover) left a half-populated npm
+    // directory behind; a file download restarts cleanly on retry.
+    expect(script).toContain(
+      'curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors'
+    );
+    expect(script).toContain('-o "${tarball}"');
+    expect(script).toContain(
+      'tar xz --strip-components=1 -C "${tempNpmDir}" -f "${tarball}"'
+    );
+    expect(script).not.toContain('| tar xz');
+  });
+
+  it('clears the staging directory before extracting', () => {
+    const download = script.indexOf('curl -fsSL --retry');
+    const clean = script.indexOf('rm -rf "${tempNpmDir}" && mkdir -p');
+    const extract = script.indexOf('tar xz --strip-components=1');
+
+    expect(clean).toBeGreaterThan(download);
+    expect(extract).toBeGreaterThan(clean);
   });
 });
