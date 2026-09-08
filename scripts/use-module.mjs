@@ -259,13 +259,34 @@ export async function useModule(moduleName, exportName, use) {
 }
 
 /**
- * Load `command-stream` with `$` guaranteed to be callable.
+ * Load `command-stream` with `$` guaranteed to be callable and with
+ * non-zero exits rejecting.
+ *
+ * The errexit switch is the semantics every release script is written
+ * against: without it `$` RESOLVES on a non-zero exit, so every
+ * `try { await $`...`; } catch` in the release path is unreachable and a
+ * crashed step prints the success line. The scripts that deliberately
+ * probe for a non-zero outcome (`push-main-with-rebase-retry.mjs`,
+ * `land-via-pull-request.mjs`) use `runCommand`/`runStrict` from
+ * run-command.mjs, which resolves with the code, so this switch does not
+ * reach them.
  *
  * @param {(name: string) => Promise<unknown>} [use] pre-loaded use-m function
  * @returns {Promise<Record<string, unknown>>} command-stream exports
  */
-export function loadCommandStream(use) {
-  return useModule('command-stream', '$', use);
+export async function loadCommandStream(use) {
+  const commandStream = await useModule('command-stream', '$', use);
+  const shell = commandStream.shell;
+
+  if (shell && typeof shell.errexit === 'function') {
+    shell.errexit(true);
+  } else {
+    debug(
+      'command-stream did not expose shell.errexit; $ keeps resolve-on-exit semantics'
+    );
+  }
+
+  return commandStream;
 }
 
 /**

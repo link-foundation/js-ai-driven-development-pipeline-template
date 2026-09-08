@@ -61,7 +61,9 @@ describe('optional Docker Hub publishing workflow', () => {
   it('adds a Docker publish job downstream of npm release jobs', () => {
     const configJob = getWorkflowJob(releaseWorkflow, 'docker-publish-config');
 
-    expect(configJob).toContain('needs: [release, instant-release]');
+    expect(configJob).toContain(
+      'needs: [release, instant-release, release-preflight]'
+    );
     expect(configJob).toContain('DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}');
     expect(configJob).toContain(
       'DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}'

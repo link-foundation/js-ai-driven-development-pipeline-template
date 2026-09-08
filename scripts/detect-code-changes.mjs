@@ -2,16 +2,19 @@
 
 // Detect code changes for CI/CD pipeline
 //
-// Detects what types of files changed in the latest commit and outputs
-// results for use in GitHub Actions workflow conditions.
+// Detects what types of files changed and outputs results for use in
+// GitHub Actions workflow conditions.
 //
-// For PRs: GitHub Actions checks out a synthetic merge commit, so we
-// compare HEAD^2^ to HEAD^2 (the PR head's per-commit diff).
+// For PRs: GitHub Actions checks out a synthetic merge commit. When the
+// push event carries before/after SHAs and the previous head verifiably
+// passed this workflow, only the push range is diffed; otherwise the
+// full PR diff against the base SHA is used, because a push can carry
+// several commits and a superseded run may never have tested them.
 // For merge commits pushed to main: compares HEAD^1 to HEAD (the full
 // first-parent merge diff).
 // For non-merge pushes: compares HEAD^ to HEAD.
-// This lets PR synchronize runs skip slow checks when the latest PR head
-// commit is docs-only, while real merge pushes still evaluate the whole merge.
+// This lets PR synchronize runs skip slow checks when the pushed range
+// is docs-only, while real merge pushes still evaluate the whole merge.
 //
 // Paths are compared package-relative: in a multi-language repository
 // (package.json in js/) the js/ prefix is stripped first and files belonging
@@ -125,30 +128,168 @@ function isPullRequestEvent() {
   return process.env.GITHUB_EVENT_NAME === 'pull_request';
 }
 
+/**
+ * The before/after SHAs of the push that triggered this run, when they
+ * describe a real push onto the PR branch. Branch creation reports the
+ * zero SHA as `before`, which would make the range unusable.
+ */
+function getPushRange() {
+  const beforeSha = process.env.GITHUB_BEFORE_SHA ?? '';
+  const afterSha = process.env.GITHUB_AFTER_SHA ?? '';
+
+  if (
+    !beforeSha ||
+    !afterSha ||
+    /^0+$/.test(beforeSha) ||
+    /^0+$/.test(afterSha)
+  ) {
+    return null;
+  }
+  return { beforeSha, afterSha };
+}
+
+function getWorkflowFile() {
+  // GITHUB_WORKFLOW_REF looks like
+  // owner/repo/.github/workflows/release.yml@refs/pull/1/merge
+  const workflowRef = process.env.GITHUB_WORKFLOW_REF ?? '';
+  const marker = '.github/workflows/';
+  const markerIndex = workflowRef.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+  const file = workflowRef
+    .slice(markerIndex + marker.length)
+    .split('@')[0]
+    .trim();
+  return file || null;
+}
+
+/**
+ * Whether the previous head of the PR branch has a successful run of this
+ * workflow recorded for it.
+ *
+ * Returns true when the Actions API reports one, false when it reports
+ * none, and null whenever the answer cannot be trusted: missing context,
+ * no token, a non-2xx response or an unparseable body. A null must widen
+ * the diff, never narrow it.
+ */
+async function previousHeadWasTested(beforeSha) {
+  const workflowFile = getWorkflowFile();
+  const repository = process.env.GITHUB_REPOSITORY ?? '';
+  const token = process.env.GITHUB_TOKEN ?? '';
+
+  if (!workflowFile || !repository || !token) {
+    console.log(
+      'No workflow context to verify the previous head with; assuming unverified.'
+    );
+    return null;
+  }
+
+  const endpoint =
+    `${process.env.GITHUB_API_URL ?? 'https://api.github.com'}/repos/` +
+    `${repository}/actions/workflows/${workflowFile}/runs` +
+    `?head_sha=${beforeSha}&status=success&per_page=1`;
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (!response.ok) {
+      console.log(
+        `Workflow run lookup returned ${response.status}; the previous head stays unverified.`
+      );
+      return null;
+    }
+
+    const body = await response.json();
+
+    if (typeof body?.total_count !== 'number') {
+      console.log(
+        'Workflow run lookup returned an unexpected body; the previous head stays unverified.'
+      );
+      return null;
+    }
+    return body.total_count > 0;
+  } catch (error) {
+    console.log(
+      `Workflow run lookup failed (${error?.message ?? error}); the previous head stays unverified.`
+    );
+    return null;
+  }
+}
+
+/**
+ * The git arguments describing what a pull_request run must evaluate.
+ *
+ * The push range (before..after) is only honest when the previous head
+ * actually passed this workflow: a superseded run means those commits
+ * were never tested, so the range widens to the full PR diff. With no
+ * base SHA to widen to, the push range is kept - unverified is not
+ * known-untested, and a one-commit fallback would narrow the coverage.
+ */
+async function getPullRequestDiffArgs() {
+  const pushRange = getPushRange();
+  const baseSha = process.env.GITHUB_BASE_SHA ?? '';
+
+  if (!pushRange) {
+    if (baseSha) {
+      console.log(`Comparing ${baseSha} to HEAD^2 (full PR diff)`);
+      return ['diff', '--name-only', baseSha, 'HEAD^2'];
+    }
+    return null;
+  }
+
+  const { beforeSha, afterSha } = pushRange;
+  const previousHeadTested = await previousHeadWasTested(beforeSha);
+
+  if (previousHeadTested !== true && baseSha) {
+    if (previousHeadTested === false) {
+      console.log(
+        'The previous head has no successful run of this workflow; comparing the full PR diff.'
+      );
+    }
+    console.log(`Comparing ${baseSha} to HEAD^2 (full PR diff)`);
+    return ['diff', '--name-only', baseSha, 'HEAD^2'];
+  }
+
+  console.log(`Comparing ${beforeSha} to ${afterSha} (push range)`);
+  return ['diff', '--name-only', beforeSha, afterSha];
+}
+
 function getChangedFiles() {
   const mergeCommit = isMergeCommit();
 
   // GitHub Actions checks out a synthetic merge commit for pull_request
   // events: HEAD is the merge commit, HEAD^ is the base branch, HEAD^2
-  // is the actual PR head. For the PR head's per-commit diff,
-  // compare HEAD^2^ with HEAD^2.
+  // is the actual PR head. The range to diff depends on what the push
+  // carried and whether the previous head was verifiably tested.
   // For push events, merge commits need the first-parent diff so the full
   // branch merge is evaluated, not only the PR head's final commit.
   if (mergeCommit && isPullRequestEvent()) {
-    console.log('Merge commit detected (pull_request event)');
-    console.log('Comparing HEAD^2^ to HEAD^2 (per-commit diff of PR head)');
-    try {
-      return splitChangedFiles(
-        execGit(['diff', '--name-only', 'HEAD^2^', 'HEAD^2'])
-      );
-    } catch {
-      console.log(
-        'HEAD^2^ not available (first commit in PR), listing files in HEAD^2'
-      );
-      return splitChangedFiles(
-        execGit(['diff', '--name-only', 'HEAD^', 'HEAD^2'])
-      );
-    }
+    return getPullRequestDiffArgs().then((diffArgs) => {
+      if (!diffArgs) {
+        console.log('Comparing HEAD^2^ to HEAD^2 (per-commit diff of PR head)');
+        try {
+          return splitChangedFiles(
+            execGit(['diff', '--name-only', 'HEAD^2^', 'HEAD^2'])
+          );
+        } catch {
+          console.log(
+            'HEAD^2^ not available (first commit in PR), listing files in HEAD^2'
+          );
+          return splitChangedFiles(
+            execGit(['diff', '--name-only', 'HEAD^', 'HEAD^2'])
+          );
+        }
+      }
+      return splitChangedFiles(execGit(diffArgs));
+    });
   }
 
   if (mergeCommit) {
@@ -176,10 +317,10 @@ function isExcludedFromCodeChanges(filePath) {
   return filePath.startsWith('docs/');
 }
 
-function detectChanges() {
+async function detectChanges() {
   console.log('Detecting file changes for CI/CD...\n');
 
-  const changedFiles = getChangedFiles();
+  const changedFiles = await getChangedFiles();
 
   console.log('Changed files:');
   if (changedFiles.length === 0) {
@@ -229,4 +370,7 @@ function detectChanges() {
 }
 
 // Run the detection
-detectChanges();
+detectChanges().catch((error) => {
+  console.error(error?.message ?? error);
+  process.exit(1);
+});

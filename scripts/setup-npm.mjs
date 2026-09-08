@@ -149,9 +149,18 @@ async function tryCurlTarball($, fetchFn) {
   ).stdout.trim();
   const globalNpmDir = `${nodeDir}/lib/node_modules/npm`;
   const tempNpmDir = '/tmp/setup-npm-package';
+  const tarball = '/tmp/setup-npm-package.tgz';
 
+  // Download to a file, not straight into the extractor: a mid-transfer
+  // truncation (curl exit 18) must not leave a half-populated directory, and
+  // a retried piped transfer can hand the extractor the head of the archive
+  // twice. `--retry` alone does not cover exit 18; `--retry-all-errors` is
+  // what retries it.
+  await $`rm -f "${tarball}"`;
+  await $`curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors "${npmRelease.tarballUrl}" -o "${tarball}"`;
   await $`rm -rf "${tempNpmDir}" && mkdir -p "${tempNpmDir}"`;
-  await $`curl -fsSL "${npmRelease.tarballUrl}" | tar xz --strip-components=1 -C "${tempNpmDir}" && rm -rf "${globalNpmDir}" && mv "${tempNpmDir}" "${globalNpmDir}"`;
+  await $`tar xz --strip-components=1 -C "${tempNpmDir}" -f "${tarball}"`;
+  await $`rm -rf "${globalNpmDir}" && mv "${tempNpmDir}" "${globalNpmDir}"`;
 }
 
 async function tryNpxInstall($) {

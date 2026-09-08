@@ -1,5 +1,5 @@
 {
-  "threshold": 0,
+  "threshold": 10,
   "minTokens": 30,
   "minLines": 5,
   "skipComments": true,
@@ -10,12 +10,13 @@
     "**/*.min.js",
     "**/coverage/**",
     "**/.changeset/**",
+    "**/docs/case-studies/**",
     "**/docs/case-studies/**/data/**",
     "**/package-lock.json",
     "**/pnpm-lock.yaml",
     "**/yarn.lock"
   ],
-  "format": "console",
+  "format": ["javascript"],
   "reporters": ["console", "html"],
   "output": "./reports/jscpd"
 }

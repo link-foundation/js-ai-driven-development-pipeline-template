@@ -68,7 +68,14 @@ export default [
       'require-await': 'warn',
 
       // Comments and documentation
-      'local/no-changelog-comments': 'warn',
+      'local/no-changelog-comments': [
+        'warn',
+        {
+          // GitHub's X-GitHub-Api-Version header value is a protocol
+          // constant, not a reference to a changelog entry.
+          allow: ['2022-11-28'],
+        },
+      ],
       'spaced-comment': ['error', 'always', { markers: ['/'] }],
 
       // Complexity rules - reasonable thresholds for maintainability
@@ -124,6 +131,8 @@ export default [
       '**/out/**',
       '*.min.js',
       '.eslintcache',
+      // The jscpd HTML reporter writes a bundled prism.js here
+      'reports/**',
       // Case study raw data files (downloaded from external sources)
       'docs/case-studies/*/data/**',
     ],

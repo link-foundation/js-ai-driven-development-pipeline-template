@@ -37,9 +37,35 @@ describe('pull-request Docker build check', () => {
     expect(dockerBuildJob).toContain('uses: docker/build-push-action@v7');
     expect(dockerBuildJob).toContain('push: false');
     expect(dockerBuildJob).toContain('load: true');
-    expect(dockerBuildJob).toContain('cache-from: type=gha');
-    expect(dockerBuildJob).toContain('cache-to: type=gha,mode=max');
+    expect(dockerBuildJob).toContain('cache-from: type=gha,scope=docker-image');
+    expect(dockerBuildJob).toContain(
+      'cache-to: type=gha,mode=max,scope=docker-image'
+    );
     expect(dockerBuildJob).not.toContain('DOCKERHUB_TOKEN');
+  });
+
+  it('scopes every gha cache exchange in the repository', () => {
+    // Without a scope every build writes the same default `buildkit` cache
+    // object, so concurrent builds overwrite each other and the mode=max
+    // layer exports crowd the repository-wide 10 GB LRU pool.
+    const sources = [
+      releaseWorkflow,
+      ...['links.yml', 'security.yml', 'workflows.yml', 'example-app.yml'].map(
+        (name) => readFileSync(`.github/workflows/${name}`, 'utf8')
+      ),
+      readFileSync('.github/actions/publish-dockerhub/action.yml', 'utf8'),
+    ];
+    const unscoped = [];
+
+    for (const [sourceIndex, source] of sources.entries()) {
+      for (const match of source.matchAll(/cache-(?:from|to): *[^\n]*/g)) {
+        if (/type=gha/.test(match[0]) && !/scope=/.test(match[0])) {
+          unscoped.push(`source ${sourceIndex}: ${match[0].trim()}`);
+        }
+      }
+    }
+
+    expect(unscoped).toEqual([]);
   });
 
   it('builds the image before any release job runs', () => {
@@ -49,7 +75,9 @@ describe('pull-request Docker build check', () => {
       releaseWorkflow,
       'docker-publish-config'
     );
-    expect(publishConfigJob).toContain('needs: [release, instant-release]');
+    expect(publishConfigJob).toContain(
+      'needs: [release, instant-release, release-preflight]'
+    );
     expect(dockerBuildJob).not.toContain('release');
   });
 });

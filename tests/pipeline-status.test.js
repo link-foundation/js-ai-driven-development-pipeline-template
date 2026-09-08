@@ -7,6 +7,19 @@ const workflow = readFileSync(
   '.github/workflows/release.yml',
   'utf8'
 ).replaceAll('\r\n', '\n');
+const workflowNames = [
+  'release.yml',
+  'links.yml',
+  'security.yml',
+  'workflows.yml',
+  'example-app.yml',
+];
+const gatedWorkflows = Object.fromEntries(
+  workflowNames.map((name) => [
+    name,
+    readFileSync(`.github/workflows/${name}`, 'utf8').replaceAll('\r\n', '\n'),
+  ])
+);
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-pipeline-status.sh', import.meta.url)
 );
@@ -63,13 +76,14 @@ function listNeededJobs(jobBlock) {
   return neededJobs;
 }
 
-function runGate(needs, isMain = false) {
+function runGate(needs, isMain = false, extraEnv = {}) {
   return spawnSync('bash', [scriptPath], {
     encoding: 'utf8',
     env: {
       ...process.env,
       NEEDS_JSON: JSON.stringify(needs),
       IS_MAIN: String(isMain),
+      ...extraEnv,
     },
   });
 }
@@ -85,6 +99,7 @@ describe('pipeline status gate', () => {
     expect(gate).toContain(
       "IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}"
     );
+    expect(gate).toContain('RUN_SHA: ${{ github.sha }}');
     expect(listNeededJobs(gate).sort()).toEqual(
       jobs.filter((job) => job !== 'pipeline-status').sort()
     );
@@ -130,6 +145,122 @@ describe('pipeline status gate', () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('::warning::Cancelled jobs: test');
+    });
+  }
+});
+
+describe('pipeline status gate in every workflow', () => {
+  it('gates every workflow and observes every other job', () => {
+    const problems = [];
+
+    for (const [name, source] of Object.entries(gatedWorkflows)) {
+      const jobs = listWorkflowJobs(source);
+      const gate = getJobBlock(source, 'pipeline-status');
+
+      if (!jobs.includes('pipeline-status')) {
+        problems.push(`${name}: no pipeline-status gate job`);
+        continue;
+      }
+
+      const covered = listNeededJobs(gate).sort();
+      const expected = jobs.filter((job) => job !== 'pipeline-status').sort();
+
+      if (covered.join(',') !== expected.join(',')) {
+        problems.push(
+          `${name}: gate needs [${covered}] does not cover [${expected}]`
+        );
+      }
+
+      if (!gate.includes('RUN_SHA: ${{ github.sha }}')) {
+        problems.push(`${name}: gate does not pass RUN_SHA`);
+      }
+
+      if (!gate.includes('run: bash scripts/check-pipeline-status.sh')) {
+        problems.push(`${name}: gate does not run the gate script`);
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+
+  it('uses a status function, so the gate runs when its needs fail', () => {
+    const problems = [];
+
+    for (const [name, source] of Object.entries(gatedWorkflows)) {
+      const gate = getJobBlock(source, 'pipeline-status');
+
+      if (!gate.includes('!cancelled()') && !gate.includes('always()')) {
+        problems.push(`${name}: gate has no status function in its if`);
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+
+  it('bounds the new gate jobs at 5 minutes', () => {
+    for (const name of [
+      'links.yml',
+      'security.yml',
+      'workflows.yml',
+      'example-app.yml',
+    ]) {
+      const gate = getJobBlock(gatedWorkflows[name], 'pipeline-status');
+
+      expect(gate).toContain('    timeout-minutes: 5');
+    }
+  });
+});
+
+describe('pipeline status supersede detection', () => {
+  const cancelled = { lint: { result: 'cancelled' } };
+
+  if (canRunBash) {
+    it('errors when main is at the run commit (a genuine overrun)', () => {
+      const result = runGate(cancelled, true, {
+        RUN_SHA: 'aaa111',
+        BRANCH_HEAD_SHA: 'aaa111',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        'Pipeline has cancelled jobs on main: lint'
+      );
+    });
+
+    it('warns when the branch has moved past this run (a supersede)', () => {
+      const result = runGate(cancelled, true, {
+        RUN_SHA: 'aaa111',
+        BRANCH_HEAD_SHA: 'bbb222',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('::warning::Cancelled jobs: lint');
+      expect(result.stdout).toContain(
+        'This run tests aaa111; main is at bbb222.'
+      );
+    });
+
+    it('errors when the branch head cannot be resolved', () => {
+      const result = runGate(cancelled, true, {
+        RUN_SHA: 'aaa111',
+        GIT_REMOTE: 'no-such-remote',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Could not resolve the head of main');
+      expect(result.stdout).toContain(
+        'Pipeline has cancelled jobs on main: lint'
+      );
+    });
+
+    it('errors without a network call when RUN_SHA is missing', () => {
+      const result = runGate(cancelled, true);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('RUN_SHA is unset');
+      expect(result.stdout).toContain(
+        'Pipeline has cancelled jobs on main: lint'
+      );
     });
   }
 });

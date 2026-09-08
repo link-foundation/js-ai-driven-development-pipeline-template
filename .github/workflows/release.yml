@@ -52,6 +52,13 @@ jobs:
     # Typical run: ~6s. Cap at 5min so a hung detection step
     # surfaces quickly instead of stalling the whole pipeline.
     timeout-minutes: 5
+    # Job-level permissions replace the workflow defaults for this job.
+    permissions:
+      contents: read
+      # The detector asks the Actions API whether the previous head of the
+      # branch already passed this workflow, so a docs-only push can trust
+      # its incremental range.
+      actions: read
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-detect-changes
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -64,9 +71,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect changes
         id: changes
+        env:
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_AFTER_SHA: ${{ github.event.after }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
         run: node scripts/detect-code-changes.mjs
 
   # === FAST CHECKS - run before slow tests for fastest feedback ===
@@ -86,6 +100,8 @@ jobs:
       needs.detect-changes.outputs.js-changed == 'true'
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Check .mjs syntax
         run: bash scripts/check-mjs-syntax.sh
@@ -107,6 +123,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -135,6 +152,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check for version changes in package.json
         env:
@@ -158,6 +176,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -213,6 +232,7 @@ jobs:
         with:
           # For PRs, fetch enough history to merge with base branch
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -292,6 +312,7 @@ jobs:
         with:
           # For PRs, fetch enough history to merge with base branch
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -369,6 +390,8 @@ jobs:
       DOCKERFILE: ${{ vars.DOCKERFILE }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Check Docker build configuration
         id: docker_config
@@ -392,8 +415,13 @@ jobs:
           push: false
           load: true
           tags: pr-check:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scoped so this build cannot overwrite or be overwritten by the
+          # unscoped default `buildkit` scope: the GitHub Actions cache is a
+          # 10 GB repository-wide pool with LRU eviction, and unscoped
+          # mode=max exports of every intermediate layer crowd out the caches
+          # the rest of the pipeline reads.
+          cache-from: type=gha,scope=docker-image
+          cache-to: type=gha,mode=max,scope=docker-image
 
   # === DOCUMENTATION VALIDATION ===
   # Validate documentation files when docs change (hive-mind principle #12)
@@ -410,42 +438,66 @@ jobs:
       needs.detect-changes.outputs.docs-changed == 'true'
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       # Documentation line limits (1500 lines, matching the architecture
       # limit) are enforced by the check-file-line-limits job, which scans
-      # every .md file. This job only validates required-file presence.
-      - name: Check required documentation files exist
-        run: |
-          REQUIRED_FILES=(
-            "docs/BEST-PRACTICES.md"
-            "docs/CONTRIBUTING.md"
-            "README.md"
-            "CHANGELOG.md"
-          )
+      # every .md file. This job validates that the required documents
+      # exist AND still carry the sections readers depend on -- a deleted
+      # section is an ordinary diff hunk, and is exactly what review skims
+      # past. The requirement table lives in
+      # scripts/check-required-docs.sh; `--list` prints it for tests and
+      # reviewers.
+      - name: Check required documentation sections
+        run: bash scripts/check-required-docs.sh
 
-          MISSING=()
-          for file in "${REQUIRED_FILES[@]}"; do
-            if [ ! -f "$file" ]; then
-              echo "ERROR: Required documentation file missing: $file"
-              MISSING+=("$file")
-            else
-              echo "Found: $file"
-            fi
-          done
+  # Principle 16 of the shared CI/CD best practices: prove the release
+  # credentials can write before the expensive jobs spend their minutes
+  # (issues #176, #181). A non-empty secret proves nothing -- an expired
+  # token is non-empty -- and a login proves authentication, not
+  # authorisation, so scripts/preflight-credentials.sh probes with an
+  # attempted write: a refused credential fails the run seconds in instead
+  # of surfacing as a registry error after the matrix.
+  release-preflight:
+    name: Release Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The runner injects ACTIONS_ID_TOKEN_REQUEST_URL only when the job may
+      # mint OIDC tokens. npm publishes with provenance, so its absence --
+      # mirrored in the publishing jobs' permission envelope -- is itself the
+      # finding.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-          if [ "${#MISSING[@]}" -gt 0 ]; then
-            echo ""
-            echo "Missing required documentation files:"
-            printf '  %s\n' "${MISSING[@]}"
-            exit 1
-          else
-            echo "All required documentation files present."
-          fi
+      - name: Probe every release credential
+        env:
+          # Release mode (push to main, manual instant release) fails the run
+          # on a refused credential. Report mode (pull requests -- a fork has
+          # no publishing secrets) runs the same probes and annotates without
+          # blocking.
+          PREFLIGHT_MODE: >-
+            ${{
+              (
+                (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+                (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'instant')
+              ) && 'release' || 'report'
+            }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: bash scripts/preflight-credentials.sh
 
   # Release - only runs on main after tests pass (for push events)
   release:
     name: Release
-    needs: [lint, test]
+    needs: [lint, test, release-preflight]
     # Typical run is well under 10min. 30min gives npm and GitHub
     # release APIs room for retries without allowing a 6h hang.
     timeout-minutes: 30
@@ -458,6 +510,7 @@ jobs:
       !cancelled() &&
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
+      needs.release-preflight.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.test.result == 'success'
     runs-on: ubuntu-latest
@@ -470,8 +523,14 @@ jobs:
       published: ${{ steps.publish.outputs.published }}
       published_version: ${{ steps.publish.outputs.published_version }}
     steps:
+      # One of two checkouts in this workflow that keep credentials in
+      # .git/config: scripts/version-and-commit.mjs runs
+      # `git push origin main` to publish the version bump, which needs the
+      # token wired into the remote. Every other checkout in this
+      # repository sets persist-credentials: false.
       - uses: actions/checkout@v6
         with:
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -482,6 +541,14 @@ jobs:
 
       - name: Remove deprecated npm auth config
         run: node scripts/sanitize-npm-userconfig.mjs
+
+      # Fail-closed before the install step: changesets 3.x shells out to the
+      # detected package manager, and a foreign lockfile at the root
+      # (deno.lock is here for the Deno test leg) outranks package-lock.json
+      # in package-manager-detector's probe order unless package.json
+      # declares the manager. The requirement table lives in the script.
+      - name: Check package manager declaration and lockfiles
+        run: node scripts/check-package-manager.mjs
 
       - name: Install dependencies
         run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm install
@@ -535,19 +602,26 @@ jobs:
 
       - name: Smoke-test published npm package
         if: steps.publish.outputs.published == 'true'
-        run: bash scripts/run-with-budget-warning.sh 300 "npm package smoke test" node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
+        env:
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+        run: bash scripts/run-with-budget-warning.sh 300 "npm package smoke test" node scripts/smoke-test-package.mjs --package-version "$PACKAGE_VERSION"
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/create-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+        run: node scripts/create-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY"
 
       - name: Format GitHub release notes
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/format-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}" --commit-sha "${{ github.sha }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/format-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY" --commit-sha "$COMMIT_SHA"
 
   # Manual Instant Release - triggered via workflow_dispatch with instant mode
   # This job is in release.yml because npm trusted publishing
@@ -555,11 +629,12 @@ jobs:
   instant-release:
     name: Instant Release
     # Publishing must wait for both quality gates and require explicit success.
-    needs: [lint, test]
+    needs: [lint, test, release-preflight]
     if: |
       !cancelled() &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.release_mode == 'instant' &&
+      needs.release-preflight.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.test.result == 'success'
     runs-on: ubuntu-latest
@@ -577,8 +652,14 @@ jobs:
       published: ${{ steps.publish.outputs.published }}
       published_version: ${{ steps.publish.outputs.published_version }}
     steps:
+      # The second checkout in this workflow that keeps credentials in
+      # .git/config: scripts/version-and-commit.mjs pushes the version
+      # commit to main, which needs the token wired into the remote.
+      # Every other checkout in this repository sets
+      # persist-credentials: false.
       - uses: actions/checkout@v6
         with:
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -617,32 +698,40 @@ jobs:
 
       - name: Smoke-test published npm package
         if: steps.publish.outputs.published == 'true'
-        run: node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
+        env:
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+        run: node scripts/smoke-test-package.mjs --package-version "$PACKAGE_VERSION"
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/create-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+        run: node scripts/create-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY"
 
       - name: Format GitHub release notes
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/format-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}" --commit-sha "${{ github.sha }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/format-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY" --commit-sha "$COMMIT_SHA"
 
   # Optional Docker Hub publishing for packages that also ship Docker images.
   # Set vars.DOCKERHUB_IMAGE to enable this path, then configure
   # vars.DOCKERHUB_USERNAME and secrets.DOCKERHUB_TOKEN.
   docker-publish-config:
     name: Configure Docker Hub Publish
-    needs: [release, instant-release]
+    needs: [release, instant-release, release-preflight]
     timeout-minutes: 10
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
     if: |
       !cancelled() &&
+      needs.release-preflight.result == 'success' &&
       (
         (needs.release.result == 'success' && needs.release.outputs.published == 'true') ||
         (needs.instant-release.result == 'success' && needs.instant-release.outputs.published == 'true')
@@ -665,6 +754,8 @@ jobs:
       RELEASE_VERSION: ${{ needs.release.outputs.published_version || needs.instant-release.outputs.published_version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Check Docker publish configuration
         id: docker_config
@@ -702,6 +793,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Build and push platform image by digest
         id: build
@@ -746,6 +839,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx (resilient)
         uses: ./.github/actions/setup-buildx-resilient
@@ -799,8 +894,14 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # The third checkout in this workflow that keeps credentials in
+      # .git/config: peter-evans/create-pull-request below pushes the
+      # changeset branch and opens the pull request, which needs the token
+      # wired into the remote. Every other checkout in this repository
+      # sets persist-credentials: false.
       - uses: actions/checkout@v6
         with:
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -871,12 +972,15 @@ jobs:
       - docker-publish-config
       - docker-publish-build
       - validate-docs
+      - release-preflight
       - release
       - instant-release
       - docker-publish
       - changeset-pr
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -887,4 +991,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          # Lets the gate tell a timeout from a supersede; see
+          # run_is_superseded in the script.
+          RUN_SHA: ${{ github.sha }}
         run: bash scripts/check-pipeline-status.sh

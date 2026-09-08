@@ -34,39 +34,70 @@ async function hasNetwork() {
   }
 }
 
+/**
+ * Load command-stream through the real use-m, or return null after logging
+ * why the test environment cannot (offline, sandboxed fetch, Windows).
+ * @returns {Promise<Record<string, unknown>|null>} command-stream exports
+ */
+async function loadOrSkip() {
+  if (process.platform === 'win32') {
+    console.log(
+      'Skipping: use-m imports resolved paths without a file:// scheme, ' +
+        'which the Windows ESM loader rejects (ERR_UNSUPPORTED_ESM_URL_SCHEME).'
+    );
+    return null;
+  }
+
+  if (!(await hasNetwork())) {
+    console.log(
+      `Skipping: ${USE_M_URL} is unreachable, so use-m cannot be evaluated.`
+    );
+    return null;
+  }
+
+  try {
+    return await loadCommandStream();
+  } catch (error) {
+    if (
+      /fetch|network|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|registry/i.test(
+        error.message
+      )
+    ) {
+      console.log(`Skipping: ${error.message}`);
+      return null;
+    }
+    throw error;
+  }
+}
+
 describe('use-m loads command-stream on this Node version', () => {
   it('exposes a callable $ from command-stream', async () => {
-    if (process.platform === 'win32') {
-      console.log(
-        'Skipping: use-m imports resolved paths without a file:// scheme, ' +
-          'which the Windows ESM loader rejects (ERR_UNSUPPORTED_ESM_URL_SCHEME).'
-      );
-      return;
-    }
+    const commandStream = await loadOrSkip();
 
-    if (!(await hasNetwork())) {
-      console.log(
-        `Skipping: ${USE_M_URL} is unreachable, so use-m cannot be evaluated.`
-      );
+    if (!commandStream) {
       return;
-    }
-
-    let commandStream;
-    try {
-      commandStream = await loadCommandStream();
-    } catch (error) {
-      if (
-        /fetch|network|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|registry/i.test(
-          error.message
-        )
-      ) {
-        console.log(`Skipping: ${error.message}`);
-        return;
-      }
-      throw error;
     }
 
     console.log(`Loaded command-stream on ${process.version}`);
     expect(typeof commandStream.$).toBe('function');
+  });
+
+  it('rejects when a command exits non-zero', async () => {
+    const { $ } = (await loadOrSkip()) ?? {};
+
+    if (!$) {
+      return;
+    }
+
+    let rejected = false;
+
+    try {
+      await $`exit 3`;
+    } catch (error) {
+      rejected = true;
+      expect(error.code).toBe(3);
+    }
+
+    expect(rejected).toBe(true);
   });
 });

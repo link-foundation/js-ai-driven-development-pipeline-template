@@ -37,7 +37,7 @@
     "example:desktop:package": "npm --prefix examples/universal-app run desktop:package",
     "example:desktop:make": "npm --prefix examples/universal-app run desktop:make",
     "example:mobile:sync": "npm --prefix examples/universal-app run mobile:sync",
-    "prepare": "husky || true",
+    "prepare": "node scripts/install-git-hooks.mjs",
     "changeset": "changeset",
     "changeset:version": "node scripts/changeset-version.mjs",
     "changeset:publish": "changeset publish",
@@ -51,6 +51,11 @@
   ],
   "author": "",
   "license": "Unlicense",
+  "devEngines": {
+    "packageManager": {
+      "name": "npm"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },

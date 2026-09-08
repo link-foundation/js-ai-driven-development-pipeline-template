@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 
 const scriptPath = fileURLToPath(
@@ -119,5 +122,85 @@ describe('run-with-budget-warning.sh', () => {
     expect(runBudget(['30', 'no command']).status).toBe(2);
     expect(runBudget(['ten', 'bad budget', 'true']).status).toBe(2);
     expect(runBudget(['0', 'zero budget', 'true']).status).toBe(2);
+  });
+});
+
+describe('run-with-budget-warning.sh SIGKILL escalation', () => {
+  function writeIgnoreTermChild() {
+    const root = mkdtempSync(path.join(tmpdir(), 'budget-child-'));
+    const childPath = path.join(root, 'child-ignore-term.sh');
+
+    // Stays in bash so the trap keeps applying; an exec would drop it.
+    writeFileSync(
+      childPath,
+      [
+        '#!/usr/bin/env bash',
+        `trap 'echo "child ignored SIGTERM"' TERM`,
+        'end=$((SECONDS + 600))',
+        'while [ "$SECONDS" -lt "$end" ]; do',
+        '  read -r -t 1 _ </dev/null 2>/dev/null || :',
+        'done',
+        '',
+      ].join('\n')
+    );
+    chmodSync(childPath, 0o755);
+
+    return childPath;
+  }
+
+  it('escalates to SIGKILL when the command ignores SIGTERM', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+
+    const childPath = writeIgnoreTermChild();
+
+    try {
+      const result = runBudget(['2', 'stubborn step', childPath], {
+        BUDGET_GRACE_SECONDS: '2',
+      });
+
+      expect(result.status).toBe(124);
+      expect(result.output).toContain(
+        'stubborn step ignored SIGTERM after 2s; sending SIGKILL.'
+      );
+
+      const survivors = spawnSync('pgrep', ['-f', childPath], {
+        encoding: 'utf8',
+      });
+
+      expect(survivors.stdout.trim()).toBe('');
+    } finally {
+      rmSync(path.dirname(childPath), { recursive: true, force: true });
+    }
+  });
+
+  it('enforces the budget on a fractional poll interval', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+
+    const result = runBudget(['2', 'fractional poll', 'sleep', '60'], {
+      BUDGET_POLL_SECONDS: '0.5',
+      BUDGET_GRACE_SECONDS: '1',
+    });
+
+    expect(result.status).toBe(124);
+    expect(result.output).not.toContain('invalid arithmetic operator');
+  });
+
+  it('rejects a poll interval that is not a number', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+
+    const result = runBudget(['30', 'bad poll', 'true'], {
+      BUDGET_POLL_SECONDS: 'soon',
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.output).toContain(
+      'BUDGET_POLL_SECONDS must be a positive number, got: soon'
+    );
   });
 });
