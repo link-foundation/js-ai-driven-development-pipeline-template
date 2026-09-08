@@ -124,6 +124,8 @@ export default [
       '**/out/**',
       '*.min.js',
       '.eslintcache',
+      // The jscpd HTML reporter writes a bundled prism.js here
+      'reports/**',
       // Case study raw data files (downloaded from external sources)
       'docs/case-studies/*/data/**',
     ],
