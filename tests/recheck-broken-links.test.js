@@ -228,6 +228,12 @@ describe('re-check requests', () => {
 });
 
 describe('re-check step end to end', () => {
+  // The end-to-end fixtures spawn node and write outside the sandbox,
+  // which the Deno leg's `--allow-read`-only test run cannot do.
+  if (typeof Deno !== 'undefined') {
+    return;
+  }
+
   function writeReport(dir, entries) {
     const reportPath = path.join(dir, 'out.md');
     writeFileSync(reportPath, `## Errors per input\n\n${entries.join('\n')}\n`);

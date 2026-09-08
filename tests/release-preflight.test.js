@@ -136,6 +136,12 @@ describe('release-preflight workflow wiring (issues #176, #181)', () => {
 });
 
 describe('release-preflight probe behaviour (offline, curl stub)', () => {
+  // The probe fixtures spawn bash and write outside the sandbox, which the
+  // Deno leg's `--allow-read`-only test run cannot do.
+  if (typeof Deno !== 'undefined') {
+    return;
+  }
+
   it('passes in release mode when OIDC publishing is available', async () => {
     const fixtures = makeFixtures();
     const { code, stdout } = await runPreflight(

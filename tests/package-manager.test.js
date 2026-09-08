@@ -10,6 +10,9 @@ const scriptPath = fileURLToPath(
 );
 const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
+// The guard fixtures spawn node and write outside the sandbox, which the
+// Deno leg's `--allow-read`-only test run cannot do.
+const canRunGuardFixtures = typeof Deno === 'undefined';
 
 function createFixture(pkg, extraFiles = []) {
   const root = path.join(
@@ -41,6 +44,10 @@ describe('package.json declares the package manager', () => {
 
 describe('check-package-manager.mjs', () => {
   it('passes on this repository', () => {
+    if (!canRunGuardFixtures) {
+      return;
+    }
+
     const result = runGuard(process.cwd());
 
     expect(result.status).toBe(0);
@@ -50,6 +57,10 @@ describe('check-package-manager.mjs', () => {
   });
 
   it('fails when neither packageManager nor devEngines is declared', () => {
+    if (!canRunGuardFixtures) {
+      return;
+    }
+
     const root = createFixture({ name: 'fixture' });
 
     try {
@@ -65,6 +76,10 @@ describe('check-package-manager.mjs', () => {
   });
 
   it('fails on a declaration naming a manager the flow cannot use', () => {
+    if (!canRunGuardFixtures) {
+      return;
+    }
+
     const root = createFixture({
       name: 'fixture',
       devEngines: { packageManager: { name: 'bun' } },
@@ -81,6 +96,10 @@ describe('check-package-manager.mjs', () => {
   });
 
   it('parses a versioned packageManager field', () => {
+    if (!canRunGuardFixtures) {
+      return;
+    }
+
     const root = createFixture({
       name: 'fixture',
       packageManager: 'npm@10.9.1',
@@ -97,6 +116,10 @@ describe('check-package-manager.mjs', () => {
   });
 
   it('warns but passes when a foreign lockfile sits under a declaration', () => {
+    if (!canRunGuardFixtures) {
+      return;
+    }
+
     const root = createFixture(
       { name: 'fixture', devEngines: { packageManager: { name: 'npm' } } },
       ['bun.lock', 'deno.lock']
@@ -115,6 +138,10 @@ describe('check-package-manager.mjs', () => {
   });
 
   it('fails and names the lockfile when a foreign lockfile has no declaration', () => {
+    if (!canRunGuardFixtures) {
+      return;
+    }
+
     const root = createFixture({ name: 'fixture' }, ['deno.lock']);
 
     try {

@@ -22,6 +22,7 @@ function listRequirements() {
   expect(result.status).toBe(0);
 
   return result.stdout
+    .replaceAll('\r\n', '\n')
     .split('\n')
     .filter(Boolean)
     .map((line) => {
@@ -51,6 +52,10 @@ describe('check-required-docs.sh', () => {
   });
 
   it('builds its fixtures from the same table the check reads', () => {
+    if (!canRunBash) {
+      return;
+    }
+
     const requirements = listRequirements();
     const files = [...new Set(requirements.map((entry) => entry.file))];
 
@@ -64,7 +69,7 @@ describe('check-required-docs.sh', () => {
     // Every required file+section pair must exist in this repository, so
     // the shipped gate is green on the template itself.
     for (const { file, section } of requirements) {
-      const content = readFileSync(file, 'utf8');
+      const content = readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
 
       if (section !== null) {
         expect(content).toContain(`## ${section}\n`);
@@ -73,6 +78,10 @@ describe('check-required-docs.sh', () => {
   });
 
   it('pins the sections a reader of the README depends on', () => {
+    if (!canRunBash) {
+      return;
+    }
+
     const requirements = listRequirements();
     const readmeSections = requirements
       .filter((entry) => entry.file === 'README.md')

@@ -117,7 +117,9 @@ function main() {
     let workflowText;
 
     try {
-      workflowText = readFileSync(file, 'utf8');
+      // Normalise line endings: a Windows checkout stores CRLF, and the
+      // job-block matcher below compares whole lines.
+      workflowText = readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
     } catch (error) {
       console.error(
         `::error file=${file}::cannot read workflow: ${error.message}`

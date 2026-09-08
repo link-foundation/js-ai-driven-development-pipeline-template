@@ -8,7 +8,13 @@ import { fileURLToPath, URL } from 'node:url';
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-status-gate-covers-all-jobs.mjs', import.meta.url)
 );
-const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
+// The checker fixtures spawn node and write outside the sandbox, which the
+// Deno leg's `--allow-read`-only test run cannot do.
+const canRunCheckerFixtures = typeof Deno === 'undefined';
+const releaseWorkflow = readFileSync(
+  '.github/workflows/release.yml',
+  'utf8'
+).replaceAll('\r\n', '\n');
 
 function runChecker(args, cwd) {
   return spawnSync('node', [scriptPath, ...args], {
@@ -25,6 +31,9 @@ function writeWorkflow(dir, name, lines) {
 
 describe('check-status-gate-covers-all-jobs.mjs', () => {
   it('confirms the shipped release workflow is fully covered', () => {
+    if (!canRunCheckerFixtures) {
+      return;
+    }
     const result = runChecker(['.github/workflows/release.yml']);
 
     expect(result.status).toBe(0);
@@ -34,6 +43,9 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
   });
 
   it('names the uncovered job when a job is dropped from needs', () => {
+    if (!canRunCheckerFixtures) {
+      return;
+    }
     const holed = releaseWorkflow
       .split('\n')
       .filter((line) => line !== '      - validate-docs')
@@ -54,6 +66,9 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
   });
 
   it('exits 2 when the workflow has no terminal status gate at all', () => {
+    if (!canRunCheckerFixtures) {
+      return;
+    }
     const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
     const filePath = writeWorkflow(dir, 'gateless.yml', [
       'name: Gateless',
@@ -81,6 +96,9 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
   });
 
   it('accepts a differently named gate via --gate', () => {
+    if (!canRunCheckerFixtures) {
+      return;
+    }
     const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
     const filePath = writeWorkflow(dir, 'named.yml', [
       'name: Named gate',
@@ -112,6 +130,9 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
   });
 
   it('parses the flow form of needs', () => {
+    if (!canRunCheckerFixtures) {
+      return;
+    }
     const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
     const filePath = writeWorkflow(dir, 'flow.yml', [
       'name: Flow needs',
@@ -159,8 +180,13 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
       expect(workflow).toContain(`.github/workflows/${name}`);
     }
   });
+});
 
+describe('check-status-gate-covers-all-jobs.mjs shipped coverage', () => {
   it('confirms every other shipped workflow is fully covered', () => {
+    if (!canRunCheckerFixtures) {
+      return;
+    }
     const expectedJobs = {
       'links.yml': 'covers all 1 other job(s).',
       'security.yml': 'covers all 3 other job(s).',
