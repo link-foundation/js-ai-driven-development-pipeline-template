@@ -298,8 +298,12 @@ describe('CI timeout policy', () => {
   });
 
   it('sets timeout-minutes for every link workflow job', () => {
-    expect(listWorkflowJobs(linksWorkflow)).toEqual(['link-checker']);
+    expect(listWorkflowJobs(linksWorkflow).sort()).toEqual([
+      'link-checker',
+      'pipeline-status',
+    ]);
     expect(getTimeoutMinutes(linksWorkflow, 'link-checker')).toBe(10);
+    expect(getTimeoutMinutes(linksWorkflow, 'pipeline-status')).toBe(5);
   });
 
   it('parses workflow files checked out with Windows line endings', () => {

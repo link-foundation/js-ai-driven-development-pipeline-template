@@ -973,4 +973,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          # Lets the gate tell a timeout from a supersede; see
+          # run_is_superseded in the script.
+          RUN_SHA: ${{ github.sha }}
         run: bash scripts/check-pipeline-status.sh

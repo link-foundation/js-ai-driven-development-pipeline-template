@@ -144,11 +144,35 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
     }
   });
 
-  it('wires the checker into the workflows meta-workflow', () => {
+  it('wires the checker into the workflows meta-workflow for every workflow', () => {
     const workflow = readFileSync('.github/workflows/workflows.yml', 'utf8');
 
-    expect(workflow).toContain(
-      'node scripts/check-status-gate-covers-all-jobs.mjs .github/workflows/release.yml'
-    );
+    expect(workflow).toContain('check-status-gate-covers-all-jobs.mjs');
+
+    for (const name of [
+      'release.yml',
+      'links.yml',
+      'security.yml',
+      'workflows.yml',
+      'example-app.yml',
+    ]) {
+      expect(workflow).toContain(`.github/workflows/${name}`);
+    }
+  });
+
+  it('confirms every other shipped workflow is fully covered', () => {
+    const expectedJobs = {
+      'links.yml': 'covers all 1 other job(s).',
+      'security.yml': 'covers all 3 other job(s).',
+      'workflows.yml': 'covers all 3 other job(s).',
+      'example-app.yml': 'covers all 6 other job(s).',
+    };
+
+    for (const [name, message] of Object.entries(expectedJobs)) {
+      const result = runChecker([`.github/workflows/${name}`]);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`${name}: pipeline-status ${message}`);
+    }
   });
 });

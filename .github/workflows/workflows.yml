@@ -70,7 +70,15 @@ jobs:
           persist-credentials: false
 
       - name: Check the status gate covers every job
-        run: node scripts/check-status-gate-covers-all-jobs.mjs .github/workflows/release.yml
+        # Every workflow here runs a hand-maintained pipeline-status gate;
+        # this derives each requirement from the workflow itself.
+        run: >-
+          node scripts/check-status-gate-covers-all-jobs.mjs
+          .github/workflows/release.yml
+          .github/workflows/links.yml
+          .github/workflows/security.yml
+          .github/workflows/workflows.yml
+          .github/workflows/example-app.yml
 
   zizmor:
     name: zizmor
@@ -122,3 +130,42 @@ jobs:
           pipx run zizmor==1.30.0 --config .github/zizmor.yml \
             --persona pedantic --min-severity high --min-confidence high \
             .github/workflows .github/actions
+
+  # Terminal status gate: runs even when the jobs above fail or are
+  # cancelled, and turns a `timeout-minutes` kill (reported as cancelled)
+  # into a red run. needs is derived and checked by the
+  # status-gate-coverage job above.
+  pipeline-status:
+    name: Pipeline Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-pipeline-status
+      cancel-in-progress: true
+    # A status function is required: without one the gate inherits the
+    # implicit "every dependency succeeded" condition and is skipped in
+    # exactly the runs it exists to report.
+    if: >-
+      !cancelled()
+    needs:
+      - actionlint
+      - status-gate-coverage
+      - zizmor
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+
+      - name: Fail the run when a required job was cancelled or failed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          # Lets the gate tell a timeout from a supersede; see
+          # run_is_superseded in the script.
+          RUN_SHA: ${{ github.sha }}
+        run: bash scripts/check-pipeline-status.sh

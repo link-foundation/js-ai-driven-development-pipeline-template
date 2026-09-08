@@ -379,8 +379,8 @@ describe('workflow reliability policy', () => {
     expect(pushHelper).toContain('landViaPullRequest');
     // The push helper exits non-zero only when it could not land the commit
     // through any of its strategies; with errexit on, that exit arrives as a
-    // rejection instead of a result code, so a swallowed push failure cannot
-    // report a version that only exists in the runner as released.
+    // rejection, not a result code, so a swallowed push failure cannot report
+    // a version that only exists in the runner as released.
     expect(versionAndCommit).toContain('Failed to push version');
     expect(versionAndCommit).not.toContain('pushResult.code !== 0');
   });
