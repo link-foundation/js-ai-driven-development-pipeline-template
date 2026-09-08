@@ -169,6 +169,30 @@ async function getVersion(source = 'local') {
   return JSON.parse(readFileSync(packageJsonPath, 'utf8')).version;
 }
 
+/**
+ * Check the staged release files with prettier before they are committed.
+ *
+ * The release commit is pushed with GITHUB_TOKEN, so GitHub never runs
+ * workflows on it: a formatting lapse would land on main unnoticed and fail
+ * the next CI run only after the tag exists.
+ */
+async function checkStagedFormatting() {
+  const stagedResult = await $`git diff --cached --name-only`.run({
+    capture: true,
+  });
+  const formattable = stagedResult.stdout
+    .split('\n')
+    .map((file) => file.trim())
+    .filter((file) => /\.(m?js|json|md|ts)$/.test(file));
+
+  if (formattable.length > 0) {
+    console.log(
+      `Checking formatting of ${formattable.length} staged file(s) with prettier...`
+    );
+    await $`npx prettier --check ${formattable}`;
+  }
+}
+
 async function main() {
   try {
     // Configure git
@@ -260,6 +284,9 @@ async function main() {
       // Stage all changes (package.json, package-lock.json, CHANGELOG.md, deleted changesets)
       await $`git add -A`;
 
+      // A failure here aborts the release before anything is written.
+      await checkStagedFormatting();
+
       // Commit with version number as message
       const commitMessage = newVersion;
       const escapedMessage = commitMessage.replace(/"/g, '\\"');
@@ -270,17 +297,19 @@ async function main() {
       // through a pull request when a repository ruleset declines direct
       // pushes to main (link-foundation/js-ai-driven-development-pipeline-template#143).
       //
-      // command-stream's `$` resolves (it does not throw) on a non-zero exit
-      // code, so the exit code is checked explicitly: reporting
-      // version_committed=true for a push that never landed would let the
-      // publish job work from a version that exists only in the runner.
-      const pushResult =
+      // The helper exits non-zero only when it could not land the commit
+      // through any of its strategies; errexit turns that exit into a
+      // rejection, and reporting version_committed=true for a push that never
+      // landed would let the publish job work from a version that exists only
+      // in the runner.
+      try {
         await $`node scripts/push-main-with-rebase-retry.mjs origin main --label ${newVersion}`.run(
           { capture: true, mirror: true }
         );
-      if (pushResult.code !== 0) {
+      } catch (error) {
         throw new Error(
-          `Failed to push version ${newVersion} to main (exit ${pushResult.code})`
+          `Failed to push version ${newVersion} to main: ${error.message}`,
+          { cause: error }
         );
       }
 

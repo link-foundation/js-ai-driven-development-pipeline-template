@@ -51,6 +51,11 @@
   ],
   "author": "",
   "license": "Unlicense",
+  "devEngines": {
+    "packageManager": {
+      "name": "npm"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },

@@ -377,10 +377,12 @@ describe('workflow reliability policy', () => {
     // (link-foundation/js-ai-driven-development-pipeline-template#143).
     expect(pushHelper).toContain('isBlockedByRepositoryRule');
     expect(pushHelper).toContain('landViaPullRequest');
-    // command-stream's `$` resolves on a non-zero exit code, so the caller has
-    // to check it: a swallowed push failure would report a version that only
-    // exists in the runner as released.
-    expect(versionAndCommit).toContain('pushResult.code !== 0');
+    // The push helper exits non-zero only when it could not land the commit
+    // through any of its strategies; with errexit on, that exit arrives as a
+    // rejection instead of a result code, so a swallowed push failure cannot
+    // report a version that only exists in the runner as released.
+    expect(versionAndCommit).toContain('Failed to push version');
+    expect(versionAndCommit).not.toContain('pushResult.code !== 0');
   });
 
   it('verifies desktop package output before uploading artifacts', () => {

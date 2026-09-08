@@ -524,6 +524,14 @@ jobs:
       - name: Remove deprecated npm auth config
         run: node scripts/sanitize-npm-userconfig.mjs
 
+      # Fail-closed before the install step: changesets 3.x shells out to the
+      # detected package manager, and a foreign lockfile at the root
+      # (deno.lock is here for the Deno test leg) outranks package-lock.json
+      # in package-manager-detector's probe order unless package.json
+      # declares the manager. The requirement table lives in the script.
+      - name: Check package manager declaration and lockfiles
+        run: node scripts/check-package-manager.mjs
+
       - name: Install dependencies
         run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm install
 

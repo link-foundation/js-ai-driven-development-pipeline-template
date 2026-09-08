@@ -212,6 +212,35 @@ describe('use-module interop shim', () => {
   });
 });
 
+describe('loadCommandStream turns on errexit', () => {
+  function shellExports(errexitCalls) {
+    return Object.assign(commandStreamExports(), {
+      shell: {
+        errexit: (value) => {
+          errexitCalls.push(value);
+        },
+      },
+    });
+  }
+
+  it('enables shell.errexit on the resolved module', async () => {
+    const errexitCalls = [];
+    const use = async () => ({ default: shellExports(errexitCalls) });
+
+    await loadCommandStream(use);
+
+    expect(errexitCalls).toEqual([true]);
+  });
+
+  it('still loads a module that exposes no shell', async () => {
+    const use = async () => ({ default: commandStreamExports() });
+
+    const module = await loadCommandStream(use);
+
+    expect(typeof module.$).toBe('function');
+  });
+});
+
 describe('use-m load is bounded in time and retried', () => {
   it('passes a deadline to every attempt', async () => {
     const signals = [];
