@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'test-anywhere';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import {
   mkdirSync,
   mkdtempSync,
@@ -258,6 +259,242 @@ describe('detect-code-changes CLI', () => {
         expect(outputs).toContain('any-code-changed=false\n');
       } finally {
         rmSync(root, { force: true, recursive: true });
+      }
+    });
+  }
+});
+
+// A pull request can carry several commits, and a superseded run may never
+// have tested the previous head. These fixtures exercise the push-range
+// logic against a stub of the Actions API bound to GITHUB_API_URL, driving
+// the real script - offline, no mocking of the code under test.
+function createMultiCommitFixture() {
+  const root = mkdtempSync(path.join(tmpdir(), 'detect-code-changes-push-'));
+
+  runGit(root, ['init', '-b', 'main']);
+  runGit(root, ['config', 'user.email', 'ci@example.com']);
+  runGit(root, ['config', 'user.name', 'CI Test']);
+
+  writeFileSync(path.join(root, 'package.json'), '{ "name": "fixture" }\n');
+  commit(root, 'Initial commit');
+  const baseSha = spawnGit(root, ['rev-parse', 'HEAD']);
+
+  runGit(root, ['checkout', '-b', 'feature']);
+  mkdirSync(path.join(root, 'src'), { recursive: true });
+  writeFileSync(path.join(root, 'src', 'feature.mjs'), 'export const x = 1;\n');
+  commit(root, 'Add code change');
+  const codeSha = spawnGit(root, ['rev-parse', 'HEAD']);
+
+  mkdirSync(path.join(root, 'docs'), { recursive: true });
+  writeFileSync(path.join(root, 'docs', 'notes.md'), '# Notes\n');
+  commit(root, 'Add docs change');
+  const headSha = spawnGit(root, ['rev-parse', 'HEAD']);
+
+  runGit(root, ['checkout', 'main']);
+  runGit(root, ['merge', '--no-ff', 'feature', '-m', 'Merge pull request']);
+
+  return { root, baseSha, codeSha, headSha };
+}
+
+function spawnGit(root, args) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  return result.stdout.trim();
+}
+
+function startStubApi(responder) {
+  return new Promise((resolve) => {
+    const requests = [];
+    const server = createServer((req, res) => {
+      req.on('end', () => {
+        requests.push(req.url);
+        responder(req, res);
+      });
+      req.resume();
+    });
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ server, port: server.address().port, requests });
+    });
+  });
+}
+
+async function runDetector(root, extraEnv) {
+  const outputFile = path.join(root, 'github-output.txt');
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [scriptPath],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_OUTPUT: outputFile,
+          ...extraEnv,
+        },
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+        }
+      }
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('close', (status) => {
+      resolve({
+        status,
+        stdout,
+        stderr,
+        outputs: readFileSync(outputFile, 'utf8'),
+      });
+    });
+  });
+}
+
+function pushRangeEnv(baseSha, beforeSha, afterSha, port) {
+  return {
+    GITHUB_API_URL: `http://127.0.0.1:${port}`,
+    GITHUB_REPOSITORY: 'owner/repo',
+    GITHUB_WORKFLOW_REF:
+      'owner/repo/.github/workflows/release.yml@refs/pull/1/merge',
+    GITHUB_TOKEN: 'stub-token',
+    GITHUB_BASE_SHA: baseSha,
+    GITHUB_BEFORE_SHA: beforeSha,
+    GITHUB_AFTER_SHA: afterSha,
+  };
+}
+
+describe('detect-code-changes push ranges', () => {
+  if (canRunCliFixtures) {
+    it('covers the whole push when the previous head passed', async () => {
+      const fixture = createMultiCommitFixture();
+      const { server, port, requests } = await startStubApi((req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"total_count": 1}');
+      });
+
+      try {
+        const { status, outputs } = await runDetector(
+          fixture.root,
+          pushRangeEnv(fixture.baseSha, fixture.baseSha, fixture.headSha, port)
+        );
+
+        expect(status).toBe(0);
+        expect(outputs).toContain('js-changed=true\n');
+        expect(requests).toEqual([
+          `/repos/owner/repo/actions/workflows/release.yml/runs?head_sha=${fixture.baseSha}&status=success&per_page=1`,
+        ]);
+      } finally {
+        server.close();
+        rmSync(fixture.root, { force: true, recursive: true });
+      }
+    });
+
+    it('widens to the full PR diff when the previous head never passed', async () => {
+      const fixture = createMultiCommitFixture();
+      const { server, port, requests } = await startStubApi((req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"total_count": 0}');
+      });
+
+      try {
+        const { status, stdout, outputs } = await runDetector(
+          fixture.root,
+          pushRangeEnv(fixture.baseSha, fixture.codeSha, fixture.headSha, port)
+        );
+
+        expect(status).toBe(0);
+        expect(outputs).toContain('js-changed=true\n');
+        expect(stdout).toContain('full PR diff');
+        expect(requests.length).toBe(1);
+      } finally {
+        server.close();
+        rmSync(fixture.root, { force: true, recursive: true });
+      }
+    });
+
+    it('widens when the lookup fails', async () => {
+      const fixture = createMultiCommitFixture();
+      const { server, port } = await startStubApi((req, res) => {
+        res.writeHead(403, { 'content-type': 'application/json' });
+        res.end('{"message": "Forbidden"}');
+      });
+
+      try {
+        const { status, outputs } = await runDetector(
+          fixture.root,
+          pushRangeEnv(fixture.baseSha, fixture.codeSha, fixture.headSha, port)
+        );
+
+        expect(status).toBe(0);
+        expect(outputs).toContain('js-changed=true\n');
+      } finally {
+        server.close();
+        rmSync(fixture.root, { force: true, recursive: true });
+      }
+    });
+
+    it('keeps the push range when the lookup fails with no base SHA', async () => {
+      const fixture = createMultiCommitFixture();
+      const { server, port } = await startStubApi((req, res) => {
+        res.writeHead(403, { 'content-type': 'application/json' });
+        res.end('{"message": "Forbidden"}');
+      });
+      const env = pushRangeEnv('', fixture.codeSha, fixture.headSha, port);
+      delete env.GITHUB_BASE_SHA;
+
+      try {
+        const { status, stdout, outputs } = await runDetector(
+          fixture.root,
+          env
+        );
+
+        expect(status).toBe(0);
+        expect(outputs).toContain('js-changed=false\n');
+        expect(stdout).toContain(
+          `Comparing ${fixture.codeSha} to ${fixture.headSha} (push range)`
+        );
+      } finally {
+        server.close();
+        rmSync(fixture.root, { force: true, recursive: true });
+      }
+    });
+
+    it('skips the lookup entirely without push SHAs', async () => {
+      const fixture = createMultiCommitFixture();
+      const { server, port, requests } = await startStubApi((req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"total_count": 1}');
+      });
+      const env = pushRangeEnv(
+        fixture.baseSha,
+        fixture.baseSha,
+        fixture.headSha,
+        port
+      );
+      delete env.GITHUB_BEFORE_SHA;
+      delete env.GITHUB_AFTER_SHA;
+
+      try {
+        const { status, stdout, outputs } = await runDetector(
+          fixture.root,
+          env
+        );
+
+        expect(status).toBe(0);
+        expect(outputs).toContain('js-changed=true\n');
+        expect(stdout).toContain(`Comparing ${fixture.baseSha} to HEAD^2`);
+        expect(requests).toEqual([]);
+      } finally {
+        server.close();
+        rmSync(fixture.root, { force: true, recursive: true });
       }
     });
   }

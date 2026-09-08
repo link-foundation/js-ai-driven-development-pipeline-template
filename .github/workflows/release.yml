@@ -52,6 +52,13 @@ jobs:
     # Typical run: ~6s. Cap at 5min so a hung detection step
     # surfaces quickly instead of stalling the whole pipeline.
     timeout-minutes: 5
+    # Job-level permissions replace the workflow defaults for this job.
+    permissions:
+      contents: read
+      # The detector asks the Actions API whether the previous head of the
+      # branch already passed this workflow, so a docs-only push can trust
+      # its incremental range.
+      actions: read
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-detect-changes
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -68,6 +75,12 @@ jobs:
 
       - name: Detect changes
         id: changes
+        env:
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_AFTER_SHA: ${{ github.event.after }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
         run: node scripts/detect-code-changes.mjs
 
   # === FAST CHECKS - run before slow tests for fastest feedback ===
