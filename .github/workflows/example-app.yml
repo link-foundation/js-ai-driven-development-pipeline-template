@@ -42,6 +42,8 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -112,6 +114,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -158,6 +162,8 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -203,6 +209,8 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -227,8 +235,11 @@ jobs:
     name: Regenerate Preview Images
     runs-on: ubuntu-latest
     container:
-      # Keep this tag in sync with the playwright package version below.
-      image: mcr.microsoft.com/playwright:v1.59.1-noble
+      # Keep this release in sync with the playwright package version below.
+      # Pinned by digest (a mutable tag is arbitrary code execution in a job
+      # that holds contents: write). Re-resolve when bumping:
+      #   docker buildx imagetools inspect mcr.microsoft.com/playwright:<tag>
+      image: mcr.microsoft.com/playwright@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53 # v1.59.1-noble
     timeout-minutes: 20
     concurrency:
       group: main-writer-${{ github.repository }}-main
@@ -251,6 +262,7 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install example app dependencies
         run: npm ci --prefix examples/universal-app --no-audit --no-fund
@@ -310,8 +322,10 @@ jobs:
 
       - name: Summarize regeneration result
         if: always()
+        env:
+          DRIFT: ${{ steps.drift.outputs.drift }}
         run: |
-          if [[ "${{ steps.drift.outputs.drift }}" == "true" ]]; then
+          if [[ "$DRIFT" == "true" ]]; then
             echo "::notice::Preview images regenerated and (if applicable) committed to main."
           else
             echo "::notice::Preview images are already up to date."

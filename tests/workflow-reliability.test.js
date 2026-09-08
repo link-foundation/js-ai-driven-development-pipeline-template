@@ -166,6 +166,7 @@ function createTestJobContext({
       'test-compilation': { result },
       lint: { result },
       'check-file-line-limits': { result },
+      'release-preflight': { result: 'success' },
     },
   };
 }
@@ -329,7 +330,7 @@ describe('workflow reliability policy', () => {
     );
     const previewRegenJob = getJobBlock(exampleAppWorkflow, 'preview-regen');
     const imageVersion = previewRegenJob.match(
-      /image:\s*mcr\.microsoft\.com\/playwright:v([0-9.]+)-noble/
+      /image:\s*mcr\.microsoft\.com\/playwright@sha256:[0-9a-f]{64} # v([0-9.]+)-noble/
     )?.[1];
     const packageVersion = previewRegenJob.match(/playwright@([0-9.]+)/)?.[1];
 
@@ -485,7 +486,9 @@ describe('manual release quality gates', () => {
     expect(evaluateWorkflowIf(getMultilineIfExpression(testJob), context)).toBe(
       true
     );
-    expect(instantReleaseJob).toContain('    needs: [lint, test]');
+    expect(instantReleaseJob).toContain(
+      '    needs: [lint, test, release-preflight]'
+    );
     expect(
       evaluateWorkflowIf(getMultilineIfExpression(instantReleaseJob), context)
     ).toBe(true);
@@ -602,9 +605,12 @@ describe('install-from-package smoke test', () => {
         '- name: Smoke-test published npm package',
         '- name: Create GitHub Release',
       ]);
-      expect(job).toContain(
-        'node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"'
-      );
+      // The version reaches the smoke test through an environment variable,
+      // never through an inline template expression in the run block.
+      expectOrdered(job, [
+        'PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}',
+        'node scripts/smoke-test-package.mjs --package-version "$PACKAGE_VERSION"',
+      ]);
     });
   }
 });

@@ -49,7 +49,9 @@ describe('pull-request Docker build check', () => {
       releaseWorkflow,
       'docker-publish-config'
     );
-    expect(publishConfigJob).toContain('needs: [release, instant-release]');
+    expect(publishConfigJob).toContain(
+      'needs: [release, instant-release, release-preflight]'
+    );
     expect(dockerBuildJob).not.toContain('release');
   });
 });

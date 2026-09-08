@@ -64,22 +64,206 @@ function getStepBlock(workflow, stepName) {
 
 // A step declares its deadline either by wrapping a command in
 // run-with-budget-warning.sh or, for `uses:` steps that cannot be wrapped,
-// with a step-level timeout-minutes.
+// with a step-level timeout-minutes. Every budget keeps the `if:` condition
+// of the step it belongs to: mutually exclusive conditions (a matrix leg,
+// say) never share a job clock, so summing them as a sequence would
+// manufacture violations no job can incur.
+function splitStepBlocks(jobBlock) {
+  const lines = jobBlock.split('\n');
+  const steps = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (/^ {6}- /.test(line)) {
+      if (current) {
+        steps.push(current.join('\n'));
+      }
+      current = [line];
+    } else if (current && /^ {8}/.test(line)) {
+      current.push(line);
+    } else if (current && line.trim() === '') {
+      current.push(line);
+    } else if (current) {
+      steps.push(current.join('\n'));
+      current = null;
+    }
+  }
+
+  if (current) {
+    steps.push(current.join('\n'));
+  }
+
+  return steps;
+}
+
+function getStepCondition(stepBlock) {
+  const lines = stepBlock.split('\n');
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const inline = lines[index].match(/^ {8}if:\s*(.+)$/);
+
+    if (!inline) {
+      continue;
+    }
+
+    const value = inline[1].trim();
+
+    if (['|', '>', '|-', '>-', '|+', '+'].includes(value)) {
+      const continuation = [];
+
+      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        const line = lines[cursor];
+
+        if (line.trim() === '') {
+          continue;
+        }
+        if (!/^ {10}/.test(line)) {
+          break;
+        }
+
+        continuation.push(line.trim());
+      }
+
+      return continuation.join(' ');
+    }
+
+    return value;
+  }
+
+  return '';
+}
+
+function parseEnvBlock(lines, envHeaderRegex, keyRegex) {
+  const env = {};
+  let inside = false;
+
+  for (const line of lines) {
+    if (!inside) {
+      inside = envHeaderRegex.test(line);
+      continue;
+    }
+    if (line.trim() === '') {
+      continue;
+    }
+
+    const key = line.match(keyRegex);
+
+    if (!key) {
+      break;
+    }
+
+    env[key[1]] = key[2].trim().replace(/^['"]|['"]$/g, '');
+  }
+
+  return env;
+}
+
+function getStepEnv(stepBlock) {
+  return parseEnvBlock(
+    stepBlock.split('\n').slice(1),
+    /^ {8}env:\s*$/,
+    /^ {10}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/
+  );
+}
+
+function getJobEnv(jobBlock) {
+  const lines = jobBlock.split('\n');
+  const stepsIndex = lines.findIndex((line) => line.trim() === 'steps:');
+
+  return parseEnvBlock(
+    stepsIndex === -1 ? lines : lines.slice(0, stepsIndex),
+    /^ {4}env:\s*$/,
+    /^ {6}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/
+  );
+}
+
+function getWorkflowEnv(workflow) {
+  const lines = normalizeNewlines(workflow).split('\n');
+  const jobsIndex = lines.findIndex((line) => line === 'jobs:');
+
+  return parseEnvBlock(
+    jobsIndex === -1 ? lines : lines.slice(0, jobsIndex),
+    /^env:\s*$/,
+    /^ {2}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/
+  );
+}
+
 function getStepBudgetSeconds(workflow, jobName) {
   const block = getJobBlock(workflow, jobName);
-  const wrapped = Array.from(
-    block.matchAll(/run-with-budget-warning\.sh\s+(\d+)\s+"([^"]+)"/g),
-    (match) => ({ label: match[2], seconds: Number(match[1]) })
-  );
-  const stepTimeouts = Array.from(
-    block.matchAll(/^[ ]{8}timeout-minutes:\s*(\d+)\s*$/gm),
-    (match) => ({
-      label: 'step timeout-minutes',
-      seconds: Number(match[1]) * 60,
-    })
-  );
+  const jobEnv = getJobEnv(block);
+  const workflowEnv = getWorkflowEnv(workflow);
+  const budgets = [];
 
-  return [...wrapped, ...stepTimeouts];
+  for (const stepBlock of splitStepBlocks(block)) {
+    const condition = getStepCondition(stepBlock);
+    const stepEnv = getStepEnv(stepBlock);
+
+    for (const match of stepBlock.matchAll(
+      /run-with-budget-warning\.sh\s+(\S+)\s+"([^"]+)"/g
+    )) {
+      const raw = match[1];
+      let seconds;
+      let source;
+
+      if (/^\d+$/.test(raw)) {
+        seconds = Number(raw);
+      } else {
+        const variableName = raw.replace(/^["']|["']$/g, '').replace(/^\$/, '');
+        const resolved =
+          stepEnv[variableName] ??
+          jobEnv[variableName] ??
+          workflowEnv[variableName];
+
+        if (resolved !== undefined && /^\d+$/.test(resolved)) {
+          seconds = Number(resolved);
+        } else {
+          seconds = NaN;
+          source = `"${variableName}" does not resolve to an integer in the step, job, or workflow env`;
+        }
+      }
+
+      budgets.push({ label: match[2], seconds, condition, source });
+    }
+
+    const stepTimeout = stepBlock.match(/^ {8}timeout-minutes:\s*(\d+)\s*$/m);
+
+    if (stepTimeout) {
+      budgets.push({
+        label: 'step timeout-minutes',
+        seconds: Number(stepTimeout[1]) * 60,
+        condition,
+      });
+    }
+  }
+
+  return budgets;
+}
+
+// The largest a job can spend is every unconditional budget plus the largest
+// single conditional group. Grouping by the condition text is deliberately
+// conservative: steps guarded by literally the same expression are summed,
+// and steps guarded by distinct expressions are treated as alternatives even
+// when the expressions could both be true -- deciding that would need
+// expression evaluation, and the per-budget check below still bounds each
+// step individually.
+function getConcurrentBudgetSeconds(budgets) {
+  const groups = new Map();
+
+  for (const budget of budgets) {
+    groups.set(
+      budget.condition,
+      (groups.get(budget.condition) ?? 0) + budget.seconds
+    );
+  }
+
+  const unconditional = groups.get('') ?? 0;
+  const conditional = Array.from(groups.entries())
+    .filter(([condition]) => condition !== '')
+    .map(([, seconds]) => seconds);
+
+  return (
+    unconditional + (conditional.length > 0 ? Math.max(...conditional) : 0)
+  );
 }
 
 describe('CI timeout policy', () => {
@@ -101,6 +285,7 @@ describe('CI timeout policy', () => {
       'docker-publish': 30,
       'changeset-pr': 10,
       'pipeline-status': 5,
+      'release-preflight': 5,
     };
 
     expect(listWorkflowJobs(releaseWorkflow).sort()).toEqual(
@@ -178,18 +363,28 @@ describe('CI execution budgets', () => {
       const allowedSeconds = Math.floor(
         (backstop * 60 * MAX_BUDGET_SHARE_PERCENT) / 100
       );
-      const totalSeconds = budgets.reduce(
-        (sum, budget) => sum + budget.seconds,
-        0
-      );
 
       for (const budget of budgets) {
+        // A budget the parser cannot read is itself a violation: silently
+        // skipping it would convert every future syntax change into a gap
+        // nobody sees.
+        if (!Number.isFinite(budget.seconds)) {
+          violations.push(
+            `${jobName}: "${budget.label}" declares a budget this check cannot read (${budget.source}); the step is not covered by the invariant`
+          );
+          continue;
+        }
+
         if (budget.seconds > allowedSeconds) {
           violations.push(
             `${jobName}: "${budget.label}" budget ${budget.seconds}s exceeds ${allowedSeconds}s (${MAX_BUDGET_SHARE_PERCENT}% of the ${backstop}min backstop)`
           );
         }
       }
+
+      const totalSeconds = getConcurrentBudgetSeconds(
+        budgets.filter((budget) => Number.isFinite(budget.seconds))
+      );
 
       if (totalSeconds > allowedSeconds) {
         violations.push(
@@ -207,5 +402,136 @@ describe('CI execution budgets', () => {
     expect(budgetScript).toContain(
       `BUDGET_WARN_PERCENT:-${MAX_BUDGET_SHARE_PERCENT}`
     );
+  });
+
+  // A single matrix job runs exactly one leg, so legs guarded by distinct
+  // `if:` conditions never share a job clock. Raising one leg past its
+  // allowance while the others still fit must not be rejected as a sequence.
+  it('sums exclusive matrix legs as alternatives, not as a sequence', () => {
+    const workflow = [
+      'name: Fixture',
+      '',
+      'jobs:',
+      '  test:',
+      '    timeout-minutes: 15',
+      '    strategy:',
+      '      matrix:',
+      '        runtime: [node, bun, deno]',
+      '    steps:',
+      '      - name: Run tests (Node.js)',
+      "        if: matrix.runtime == 'node'",
+      '        run: bash scripts/run-with-budget-warning.sh 331 "Node.js test suite" npm test',
+      '      - name: Run tests (Bun)',
+      "        if: matrix.runtime == 'bun'",
+      '        run: bash scripts/run-with-budget-warning.sh 200 "Bun test suite" bun test',
+      '      - name: Run tests (Deno)',
+      "        if: matrix.runtime == 'deno'",
+      '        run: bash scripts/run-with-budget-warning.sh 100 "Deno test suite" deno test',
+      '',
+    ].join('\n');
+
+    const budgets = getStepBudgetSeconds(workflow, 'test');
+
+    expect(budgets.map((budget) => budget.seconds).sort()).toEqual([
+      100, 200, 331,
+    ]);
+    expect(getConcurrentBudgetSeconds(budgets)).toBe(331);
+  });
+
+  it('still fails when a single leg exceeds the allowance', () => {
+    const workflow = [
+      'name: Fixture',
+      '',
+      'jobs:',
+      '  test:',
+      '    timeout-minutes: 15',
+      '    steps:',
+      '      - name: Run tests (Node.js)',
+      "        if: matrix.runtime == 'node'",
+      '        run: bash scripts/run-with-budget-warning.sh 700 "Node.js test suite" npm test',
+      '',
+    ].join('\n');
+
+    const budgets = getStepBudgetSeconds(workflow, 'test');
+
+    expect(budgets[0].seconds).toBe(700);
+    expect(budgets[0].seconds).toBeGreaterThan(630);
+  });
+
+  it('adds unconditional budgets to the largest conditional group', () => {
+    const workflow = [
+      'name: Fixture',
+      '',
+      'jobs:',
+      '  job:',
+      '    timeout-minutes: 15',
+      '    steps:',
+      '      - name: Install',
+      '        run: bash scripts/run-with-budget-warning.sh 240 "install" npm install',
+      '      - name: Full leg',
+      "        if: matrix.test-suite == 'full'",
+      '        run: bash scripts/run-with-budget-warning.sh 1440 "full" npm test',
+      '      - name: Spec leg',
+      "        if: matrix.test-suite == 'specification'",
+      '        run: bash scripts/run-with-budget-warning.sh 660 "spec" npm test',
+      '',
+    ].join('\n');
+
+    const budgets = getStepBudgetSeconds(workflow, 'job');
+
+    expect(getConcurrentBudgetSeconds(budgets)).toBe(1680);
+  });
+
+  it('resolves a "$VAR" budget from the step, job, or workflow env', () => {
+    const workflow = [
+      'name: Fixture',
+      '',
+      'env:',
+      "  WORKFLOW_BUDGET: '50'",
+      '',
+      'jobs:',
+      '  job:',
+      '    timeout-minutes: 15',
+      '    env:',
+      "      JOB_BUDGET: '60'",
+      '    steps:',
+      '      - name: Step env wins',
+      '        env:',
+      "          STEP_BUDGET: '70'",
+      '        run: bash scripts/run-with-budget-warning.sh "$STEP_BUDGET" "step" npm test',
+      '      - name: Job env resolves',
+      '        run: bash scripts/run-with-budget-warning.sh "$JOB_BUDGET" "job" npm test',
+      '      - name: Workflow env resolves',
+      '        run: bash scripts/run-with-budget-warning.sh "$WORKFLOW_BUDGET" "workflow" npm test',
+      '',
+    ].join('\n');
+
+    const budgets = getStepBudgetSeconds(workflow, 'job');
+
+    expect(budgets.map((budget) => budget.seconds)).toEqual([70, 60, 50]);
+  });
+
+  it('reports a budget it cannot read instead of skipping it', () => {
+    const workflow = [
+      'name: Fixture',
+      '',
+      'jobs:',
+      '  test:',
+      '    timeout-minutes: 15',
+      '    steps:',
+      '      - name: Run tests',
+      '        env:',
+      "          DENO_TEST_BUDGET_SECONDS: '900'",
+      '        run: bash scripts/run-with-budget-warning.sh "$DENO_TEST_BUDGET_SECONDS" "Deno test suite" deno test',
+      '      - name: Unresolvable',
+      '        run: bash scripts/run-with-budget-warning.sh "$NOWHERE_BUDGET" "missing var" npm test',
+      '',
+    ].join('\n');
+
+    const budgets = getStepBudgetSeconds(workflow, 'test');
+
+    expect(budgets[0].seconds).toBe(900);
+    expect(Number.isFinite(budgets[1].seconds)).toBe(false);
+    expect(budgets[1].source).toContain('"NOWHERE_BUDGET"');
   });
 });

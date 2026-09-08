@@ -14,3 +14,16 @@ rules:
         zizmorcore/*: ref-pin
         changesets/*: ref-pin
         '*': hash-pin
+  # zizmor >= 1.30.0 asks for GitHub's `uses: $/...` self-repository syntax
+  # (shipped 2026-07-30) instead of `uses: ./...`. actionlint does not parse
+  # `$/` yet -- v1.7.12 is the newest release and support is still open
+  # upstream (rhysd/actionlint#711, rhysd/actionlint#732) -- so the two jobs
+  # in workflows.yml contradict each other: satisfying zizmor makes
+  # actionlint fail with "invalid format because ref is missing".
+  #
+  # Drop this block once actionlint understands `$/`.
+  self-repository:
+    ignore:
+      - release.yml
+      - example-app.yml
+      - action.yml

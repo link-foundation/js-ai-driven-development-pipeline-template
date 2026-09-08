@@ -42,8 +42,14 @@ jobs:
       # every `run:` block. A native actionlint binary without shellcheck on
       # PATH silently skips the shell checks and exits 0 - worth knowing when
       # reproducing a failure locally:
-      #   docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
-      - uses: docker://rhysd/actionlint:1.7.7
+      #   docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+      # Pinned by digest because a mutable tag of a repository we do not
+      # control is arbitrary code execution in any job that holds
+      # credentials (the same reasoning as the `'*': hash-pin` policy in
+      # .github/zizmor.yml). Re-resolve when bumping:
+      #   docker pull rhysd/actionlint:<tag> &&
+      #   docker inspect --format='{{index .RepoDigests 0}}' rhysd/actionlint:<tag>
+      - uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
           args: -color
 
@@ -61,9 +67,39 @@ jobs:
 
       # Annotations instead of SARIF: forks of this template do not necessarily
       # have code scanning enabled, and the job should fail loudly either way.
+      #
+      # Named `version` rather than left at the default, because the action's
+      # `latest` entry is its own frozen table (v0.6.2 -> zizmor 1.29.0), not
+      # the latest zizmor. Naming it keeps the next bump a visible line in the
+      # diff rather than a side effect of bumping the action, and documents
+      # exactly which analyser reproduces a finding:
+      #   pipx run zizmor==1.29.0 --config .github/zizmor.yml \
+      #     --min-confidence low --persona regular .github/workflows
       - uses: zizmorcore/zizmor-action@v0.6.2
         with:
           advanced-security: false
           annotations: true
           config: .github/zizmor.yml
-          min-confidence: medium
+          # Low, not medium: the artipacked audit reports at Low confidence,
+          # and a floor above the finding hides every checkout that forgets
+          # persist-credentials: false. tests/checkout-credentials.test.js
+          # pins the same invariant in-repo, so the floor only needs to catch
+          # the workflows the test cannot see.
+          min-confidence: low
+          version: 1.29.0
+
+      # The job above runs `--persona regular`, which is the right default:
+      # pedantic surfaces dozens of stylistic findings. But the audits that
+      # cover container image references (`unpinned-images` among them) are
+      # Pedantic-only, so the `'*': hash-pin` policy declared in
+      # .github/zizmor.yml is not enforced against `uses: docker://` or
+      # `container:` references by the run above. Narrowing this second pass
+      # to high severity *and* high confidence keeps that enforcement without
+      # importing the noise. Measured: after the digest pins below it reports
+      # nothing, and stays silent until someone reintroduces a mutable image.
+      - name: Audit for pedantic-only high-severity findings
+        timeout-minutes: 10
+        run: |
+          pipx run zizmor==1.30.0 --config .github/zizmor.yml \
+            --persona pedantic --min-severity high --min-confidence high \
+            .github/workflows .github/actions

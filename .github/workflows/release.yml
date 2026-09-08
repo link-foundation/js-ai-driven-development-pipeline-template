@@ -64,6 +64,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect changes
         id: changes
@@ -86,6 +87,8 @@ jobs:
       needs.detect-changes.outputs.js-changed == 'true'
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Check .mjs syntax
         run: bash scripts/check-mjs-syntax.sh
@@ -107,6 +110,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -135,6 +139,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check for version changes in package.json
         env:
@@ -158,6 +163,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -213,6 +219,7 @@ jobs:
         with:
           # For PRs, fetch enough history to merge with base branch
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -292,6 +299,7 @@ jobs:
         with:
           # For PRs, fetch enough history to merge with base branch
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Simulate fresh merge with base branch (PR only)
         if: github.event_name == 'pull_request'
@@ -369,6 +377,8 @@ jobs:
       DOCKERFILE: ${{ vars.DOCKERFILE }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Check Docker build configuration
         id: docker_config
@@ -410,6 +420,8 @@ jobs:
       needs.detect-changes.outputs.docs-changed == 'true'
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       # Documentation line limits (1500 lines, matching the architecture
       # limit) are enforced by the check-file-line-limits job, which scans
@@ -442,10 +454,52 @@ jobs:
             echo "All required documentation files present."
           fi
 
+  # Principle 16 of the shared CI/CD best practices: prove the release
+  # credentials can write before the expensive jobs spend their minutes
+  # (issues #176, #181). A non-empty secret proves nothing -- an expired
+  # token is non-empty -- and a login proves authentication, not
+  # authorisation, so scripts/preflight-credentials.sh probes with an
+  # attempted write: a refused credential fails the run seconds in instead
+  # of surfacing as a registry error after the matrix.
+  release-preflight:
+    name: Release Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The runner injects ACTIONS_ID_TOKEN_REQUEST_URL only when the job may
+      # mint OIDC tokens. npm publishes with provenance, so its absence --
+      # mirrored in the publishing jobs' permission envelope -- is itself the
+      # finding.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Probe every release credential
+        env:
+          # Release mode (push to main, manual instant release) fails the run
+          # on a refused credential. Report mode (pull requests -- a fork has
+          # no publishing secrets) runs the same probes and annotates without
+          # blocking.
+          PREFLIGHT_MODE: >-
+            ${{
+              (
+                (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+                (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'instant')
+              ) && 'release' || 'report'
+            }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: bash scripts/preflight-credentials.sh
+
   # Release - only runs on main after tests pass (for push events)
   release:
     name: Release
-    needs: [lint, test]
+    needs: [lint, test, release-preflight]
     # Typical run is well under 10min. 30min gives npm and GitHub
     # release APIs room for retries without allowing a 6h hang.
     timeout-minutes: 30
@@ -458,6 +512,7 @@ jobs:
       !cancelled() &&
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
+      needs.release-preflight.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.test.result == 'success'
     runs-on: ubuntu-latest
@@ -470,8 +525,14 @@ jobs:
       published: ${{ steps.publish.outputs.published }}
       published_version: ${{ steps.publish.outputs.published_version }}
     steps:
+      # One of two checkouts in this workflow that keep credentials in
+      # .git/config: scripts/version-and-commit.mjs runs
+      # `git push origin main` to publish the version bump, which needs the
+      # token wired into the remote. Every other checkout in this
+      # repository sets persist-credentials: false.
       - uses: actions/checkout@v6
         with:
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -535,19 +596,26 @@ jobs:
 
       - name: Smoke-test published npm package
         if: steps.publish.outputs.published == 'true'
-        run: bash scripts/run-with-budget-warning.sh 300 "npm package smoke test" node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
+        env:
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+        run: bash scripts/run-with-budget-warning.sh 300 "npm package smoke test" node scripts/smoke-test-package.mjs --package-version "$PACKAGE_VERSION"
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/create-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+        run: node scripts/create-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY"
 
       - name: Format GitHub release notes
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/format-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}" --commit-sha "${{ github.sha }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/format-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY" --commit-sha "$COMMIT_SHA"
 
   # Manual Instant Release - triggered via workflow_dispatch with instant mode
   # This job is in release.yml because npm trusted publishing
@@ -555,11 +623,12 @@ jobs:
   instant-release:
     name: Instant Release
     # Publishing must wait for both quality gates and require explicit success.
-    needs: [lint, test]
+    needs: [lint, test, release-preflight]
     if: |
       !cancelled() &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.release_mode == 'instant' &&
+      needs.release-preflight.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.test.result == 'success'
     runs-on: ubuntu-latest
@@ -577,8 +646,14 @@ jobs:
       published: ${{ steps.publish.outputs.published }}
       published_version: ${{ steps.publish.outputs.published_version }}
     steps:
+      # The second checkout in this workflow that keeps credentials in
+      # .git/config: scripts/version-and-commit.mjs pushes the version
+      # commit to main, which needs the token wired into the remote.
+      # Every other checkout in this repository sets
+      # persist-credentials: false.
       - uses: actions/checkout@v6
         with:
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -617,32 +692,40 @@ jobs:
 
       - name: Smoke-test published npm package
         if: steps.publish.outputs.published == 'true'
-        run: node scripts/smoke-test-package.mjs --package-version "${{ steps.publish.outputs.published_version }}"
+        env:
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+        run: node scripts/smoke-test-package.mjs --package-version "$PACKAGE_VERSION"
 
       - name: Create GitHub Release
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/create-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+        run: node scripts/create-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY"
 
       - name: Format GitHub release notes
         if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/format-github-release.mjs --release-version "${{ steps.publish.outputs.published_version }}" --repository "${{ github.repository }}" --commit-sha "${{ github.sha }}"
+          PACKAGE_VERSION: ${{ steps.publish.outputs.published_version }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/format-github-release.mjs --release-version "$PACKAGE_VERSION" --repository "$REPOSITORY" --commit-sha "$COMMIT_SHA"
 
   # Optional Docker Hub publishing for packages that also ship Docker images.
   # Set vars.DOCKERHUB_IMAGE to enable this path, then configure
   # vars.DOCKERHUB_USERNAME and secrets.DOCKERHUB_TOKEN.
   docker-publish-config:
     name: Configure Docker Hub Publish
-    needs: [release, instant-release]
+    needs: [release, instant-release, release-preflight]
     timeout-minutes: 10
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
     if: |
       !cancelled() &&
+      needs.release-preflight.result == 'success' &&
       (
         (needs.release.result == 'success' && needs.release.outputs.published == 'true') ||
         (needs.instant-release.result == 'success' && needs.instant-release.outputs.published == 'true')
@@ -665,6 +748,8 @@ jobs:
       RELEASE_VERSION: ${{ needs.release.outputs.published_version || needs.instant-release.outputs.published_version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Check Docker publish configuration
         id: docker_config
@@ -702,6 +787,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Build and push platform image by digest
         id: build
@@ -746,6 +833,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx (resilient)
         uses: ./.github/actions/setup-buildx-resilient
@@ -799,8 +888,14 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # The third checkout in this workflow that keeps credentials in
+      # .git/config: peter-evans/create-pull-request below pushes the
+      # changeset branch and opens the pull request, which needs the token
+      # wired into the remote. Every other checkout in this repository
+      # sets persist-credentials: false.
       - uses: actions/checkout@v6
         with:
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -871,12 +966,15 @@ jobs:
       - docker-publish-config
       - docker-publish-build
       - validate-docs
+      - release-preflight
       - release
       - instant-release
       - docker-publish
       - changeset-pr
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

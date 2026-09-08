@@ -13,14 +13,59 @@ const zizmorConfig = readFileSync('.github/zizmor.yml', 'utf8');
 describe('workflow linting job', () => {
   // This job is what reports the shellcheck findings asserted below.
   it('runs actionlint from the Docker image that bundles shellcheck', () => {
-    expect(workflowsWorkflow).toContain('uses: docker://rhysd/actionlint:');
+    expect(workflowsWorkflow).toContain('uses: docker://rhysd/actionlint@');
     expect(workflowsWorkflow).toContain('shellcheck');
+  });
+
+  // A mutable tag of a repository we do not control is arbitrary code
+  // execution in any job that holds credentials; the tag form also evades
+  // the `'*': hash-pin` policy in .github/zizmor.yml, because the audit
+  // that covers container references (unpinned-images) is Pedantic-persona.
+  it('pins the actionlint image to a digest, not a tag', () => {
+    const uses = Array.from(
+      workflowsWorkflow.matchAll(
+        /^\s*- uses: (docker:\/\/rhysd\/actionlint@\S+) # (.+)$/gm
+      ),
+      (match) => `${match[1]} # ${match[2]}`
+    );
+
+    expect(uses.length).toBe(1);
+    expect(uses[0]).toMatch(
+      /^docker:\/\/rhysd\/actionlint@sha256:[0-9a-f]{64} # v\d+\.\d+\.\d+$/
+    );
+  });
+
+  it('documents the local actionlint reproduction against the pinned release', () => {
+    expect(workflowsWorkflow).toContain(
+      'docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color'
+    );
   });
 
   it('runs zizmor against the repository configuration', () => {
     expect(workflowsWorkflow).toContain('uses: zizmorcore/zizmor-action@');
     expect(workflowsWorkflow).toContain('config: .github/zizmor.yml');
     expect(zizmorConfig).toContain('unpinned-uses');
+  });
+
+  // zizmor-action resolves the version from a static table shipped inside
+  // the action, and `latest` there is frozen at the version current when
+  // the action was tagged (v0.6.2 -> zizmor 1.29.0). Naming the version
+  // keeps the analyser that reproduces a CI finding pinned in the diff.
+  it('pins the zizmor version the action installs', () => {
+    const zizmorStep = workflowsWorkflow.slice(
+      workflowsWorkflow.indexOf('zizmorcore/zizmor-action@')
+    );
+
+    expect(zizmorStep).toMatch(/version: \d+\.\d+\.\d+/);
+    expect(zizmorStep).toMatch(/min-confidence: low/);
+  });
+
+  // The unpinned-images audit that covers `uses: docker://` and `container:`
+  // references is Pedantic-persona, so the regular pass above never runs it.
+  it('adds a narrow pedantic pass for the pedantic-only audits', () => {
+    expect(workflowsWorkflow).toContain('--persona pedantic');
+    expect(workflowsWorkflow).toContain('--min-severity high');
+    expect(workflowsWorkflow).toContain('--min-confidence high');
   });
 
   it('bounds both jobs with a timeout backstop', () => {
@@ -91,5 +136,48 @@ describe('third-party actions', () => {
     }
 
     expect(unpinned).toEqual([]);
+  });
+
+  // Same reasoning as the `'*': hash-pin` policy in .github/zizmor.yml,
+  // applied to the container references that policy cannot see
+  // (unpinned-images is Pedantic-persona; enforced by the narrow pedantic
+  // pass in workflows.yml and asserted here so the pin survives edits).
+  it('pins every container image reference to a digest', () => {
+    const images = [];
+
+    for (const [filePath, workflow] of Object.entries({
+      '.github/workflows/release.yml': releaseWorkflow,
+      '.github/workflows/example-app.yml': exampleAppWorkflow,
+      '.github/workflows/workflows.yml': workflowsWorkflow,
+      '.github/workflows/links.yml': readWorkflow(
+        '.github/workflows/links.yml'
+      ),
+      '.github/workflows/security.yml': readWorkflow(
+        '.github/workflows/security.yml'
+      ),
+    })) {
+      for (const match of workflow.matchAll(/^\s*(?:- uses|image): (\S+)$/gm)) {
+        const [, reference] = match;
+
+        if (!reference.startsWith('docker://') && !reference.includes('@')) {
+          continue;
+        }
+
+        if (reference.startsWith('docker://')) {
+          if (!/^docker:\/\/[^@]+@sha256:[0-9a-f]{64}$/.test(reference)) {
+            images.push(`${filePath}: ${reference}`);
+          }
+          continue;
+        }
+
+        if (reference.startsWith('mcr.microsoft.com/')) {
+          if (!/mcr\.microsoft\.com\/.+@sha256:[0-9a-f]{64}$/.test(reference)) {
+            images.push(`${filePath}: ${reference}`);
+          }
+        }
+      }
+    }
+
+    expect(images).toEqual([]);
   });
 });
