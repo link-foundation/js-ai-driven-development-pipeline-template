@@ -39,10 +39,11 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const LYCHEE_OUTPUT = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
-const RECOVERED_OUTPUT = process.env.RECOVERED_OUTPUT || 'lychee/recovered.txt';
-const BUDGET_SECONDS = Number(process.env.RECHECK_BUDGET_SECONDS || 240);
-const INITIAL_WAIT_MS = Number(process.env.RECHECK_WAIT_MS || 2000);
+// Environment-derived settings are read inside main(), not here: the Deno
+// test leg imports this module under `--allow-read` only, and any
+// module-scope process.env access would throw NotCapable at import time.
+const BUDGET_SECONDS_DEFAULT = 240;
+const INITIAL_WAIT_MS_DEFAULT = 2000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const USER_AGENT_DEFAULT = 'lychee';
 // lychee's documented default --accept list; used when the workflow does not
@@ -151,9 +152,9 @@ export function extractLycheeRequestOptions(workflowText) {
 export async function recheckUnanswered(urls, options) {
   const accept = parseAcceptRanges(options.accept);
   const fetchImpl = options.fetchImpl || globalThis.fetch;
-  const budgetMs = (options.budgetSeconds ?? BUDGET_SECONDS) * 1000;
+  const budgetMs = (options.budgetSeconds ?? BUDGET_SECONDS_DEFAULT) * 1000;
   const startedAt = Date.now();
-  const initialWaitMs = options.initialWaitMs ?? INITIAL_WAIT_MS;
+  const initialWaitMs = options.initialWaitMs ?? INITIAL_WAIT_MS_DEFAULT;
   let waitMs = initialWaitMs;
 
   const recovered = [];
@@ -225,9 +226,12 @@ export async function recheckUnanswered(urls, options) {
 }
 
 async function main() {
+  const lycheeOutput = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
+  const recoveredOutput =
+    process.env.RECOVERED_OUTPUT || 'lychee/recovered.txt';
   const workflowText = readFileSync('.github/workflows/links.yml', 'utf8');
   const options = extractLycheeRequestOptions(workflowText);
-  const content = readFileSync(LYCHEE_OUTPUT, 'utf8');
+  const content = readFileSync(lycheeOutput, 'utf8');
   const failures = parseLycheeFailures(content);
 
   const finalFailures = failures.filter(
@@ -246,7 +250,15 @@ async function main() {
     return;
   }
 
-  const result = await recheckUnanswered(unanswered, options);
+  const result = await recheckUnanswered(unanswered, {
+    ...options,
+    budgetSeconds: Number(
+      process.env.RECHECK_BUDGET_SECONDS || BUDGET_SECONDS_DEFAULT
+    ),
+    initialWaitMs: Number(
+      process.env.RECHECK_WAIT_MS || INITIAL_WAIT_MS_DEFAULT
+    ),
+  });
 
   for (const url of result.recovered) {
     console.log(
@@ -255,7 +267,7 @@ async function main() {
   }
 
   if (result.recovered.length > 0) {
-    writeFileSync(RECOVERED_OUTPUT, `${result.recovered.join('\n')}\n`);
+    writeFileSync(recoveredOutput, `${result.recovered.join('\n')}\n`);
   }
 
   console.log(
