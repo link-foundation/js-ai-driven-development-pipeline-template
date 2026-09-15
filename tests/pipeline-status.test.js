@@ -93,6 +93,12 @@ function runGate(needs, extraEnv = {}) {
 }
 
 describe('pipeline status gate', () => {
+  it('stays compatible with the Bash 3.2 shipped by macOS runners', () => {
+    const script = readFileSync(scriptPath, 'utf8');
+
+    expect(script).not.toMatch(/\blocal\s+-A\b|\bdeclare\s+-A\b/);
+  });
+
   it('observes every other release workflow job', () => {
     const jobs = listWorkflowJobs(workflow);
     const gate = getJobBlock(workflow, 'pipeline-status');

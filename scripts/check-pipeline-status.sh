@@ -69,8 +69,8 @@ resolve_workflow_file() {
 # Print <job><TAB><supersede|overrun><TAB><reason>. A moved branch only
 # explains a cancellation when this exact job can cancel in progress.
 classify_cancellations() {
-  local names="$1" superseded="$2" workflow reason name value table
-  local -A policies=()
+  local names="$1" superseded="$2" workflow reason name value policy_name policy_value
+  local table=""
 
   workflow="$(resolve_workflow_file || true)"
   if [ -z "${workflow}" ]; then
@@ -84,14 +84,17 @@ classify_cancellations() {
       reason="the gate could not read job concurrency from ${workflow}: ${table}"
       table=""
     fi
-    while IFS=$'\t' read -r name value; do
-      [ -n "${name}" ] && policies["${name}"]="${value}"
-    done <<<"${table}"
   fi
 
   while IFS= read -r name; do
     [ -z "${name}" ] && continue
-    value="${policies[$name]:-unreadable}"
+    value="unreadable"
+    while IFS=$'\t' read -r policy_name policy_value; do
+      if [ "${policy_name}" = "${name}" ]; then
+        value="${policy_value}"
+        break
+      fi
+    done <<<"${table}"
     trace "cancelled ${name}: cancel-in-progress=${value}, superseded=${superseded}"
 
     if [ "${superseded}" != yes ]; then
