@@ -27,6 +27,7 @@ import {
 } from './js-paths.mjs';
 import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
+import { printUntrusted } from './github-actions-log.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
@@ -75,9 +76,10 @@ const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
 console.log('Parsed configuration:', {
   mode,
   bumpType,
-  description: description || '(none)',
   jsRoot,
 });
+console.log('Description:');
+printUntrusted(description || '(none)');
 
 // Detect if positional arguments were used (common mistake)
 const args = process.argv.slice(2);
