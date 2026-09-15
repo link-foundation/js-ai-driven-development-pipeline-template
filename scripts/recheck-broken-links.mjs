@@ -25,8 +25,9 @@
  *     (default: 2000)
  *
  * GitHub Actions outputs:
- *   - all_recovered: 'true' when every unanswered link answered healthy on
- *     re-check. Consumers must test `!= 'true'`, never `== 'false'`: a
+ *   - all_recovered: 'true' when the report contained nothing but unanswered
+ *     failures and every one of them answered healthy on re-check. Consumers
+ *     must test `!= 'true'`, never `== 'false'`: a
  *     skipped or crashed step leaves the output empty, and only the `!=`
  *     form fails safe.
  *
@@ -225,6 +226,22 @@ export async function recheckUnanswered(urls, options) {
   };
 }
 
+/**
+ * Whether the re-check cleared every failure in the complete lychee report.
+ * Keeping this as a report-level predicate prevents a recovered transient
+ * error from hiding an answered failure such as a 404.
+ * @param {{finalFailureCount: number, stillBrokenCount: number, unansweredCount: number, recoveredCount: number}} counts
+ * @returns {boolean}
+ */
+export function allFailuresRecovered(counts) {
+  return (
+    counts.finalFailureCount === 0 &&
+    counts.stillBrokenCount === 0 &&
+    counts.unansweredCount > 0 &&
+    counts.recoveredCount === counts.unansweredCount
+  );
+}
+
 async function main() {
   const lycheeOutput = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
   const recoveredOutput =
@@ -275,8 +292,12 @@ async function main() {
   );
 
   if (
-    result.stillBroken.length === 0 &&
-    result.recovered.length === unanswered.length
+    allFailuresRecovered({
+      finalFailureCount: finalFailures.length,
+      stillBrokenCount: result.stillBroken.length,
+      unansweredCount: unanswered.length,
+      recoveredCount: result.recovered.length,
+    })
   ) {
     appendFileSync(
       process.env.GITHUB_OUTPUT || '/dev/null',

@@ -26,7 +26,7 @@ describe('broken link workflow', () => {
   it('fails for every nonzero Lychee exit even when an archive exists', () => {
     const failureStep = getStepBlock('Fail if broken links were found');
 
-    expect(failureStep).toContain('always()');
+    expect(failureStep).toContain('!cancelled()');
     expect(failureStep).toContain('steps.lychee.outputs.exit_code != 0');
     expect(failureStep).not.toContain('steps.webarchive.outputs.all_archived');
     expect(failureStep).toContain(

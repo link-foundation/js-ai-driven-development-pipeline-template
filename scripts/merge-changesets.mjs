@@ -30,6 +30,7 @@ import {
   getChangesetVersionTypeRegex,
   readPackageInfo,
 } from './package-info.mjs';
+import { printUntrusted } from './github-actions-log.mjs';
 
 // Version bump type priority (higher number = higher priority)
 const BUMP_PRIORITY = {
@@ -273,7 +274,8 @@ function main() {
   }
 
   console.log('\nChangeset merge completed successfully');
-  console.log(`\nMerged changeset content:\n${mergedContent}`);
+  console.log('\nMerged changeset content:');
+  printUntrusted(mergedContent);
 }
 
 try {

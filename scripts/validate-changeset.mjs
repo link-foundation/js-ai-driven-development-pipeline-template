@@ -19,6 +19,7 @@ import {
   getChangesetVersionTypeRegex,
   readPackageInfo,
 } from './package-info.mjs';
+import { printUntrusted } from './github-actions-log.mjs';
 
 /**
  * Ensure a git commit is available locally, fetching if necessary
@@ -257,7 +258,9 @@ try {
     console.error(`::error::${validation.error}`);
     console.error(`\nFile content of ${changesetFile}:`);
     try {
-      console.error(readFileSync(changesetFile, 'utf-8'));
+      printUntrusted(readFileSync(changesetFile, 'utf-8'), {
+        stream: process.stderr,
+      });
     } catch {
       console.error('(could not read file)');
     }
@@ -266,7 +269,8 @@ try {
 
   console.log('Changeset validation passed');
   console.log(`   Type: ${validation.type}`);
-  console.log(`   Description: ${validation.description}`);
+  console.log('   Description:');
+  printUntrusted(validation.description);
 } catch (error) {
   console.error('Error during changeset validation:', error.message);
   if (process.env.DEBUG) {

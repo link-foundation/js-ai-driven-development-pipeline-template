@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'test-anywhere';
 import {
+  allFailuresRecovered,
   extractLycheeRequestOptions,
   parseAcceptRanges,
   parseLycheeFailures,
@@ -120,6 +121,42 @@ describe('accept list parsing', () => {
     expect(accepted(429)).toBe(true);
     expect(accepted(104)).toBe(false);
     expect(accepted(404)).toBe(false);
+  });
+});
+
+describe('complete report recovery verdict', () => {
+  it('requires every failure in a non-empty unanswered-only report to recover', () => {
+    expect(
+      allFailuresRecovered({
+        finalFailureCount: 0,
+        stillBrokenCount: 0,
+        unansweredCount: 2,
+        recoveredCount: 2,
+      })
+    ).toBe(true);
+
+    for (const counts of [
+      {
+        finalFailureCount: 1,
+        stillBrokenCount: 0,
+        unansweredCount: 1,
+        recoveredCount: 1,
+      },
+      {
+        finalFailureCount: 0,
+        stillBrokenCount: 1,
+        unansweredCount: 2,
+        recoveredCount: 1,
+      },
+      {
+        finalFailureCount: 0,
+        stillBrokenCount: 0,
+        unansweredCount: 0,
+        recoveredCount: 0,
+      },
+    ]) {
+      expect(allFailuresRecovered(counts)).toBe(false);
+    }
   });
 });
 
@@ -331,6 +368,40 @@ describe('re-check step end to end', () => {
 
       expect(code).toBe(0);
       expect(readFileSync(outputPath, 'utf8')).toContain('all_recovered=true');
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not release the gate when a 404 remains beside a recovered link', async () => {
+    const server = createServer((request, response) => {
+      response.writeHead(200);
+      response.end();
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+
+    const dir = mkdtempSync(path.join(tmpdir(), 'recheck-'));
+    try {
+      const reportPath = writeReport(dir, [
+        '- [404] <https://example.com/final/> | Rejected status code: 404 Not Found',
+        `- [ERROR] <http://127.0.0.1:${port}/recovered> | Connection reset by peer`,
+      ]);
+      const recoveredPath = path.join(dir, 'recovered.txt');
+      const outputPath = path.join(dir, 'github-output.txt');
+
+      const { code } = await runRecheck({
+        LYCHEE_OUTPUT: reportPath,
+        RECOVERED_OUTPUT: recoveredPath,
+        GITHUB_OUTPUT: outputPath,
+        RECHECK_WAIT_MS: '10',
+        RECHECK_BUDGET_SECONDS: '30',
+      });
+
+      expect(code).toBe(0);
+      expect(readFileSync(recoveredPath, 'utf8')).toContain('/recovered');
+      expect(existsSync(outputPath)).toBe(false);
     } finally {
       server.close();
       rmSync(dir, { recursive: true, force: true });

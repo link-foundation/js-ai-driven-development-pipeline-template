@@ -18,6 +18,7 @@ import { getChangesetDir, getJsRoot, parseJsRootConfig } from './js-paths.mjs';
 import { formatChangesetHeader, readPackageInfo } from './package-info.mjs';
 import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
+import { printUntrusted } from './github-actions-log.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
@@ -86,7 +87,7 @@ ${description}
 
   console.log(`Created changeset: ${changesetFile}`);
   console.log('Content:');
-  console.log(content);
+  printUntrusted(content);
 
   // Format with Prettier
   console.log('\nFormatting with Prettier...');

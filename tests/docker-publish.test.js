@@ -94,6 +94,21 @@ describe('optional Docker Hub publishing workflow', () => {
     expect(manifestJob).toContain('docker buildx imagetools create');
     expect(manifestJob).toContain('--tag "${IMAGE}:latest"');
     expect(manifestJob).toContain('--tag "${IMAGE}:${VERSION}"');
+    expect(manifestJob).toContain('"${#digests[@]}" -ne 2');
+    expectOrdered(manifestJob, [
+      '- name: Create multi-architecture manifest',
+      '- name: Verify published multi-architecture manifests',
+    ]);
+    expect(manifestJob).toContain(
+      'docker buildx imagetools inspect "${IMAGE}:${tag}"'
+    );
+    expect(manifestJob).toContain(
+      'grep -Eq "Platform:[[:space:]]+${platform}"'
+    );
+    expect(manifestJob).toContain(
+      'Published manifest ${IMAGE}:${tag} is missing ${platform}'
+    );
+    expect(manifestJob).toContain('for tag in latest "${VERSION}"');
     expect(dockerHubAction).toContain(
       'org.opencontainers.image.version=${{ inputs.version }}'
     );

@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
@@ -8,6 +15,7 @@ import { fileURLToPath, URL } from 'node:url';
 const scriptPath = fileURLToPath(
   new URL('../scripts/run-with-budget-warning.sh', import.meta.url)
 );
+const script = readFileSync(scriptPath, 'utf8');
 const isDenoRuntime = typeof Deno !== 'undefined';
 const canRunShellFixtures =
   !isDenoRuntime &&
@@ -114,6 +122,94 @@ describe('run-with-budget-warning.sh', () => {
     expect(survivors.stdout.trim()).toBe('');
   });
 
+  it('does not let a surviving child hold the wrapper output pipe open', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+
+    const workerSeconds = 800000 + (process.pid % 1000);
+    try {
+      const result = spawnSync(
+        'bash',
+        [
+          scriptPath,
+          '30',
+          'detached worker',
+          'bash',
+          '-c',
+          `sleep ${workerSeconds} & echo root-finished`,
+        ],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, BUDGET_POLL_SECONDS: '0.05' },
+          timeout: 5000,
+        }
+      );
+
+      expect(result.signal).toBe(null);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('root-finished');
+      expect(result.stdout).toContain('detached worker finished');
+    } finally {
+      spawnSync('pkill', ['-f', `^sleep ${workerSeconds}$`]);
+    }
+  });
+
+  it('keeps control state when the wrapped command cleans TMPDIR', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+
+    const root = mkdtempSync(path.join(tmpdir(), 'budget-state-'));
+    const commandTmp = path.join(root, 'command-tmp');
+    const runnerTmp = path.join(root, 'runner-tmp');
+    mkdirSync(commandTmp);
+    mkdirSync(runnerTmp);
+
+    try {
+      const result = runBudget(
+        [
+          '5',
+          'tmp-cleaning command',
+          'bash',
+          '-c',
+          'rm -rf "${TMPDIR:?}"/*; echo command-completed',
+        ],
+        {
+          TMPDIR: commandTmp,
+          RUNNER_TEMP: runnerTmp,
+          BUDGET_POLL_SECONDS: '0.05',
+        }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.output).toContain('command-completed');
+      expect(result.output).not.toContain('No such file or directory');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails clearly when the private state parent is unavailable', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+
+    const result = runBudget(['5', 'missing state', 'true'], {
+      BUDGET_STATE_PARENT: path.join(
+        tmpdir(),
+        `missing-budget-parent-${process.pid}`
+      ),
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.output).toContain(
+      'Could not create budget control state under'
+    );
+  });
+});
+
+describe('run-with-budget-warning.sh argument validation', () => {
   it('rejects a missing or non-numeric budget', () => {
     if (!canRunShellFixtures) {
       return;
@@ -122,6 +218,15 @@ describe('run-with-budget-warning.sh', () => {
     expect(runBudget(['30', 'no command']).status).toBe(2);
     expect(runBudget(['ten', 'bad budget', 'true']).status).toBe(2);
     expect(runBudget(['0', 'zero budget', 'true']).status).toBe(2);
+  });
+});
+
+describe('run-with-budget-warning.sh privileged survivor handling', () => {
+  it('uses the process table, passwordless escalation, and explicit reporting', () => {
+    expect(script).toContain('ps -eo pgid=,pid=,stat=,user=,args=');
+    expect(script).toContain('sudo -n kill');
+    expect(script).toContain('left processes running');
+    expect(script).toContain('>"${stdout_file}" 2>"${stderr_file}" &');
   });
 });
 

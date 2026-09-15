@@ -1,8 +1,4 @@
-/**
- * Tests for merge-changesets.mjs release-time changeset merging.
- * Reproduces issue #87: malformed changesets must fail instead of being
- * skipped while valid changesets are merged.
- */
+/** Tests for safe, fail-closed release-time changeset merging. */
 
 import { spawnSync } from 'node:child_process';
 import {
@@ -47,10 +43,11 @@ function writeChangeset(changesetDir, fileName, content) {
   writeFileSync(path.join(changesetDir, fileName), content);
 }
 
-function runMergeChangesets(root) {
+function runMergeChangesets(root, extraEnv = {}) {
   return spawnSync(process.execPath, [scriptPath], {
     cwd: root,
     encoding: 'utf8',
+    env: { ...process.env, ...extraEnv },
   });
 }
 
@@ -93,6 +90,45 @@ This note must not be silently dropped.
           readdirSync(changesetDir).filter((file) => file.endsWith('.md'))
             .length
         ).toBe(2);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('brackets contributor-authored descriptions as untrusted Actions output', () => {
+      const { changesetDir, root } = createFixture();
+
+      try {
+        writeChangeset(
+          changesetDir,
+          'first.md',
+          `---
+'fixture-package': patch
+---
+
+##[error] forged annotation
+`
+        );
+        writeChangeset(
+          changesetDir,
+          'second.md',
+          `---
+'fixture-package': patch
+---
+
+ordinary release note
+`
+        );
+
+        const result = runMergeChangesets(root, { GITHUB_ACTIONS: 'true' });
+        const stop = result.stdout.indexOf('::stop-commands::');
+        const payload = result.stdout.indexOf('##[error] forged annotation');
+        const resume = result.stdout.indexOf('::\n', payload);
+
+        expect(result.status).toBe(0);
+        expect(stop).toBeGreaterThan(-1);
+        expect(payload).toBeGreaterThan(stop);
+        expect(resume).toBeGreaterThan(payload);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
