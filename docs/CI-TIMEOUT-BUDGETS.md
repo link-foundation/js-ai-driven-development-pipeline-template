@@ -5,11 +5,14 @@
 ## Why a backstop is not enough
 
 GitHub reports a job killed by `timeout-minutes` as **cancelled**, not
-**failed**. `scripts/check-pipeline-status.sh` turns a cancellation into an
-error on the default branch, but on a pull request a cancellation is usually a
-superseded run, so it can only warn. A genuine suite timeout on a pull request
-therefore produced no failure at all, and on `main` the error could not say
-which deadline was blown, because no step owned a deadline.
+**failed**. `scripts/check-pipeline-status.sh` turns an unexplained cancellation
+into an error. It excuses a cancellation only when the tested commit is no
+longer the branch head _and_ that specific job has a literal
+`cancel-in-progress: true`; `false`, inherited defaults, expressions, and
+unreadable workflow configuration all fail closed. Before this per-job check,
+a moved pull request branch could make a genuine suite timeout look like a
+harmless superseded run. Even on `main`, the resulting error could not say which
+deadline was blown, because no step owned a deadline.
 
 Reproduction:
 
@@ -77,12 +80,21 @@ job's backstop fires.
   on.
 - On expiry emits
   `::error title=<label> exceeded its execution budget::…`, sends `SIGTERM` to
-  the group, waits a grace period, then sends `SIGKILL`.
+  the group, waits a grace period, then sends `SIGKILL`. On GitHub-hosted
+  runners it can use passwordless `sudo` to reach privileged descendants and
+  reports any process it still could not terminate.
+- Captures and relays stdout and stderr separately, so a surviving descendant
+  cannot inherit the CI step's pipe and hold the step open.
+- Keeps wrapper-owned state under `RUNNER_TEMP`, independently of a wrapped
+  command that clears its own `TMPDIR`.
 - Exits **124** on termination, matching `timeout(1)`. Otherwise it passes the
   command's own exit code through unchanged.
 
 Overrides: `BUDGET_WARN_PERCENT` (default 70), `BUDGET_GRACE_SECONDS`
-(default 10), `BUDGET_POLL_SECONDS` (default 1).
+(default 10), `BUDGET_KILL_SECONDS` (default 5), `BUDGET_POLL_SECONDS`
+(default 1), `BUDGET_SUDO_KILL` (default 1), `BUDGET_CAPTURE_OUTPUT`
+(default 1), `BUDGET_STATE_PARENT` (defaults to `RUNNER_TEMP`, then `TMPDIR`),
+and `BUDGET_VERBOSE` (default 0).
 
 On Windows runners Git Bash may not support process groups; the wrapper falls
 back to signalling the direct child.

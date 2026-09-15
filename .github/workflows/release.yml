@@ -869,10 +869,32 @@ jobs:
           # One argument per digest. An array keeps the expansion explicit
           # instead of relying on word splitting of a command substitution.
           mapfile -t digests < <(printf "${IMAGE}@sha256:%s\n" *)
+          if [[ "${#digests[@]}" -ne 2 ]]; then
+            echo "Expected 2 platform digests, found ${#digests[@]}." >&2
+            exit 1
+          fi
           docker buildx imagetools create \
             --tag "${IMAGE}:latest" \
             --tag "${IMAGE}:${VERSION}" \
             "${digests[@]}"
+
+      - name: Verify published multi-architecture manifests
+        env:
+          IMAGE: ${{ needs.docker-publish-config.outputs.image }}
+          VERSION: ${{ needs.docker-publish-config.outputs.version }}
+        run: |
+          for tag in latest "${VERSION}"; do
+            if ! manifest="$(docker buildx imagetools inspect "${IMAGE}:${tag}")"; then
+              echo "Unable to read back published manifest ${IMAGE}:${tag}" >&2
+              exit 1
+            fi
+            for platform in linux/amd64 linux/arm64; do
+              if ! grep -Eq "Platform:[[:space:]]+${platform}" <<<"${manifest}"; then
+                echo "Published manifest ${IMAGE}:${tag} is missing ${platform}" >&2
+                exit 1
+              fi
+            done
+          done
 
   # Manual Changeset PR - creates a pull request with the changeset for review
   changeset-pr:
@@ -950,8 +972,8 @@ jobs:
             4. Merge the version PR to publish to npm and create a GitHub release
 
   # GitHub reports jobs killed by timeout-minutes as cancelled rather than
-  # failed. Observe every job so those cancellations become visible failures
-  # on main, where concurrency never supersedes an in-progress run.
+  # failed. Observe every job and excuse only cancellations that the tested
+  # workflow explicitly permits when a newer commit supersedes this run.
   pipeline-status:
     name: Pipeline Status
     runs-on: ubuntu-latest
@@ -959,7 +981,8 @@ jobs:
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-pipeline-status
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-    if: always()
+    if: >-
+      !cancelled()
     needs:
       - detect-changes
       - test-compilation
@@ -990,8 +1013,6 @@ jobs:
       - name: Fail the run when a required job was cancelled or failed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
-          # Lets the gate tell a timeout from a supersede; see
-          # run_is_superseded in the script.
-          RUN_SHA: ${{ github.sha }}
+          RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: bash scripts/check-pipeline-status.sh

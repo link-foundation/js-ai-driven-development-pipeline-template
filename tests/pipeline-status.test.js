@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 
 const workflow = readFileSync(
@@ -22,6 +24,9 @@ const gatedWorkflows = Object.fromEntries(
 );
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-pipeline-status.sh', import.meta.url)
+);
+const concurrencyReaderPath = fileURLToPath(
+  new URL('../scripts/read-job-cancel-in-progress.sh', import.meta.url)
 );
 const canRunBash =
   typeof Deno === 'undefined' &&
@@ -76,13 +81,12 @@ function listNeededJobs(jobBlock) {
   return neededJobs;
 }
 
-function runGate(needs, isMain = false, extraEnv = {}) {
+function runGate(needs, extraEnv = {}) {
   return spawnSync('bash', [scriptPath], {
     encoding: 'utf8',
     env: {
       ...process.env,
       NEEDS_JSON: JSON.stringify(needs),
-      IS_MAIN: String(isMain),
       ...extraEnv,
     },
   });
@@ -93,13 +97,15 @@ describe('pipeline status gate', () => {
     const jobs = listWorkflowJobs(workflow);
     const gate = getJobBlock(workflow, 'pipeline-status');
 
-    expect(gate).toContain('    if: always()');
+    expect(gate).toContain('      !cancelled()');
     expect(gate).toContain('uses: actions/setup-node@v6');
     expect(gate).toContain('NEEDS_JSON: ${{ toJSON(needs) }}');
     expect(gate).toContain(
-      "IS_MAIN: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}"
+      'RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'
     );
-    expect(gate).toContain('RUN_SHA: ${{ github.sha }}');
+    expect(gate).toContain(
+      'BRANCH_NAME: ${{ github.head_ref || github.ref_name }}'
+    );
     expect(listNeededJobs(gate).sort()).toEqual(
       jobs.filter((job) => job !== 'pipeline-status').sort()
     );
@@ -128,23 +134,23 @@ describe('pipeline status gate', () => {
       const result = runGate({ lint: { result: 'failure' } });
 
       expect(result.status).toBe(1);
-      expect(result.stdout).toContain('Pipeline failed. Failing jobs: lint');
-    });
-
-    it('fails for a cancelled job on main', () => {
-      const result = runGate({ release: { result: 'cancelled' } }, true);
-
-      expect(result.status).toBe(1);
       expect(result.stdout).toContain(
-        'Pipeline has cancelled jobs on main: release'
+        '::error title=Pipeline failed::Failing jobs: lint'
       );
     });
 
-    it('warns for a cancelled job on a non-default ref', () => {
+    it('fails for a cancelled job on main', () => {
+      const result = runGate({ release: { result: 'cancelled' } });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('Pipeline has cancelled jobs::release');
+    });
+
+    it('fails closed for a cancellation without branch and workflow context', () => {
       const result = runGate({ test: { result: 'cancelled' } });
 
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain('::warning::Cancelled jobs: test');
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('Pipeline has cancelled jobs::test');
     });
   }
 });
@@ -171,8 +177,18 @@ describe('pipeline status gate in every workflow', () => {
         );
       }
 
-      if (!gate.includes('RUN_SHA: ${{ github.sha }}')) {
-        problems.push(`${name}: gate does not pass RUN_SHA`);
+      if (
+        !gate.includes(
+          'RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'
+        )
+      ) {
+        problems.push(`${name}: gate does not pass the tested head as RUN_SHA`);
+      }
+
+      if (
+        !gate.includes('BRANCH_NAME: ${{ github.head_ref || github.ref_name }}')
+      ) {
+        problems.push(`${name}: gate does not pass BRANCH_NAME`);
       }
 
       if (!gate.includes('run: bash scripts/check-pipeline-status.sh')) {
@@ -216,51 +232,162 @@ describe('pipeline status supersede detection', () => {
 
   if (canRunBash) {
     it('errors when main is at the run commit (a genuine overrun)', () => {
-      const result = runGate(cancelled, true, {
+      const result = runGate(cancelled, {
         RUN_SHA: 'aaa111',
         BRANCH_HEAD_SHA: 'aaa111',
       });
 
       expect(result.status).toBe(1);
-      expect(result.stdout).toContain(
-        'Pipeline has cancelled jobs on main: lint'
-      );
+      expect(result.stdout).toContain('Pipeline has cancelled jobs::lint');
     });
 
-    it('warns when the branch has moved past this run (a supersede)', () => {
-      const result = runGate(cancelled, true, {
-        RUN_SHA: 'aaa111',
-        BRANCH_HEAD_SHA: 'bbb222',
-      });
+    it('warns only when a moved branch could cancel that exact job', () => {
+      const result = runGate(
+        { 'link-checker': { result: 'cancelled' } },
+        {
+          RUN_SHA: 'aaa111',
+          BRANCH_HEAD_SHA: 'bbb222',
+          WORKFLOW_FILE: '.github/workflows/links.yml',
+        }
+      );
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain('::warning::Cancelled jobs: lint');
+      expect(result.stdout).toContain(
+        'Cancelled jobs in a superseded run::link-checker'
+      );
       expect(result.stdout).toContain(
         'This run tests aaa111; main is at bbb222.'
       );
     });
 
+    it('does not excuse a non-cancellable job after the branch moves', () => {
+      const result = runGate(
+        { 'docker-publish': { result: 'cancelled' } },
+        {
+          RUN_SHA: 'aaa111',
+          BRANCH_HEAD_SHA: 'bbb222',
+          WORKFLOW_FILE: '.github/workflows/release.yml',
+        }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('cancel-in-progress: false');
+      expect(result.stdout).toContain(
+        'Pipeline has cancelled jobs::docker-publish'
+      );
+    });
+
+    it('fails closed when cancel-in-progress is an expression', () => {
+      const result = runGate(cancelled, {
+        RUN_SHA: 'aaa111',
+        BRANCH_HEAD_SHA: 'bbb222',
+        WORKFLOW_FILE: '.github/workflows/release.yml',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('expression or otherwise unreadable');
+    });
+
     it('errors when the branch head cannot be resolved', () => {
-      const result = runGate(cancelled, true, {
+      const result = runGate(cancelled, {
         RUN_SHA: 'aaa111',
         GIT_REMOTE: 'no-such-remote',
       });
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('Could not resolve the head of main');
-      expect(result.stdout).toContain(
-        'Pipeline has cancelled jobs on main: lint'
-      );
+      expect(result.stdout).toContain('Pipeline has cancelled jobs::lint');
     });
 
     it('errors without a network call when RUN_SHA is missing', () => {
-      const result = runGate(cancelled, true);
+      const result = runGate(cancelled);
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('RUN_SHA is unset');
-      expect(result.stdout).toContain(
-        'Pipeline has cancelled jobs on main: lint'
+      expect(result.stdout).toContain('Pipeline has cancelled jobs::lint');
+    });
+  }
+});
+
+describe('effective job cancellation policy reader', () => {
+  if (canRunBash) {
+    it('distinguishes literal, inherited, absent, missing, and expression values', () => {
+      const root = mkdtempSync(path.join(tmpdir(), 'cancel-policy-'));
+      const workflowPath = path.join(root, 'fixture.yml');
+      writeFileSync(
+        workflowPath,
+        [
+          'name: fixture',
+          'concurrency:',
+          '  group: workflow-group',
+          '  cancel-in-progress: true',
+          'jobs:',
+          '  inherited:',
+          '    runs-on: ubuntu-latest',
+          '  literal-false:',
+          '    concurrency:',
+          '      group: false-group',
+          '      cancel-in-progress: false',
+          '    runs-on: ubuntu-latest',
+          '  expression:',
+          '    concurrency:',
+          '      group: expression-group',
+          "      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
+          '    runs-on: ubuntu-latest',
+        ].join('\n')
       );
+
+      try {
+        const result = spawnSync(
+          'bash',
+          [
+            concurrencyReaderPath,
+            'inherited',
+            'literal-false',
+            'expression',
+            'missing',
+          ],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, WORKFLOW_FILE: workflowPath },
+          }
+        );
+
+        expect(result.status).toBe(0);
+        expect(result.stdout.trim().split('\n')).toEqual([
+          'inherited\ttrue',
+          'literal-false\tfalse',
+          'expression\tunknown',
+          'missing\tmissing',
+        ]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('reports none when neither job nor workflow declares concurrency', () => {
+      const root = mkdtempSync(path.join(tmpdir(), 'cancel-policy-'));
+      const workflowPath = path.join(root, 'fixture.yml');
+      writeFileSync(
+        workflowPath,
+        [
+          'name: fixture',
+          'jobs:',
+          '  plain:',
+          '    runs-on: ubuntu-latest',
+        ].join('\n')
+      );
+
+      try {
+        const result = spawnSync('bash', [concurrencyReaderPath, 'plain'], {
+          encoding: 'utf8',
+          env: { ...process.env, WORKFLOW_FILE: workflowPath },
+        });
+        expect(result.status).toBe(0);
+        expect(result.stdout.trim()).toBe('plain\tnone');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     });
   }
 });
