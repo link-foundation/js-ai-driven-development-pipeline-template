@@ -5,12 +5,28 @@ function readWorkflow(filePath) {
   return readFileSync(filePath, 'utf8').replaceAll('\r\n', '\n');
 }
 
+const activeWorkflows = [
+  '.github/workflows/example-app.yml',
+  '.github/workflows/links.yml',
+  '.github/workflows/release.yml',
+  '.github/workflows/security.yml',
+  '.github/workflows/workflows.yml',
+];
+
 const workflowsWorkflow = readWorkflow('.github/workflows/workflows.yml');
 const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
 const exampleAppWorkflow = readWorkflow('.github/workflows/example-app.yml');
 const zizmorConfig = readFileSync('.github/zizmor.yml', 'utf8');
 
 describe('workflow linting job', () => {
+  it('uses the supported Ubuntu 24.04 label for every Linux job', () => {
+    const unpinned = activeWorkflows.filter((filePath) =>
+      readWorkflow(filePath).includes('ubuntu-latest')
+    );
+
+    expect(unpinned).toEqual([]);
+  });
+
   // This job is what reports the shellcheck findings asserted below.
   it('runs actionlint from the Docker image that bundles shellcheck', () => {
     expect(workflowsWorkflow).toContain('uses: docker://rhysd/actionlint@');

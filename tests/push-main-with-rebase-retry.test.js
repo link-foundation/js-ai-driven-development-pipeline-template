@@ -96,10 +96,10 @@ function installRulesetHook(remote, marker) {
 }
 
 /**
- * Stand in for the `gh` CLI: list finds nothing, create prints a URL, and the
- * first merge call reports "not mergeable" the way GitHub reports it while
- * mergeability is still being computed. The second call really merges the head
- * branch into main in the bare remote.
+ * Stand in for the `gh` CLI: list finds nothing, create prints a URL, checks
+ * records that validation completed, and the first merge call reports "not
+ * mergeable" the way GitHub reports it while mergeability is still being
+ * computed. The second call really merges the head branch into main.
  */
 function installFakeGh({ binDir, remote, marker, stateDir }) {
   writeExecutable(
@@ -125,7 +125,14 @@ function installFakeGh({ binDir, remote, marker, stateDir }) {
       '  echo "https://example.invalid/pr/1"',
       '  exit 0',
       'fi',
+      'if [ "${1:-}" = "pr" ] && [ "${2:-}" = "checks" ]; then',
+      '  test "${GH_TOKEN:-}" = "dedicated-token"',
+      '  touch "$state/checks-watched"',
+      '  echo "Pipeline Status pass"',
+      '  exit 0',
+      'fi',
       'if [ "${1:-}" = "pr" ] && [ "${2:-}" = "merge" ]; then',
+      '  test -f "$state/checks-watched"',
       '  attempts=$(cat "$state/merge-attempts" 2>/dev/null || echo 0)',
       '  attempts=$((attempts + 1))',
       '  echo "$attempts" > "$state/merge-attempts"',
@@ -250,6 +257,7 @@ describe('push-main-with-rebase-retry.mjs', () => {
           {
             PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
             GITHUB_RUN_ID: '42',
+            RELEASE_PR_TOKEN: 'dedicated-token',
           }
         );
         const output = `${result.stdout}\n${result.stderr}`;
@@ -258,6 +266,7 @@ describe('push-main-with-rebase-retry.mjs', () => {
         // The rejection must never be reported (or retried) as a lost race.
         expect(output).not.toContain('rebasing on origin/main before retry');
         expect(output).toContain('declined by a repository rule');
+        expect(output).toContain('Required checks passed');
         expect(output).toContain('merged into main');
 
         // The run-scoped branch name keeps every attempt on a fresh ref, so no

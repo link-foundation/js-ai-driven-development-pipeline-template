@@ -48,7 +48,7 @@ jobs:
   # === DETECT CHANGES - determines which jobs should run ===
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: ~6s. Cap at 5min so a hung detection step
     # surfaces quickly instead of stalling the whole pipeline.
     timeout-minutes: 5
@@ -89,7 +89,7 @@ jobs:
   # Syntax check all .mjs files with node --check (~7s)
   test-compilation:
     name: Test Compilation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: <10s. Tight cap fails fast on syntax-check hangs.
     timeout-minutes: 5
     concurrency:
@@ -109,7 +109,7 @@ jobs:
   # Enforce 1500-line limit on .mjs files and release.yml
   check-file-line-limits:
     name: Check File Line Limits
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: <10s. This job only walks tracked files and counts lines.
     timeout-minutes: 5
     concurrency:
@@ -141,7 +141,7 @@ jobs:
   # Prohibit manual version changes in package.json - versions should only be changed by CI/CD
   version-check:
     name: Check for Manual Version Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: ~6s. Read-only package.json diff inspection.
     timeout-minutes: 5
     concurrency:
@@ -164,7 +164,7 @@ jobs:
   # Docs-only PRs (./docs folder, markdown files) don't require changesets
   changeset-check:
     name: Check for Changesets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: <30s including npm install. 10min covers cold runners.
     timeout-minutes: 10
     concurrency:
@@ -212,7 +212,7 @@ jobs:
   # See docs/case-studies/issue-23 for why fresh merge simulation is critical
   lint:
     name: Lint and Format Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: <1min including install, ESLint, Prettier, jscpd,
     # and secretlint. 10min protects against a hung lint plugin.
     timeout-minutes: 10
@@ -305,7 +305,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-latest]
         runtime: [node, bun, deno]
     steps:
       - uses: actions/checkout@v6
@@ -374,7 +374,7 @@ jobs:
   # which have no registry credentials. Skipped when no Dockerfile exists.
   docker-build:
     name: Docker Image Build Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: a few minutes with a warm GHA layer cache. 30min covers
     # a cold, uncached build without allowing a 6h hang.
     timeout-minutes: 30
@@ -427,7 +427,7 @@ jobs:
   # Validate documentation files when docs change (hive-mind principle #12)
   validate-docs:
     name: Validate Documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Typical run: <10s. Pure shell checks over documentation files.
     timeout-minutes: 5
     concurrency:
@@ -461,7 +461,7 @@ jobs:
   # of surfacing as a registry error after the matrix.
   release-preflight:
     name: Release Preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -513,11 +513,10 @@ jobs:
       needs.release-preflight.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.test.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Permissions required for npm OIDC trusted publishing
     permissions:
       contents: write
-      pull-requests: write
       id-token: write
     outputs:
       published: ${{ steps.publish.outputs.published }}
@@ -576,9 +575,9 @@ jobs:
         if: steps.check_changesets.outputs.has_changesets == 'true'
         id: version
         env:
-          # Lets the push helper land the version commit through a pull request
-          # when a repository ruleset declines the direct push (issue #143).
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A separately provisioned actor opens the fallback PR so GitHub runs
+          # its ordinary pull_request checks (issues #143 and #192).
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         run: node scripts/version-and-commit.mjs --mode changeset
 
       - name: Publish to npm
@@ -637,7 +636,7 @@ jobs:
       needs.release-preflight.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.test.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Same publish envelope as the automated release path.
     timeout-minutes: 30
     concurrency:
@@ -646,7 +645,6 @@ jobs:
     # Permissions required for npm OIDC trusted publishing
     permissions:
       contents: write
-      pull-requests: write
       id-token: write
     outputs:
       published: ${{ steps.publish.outputs.published }}
@@ -682,8 +680,8 @@ jobs:
         env:
           BUMP_TYPE: ${{ github.event.inputs.bump_type }}
           RELEASE_DESCRIPTION: ${{ github.event.inputs.description }}
-          # See the release job above (issue #143).
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # See the release job above (issues #143 and #192).
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         run: node scripts/version-and-commit.mjs --mode instant --bump-type "$BUMP_TYPE" --description "$RELEASE_DESCRIPTION"
 
       - name: Publish to npm
@@ -736,7 +734,7 @@ jobs:
         (needs.release.result == 'success' && needs.release.outputs.published == 'true') ||
         (needs.instant-release.result == 'success' && needs.instant-release.outputs.published == 'true')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -785,7 +783,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -834,7 +832,7 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -906,25 +904,30 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.release_mode == 'changeset-pr' &&
       needs.lint.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # PR creation only: install, create a changeset, format, and open a PR.
     timeout-minutes: 10
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
-      # The third checkout in this workflow that keeps credentials in
-      # .git/config: peter-evans/create-pull-request below pushes the
-      # changeset branch and opens the pull request, which needs the token
-      # wired into the remote. Every other checkout in this repository
-      # sets persist-credentials: false.
+      # peter-evans/create-pull-request receives the dedicated token directly;
+      # dependency installation does not need a credential in .git/config.
       - uses: actions/checkout@v6
         with:
-          persist-credentials: true
+          persist-credentials: false
           fetch-depth: 0
+
+      - name: Require release pull-request token
+        env:
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_PR_TOKEN" ]]; then
+            echo "::error::RELEASE_PR_TOKEN is required to create a changeset pull request."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -950,7 +953,9 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # The built-in token suppresses pull_request workflows; use the same
+          # dedicated automation actor as the release fallback (issue #192).
+          token: ${{ secrets.RELEASE_PR_TOKEN }}
           commit-message: 'chore: add changeset for manual ${{ github.event.inputs.bump_type }} release'
           branch: changeset-manual-release-${{ github.run_id }}
           delete-branch: true
@@ -976,7 +981,7 @@ jobs:
   # workflow explicitly permits when a newer commit supersedes this run.
   pipeline-status:
     name: Pipeline Status
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-pipeline-status

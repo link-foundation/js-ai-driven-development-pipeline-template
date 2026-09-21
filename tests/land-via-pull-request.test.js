@@ -5,6 +5,7 @@ import {
   landViaPullRequest,
   mergePullRequestWithRetry,
   pullRequestBranchName,
+  waitForPullRequestChecks,
 } from '../scripts/land-via-pull-request.mjs';
 
 const silentLogger = { log() {}, error() {} };
@@ -15,13 +16,16 @@ const silentLogger = { log() {}, error() {} };
  */
 function makeRunner(script) {
   const calls = [];
-  const runner = async (command, args) => {
+  const invocations = [];
+  const runner = async (command, args, options = {}) => {
     const line = `${command} ${args.join(' ')}`;
     calls.push(line);
+    invocations.push({ command, args, options });
     const entry = script.find((candidate) => candidate.match.test(line));
     return entry ? entry.result : { code: 0, stdout: '', stderr: '' };
   };
   runner.calls = calls;
+  runner.invocations = invocations;
   return runner;
 }
 
@@ -88,6 +92,92 @@ describe('land-via-pull-request', () => {
     expect(thrown?.message).toContain('not mergeable');
   });
 
+  it('does not retry a permanent repository-policy merge rejection', async () => {
+    let attempts = 0;
+    const runner = async () => {
+      attempts += 1;
+      return {
+        code: 1,
+        stdout: '',
+        stderr: 'the base branch policy prohibits the merge',
+      };
+    };
+
+    let thrown;
+    try {
+      await mergePullRequestWithRetry({
+        runner,
+        url: 'https://example.invalid/pr/1',
+        maxAttempts: 10,
+        delayMs: 0,
+        sleepFn: async () => {},
+        logger: silentLogger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(attempts).toBe(1);
+    expect(thrown?.message).toContain('base branch policy prohibits');
+  });
+
+  it('retries only the short race before pull-request checks are discovered', async () => {
+    let attempts = 0;
+    const runner = async () => {
+      attempts += 1;
+      return attempts === 1
+        ? { code: 1, stdout: '', stderr: 'no checks reported on the branch' }
+        : { code: 0, stdout: 'Pipeline Status\tpass', stderr: '' };
+    };
+
+    const result = await waitForPullRequestChecks({
+      runner,
+      url: 'https://example.invalid/pr/1',
+      delayMs: 0,
+      sleepFn: async () => {},
+      logger: silentLogger,
+    });
+
+    expect(result).toEqual({ passed: true, attempt: 2 });
+  });
+});
+
+describe('land-via-pull-request check enforcement', () => {
+  it('propagates a failed pull-request check without attempting a merge', async () => {
+    const runner = makeRunner([
+      { match: /gh pr list/, result: { code: 0, stdout: '\n' } },
+      {
+        match: /gh pr create/,
+        result: { code: 0, stdout: 'https://example.invalid/pr/9\n' },
+      },
+      {
+        match: /gh pr checks/,
+        result: { code: 1, stdout: 'Pipeline Status\tfail', stderr: '' },
+      },
+    ]);
+
+    let thrown;
+    try {
+      await landViaPullRequest({
+        runner,
+        label: '1.2.3',
+        runId: '77',
+        releasePullRequestToken: 'dedicated-token',
+        mergeDelayMs: 0,
+        checkDelayMs: 0,
+        sleepFn: async () => {},
+        logger: silentLogger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown?.message).toContain('Pipeline Status');
+    expect(runner.calls.some((call) => call.startsWith('gh pr merge'))).toBe(
+      false
+    );
+  });
+
   it('merges with --merge only, since allowed_merge_methods may exclude squash', async () => {
     const runner = makeRunner([]);
     await mergePullRequestWithRetry({
@@ -99,7 +189,9 @@ describe('land-via-pull-request', () => {
       'gh pr merge https://example.invalid/pr/1 --merge'
     );
   });
+});
 
+describe('land-via-pull-request landing workflow', () => {
   it('pushes, opens, merges, and fast-forwards the checkout', async () => {
     const runner = makeRunner([
       { match: /gh pr list/, result: { code: 0, stdout: '\n' } },
@@ -113,7 +205,9 @@ describe('land-via-pull-request', () => {
       runner,
       label: '1.2.3',
       runId: '77',
+      releasePullRequestToken: 'dedicated-token',
       mergeDelayMs: 0,
+      checkDelayMs: 0,
       sleepFn: async () => {},
       logger: silentLogger,
     });
@@ -130,14 +224,43 @@ describe('land-via-pull-request', () => {
       'gh pr create --base main --head release/1.2.3-77 --title 1.2.3 --body'
     );
     expect(runner.calls[3]).toBe(
+      'gh pr checks https://example.invalid/pr/9 --watch --fail-fast'
+    );
+    expect(runner.calls[4]).toBe(
       'gh pr merge https://example.invalid/pr/9 --merge'
     );
     // The checkout must end on the merged base branch so the publish steps in
     // the same job see the merged tree.
-    expect(runner.calls.slice(4)).toEqual([
+    expect(runner.calls.slice(5)).toEqual([
       'git fetch origin main',
       'git reset --hard origin/main',
     ]);
+
+    for (const invocation of runner.invocations.filter(
+      ({ command }) => command === 'gh'
+    )) {
+      expect(invocation.options.env.GH_TOKEN).toBe('dedicated-token');
+    }
+  });
+
+  it('fails closed before pushing a branch when the dedicated token is missing', async () => {
+    const runner = makeRunner([]);
+
+    let thrown;
+    try {
+      await landViaPullRequest({
+        runner,
+        label: '1.2.3',
+        runId: '77',
+        releasePullRequestToken: '',
+        logger: silentLogger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown?.message).toContain('RELEASE_PR_TOKEN');
+    expect(runner.calls).toEqual([]);
   });
 
   it('reuses an open pull request so a re-run creates no duplicate', async () => {
@@ -152,7 +275,9 @@ describe('land-via-pull-request', () => {
       runner,
       label: '1.2.3',
       runId: '77',
+      releasePullRequestToken: 'dedicated-token',
       mergeDelayMs: 0,
+      checkDelayMs: 0,
       sleepFn: async () => {},
       logger: silentLogger,
     });

@@ -39,7 +39,8 @@ export class CommandFailedError extends Error {
  * Never throws on a non-zero exit code; it resolves with the code instead.
  * @param {string} command
  * @param {string[]} args
- * @param {{cwd?: string, env?: object, logger?: Console}} [options]
+ * @param {{cwd?: string, env?: object, logger?: Console}} [options] - `env`
+ *   contains overrides; unspecified variables inherit from the process.
  * @returns {Promise<{code: number, stdout: string, stderr: string}>}
  */
 export function runCommand(command, args, options = {}) {
@@ -49,7 +50,7 @@ export function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: env || process.env,
+      env: env ? { ...process.env, ...env } : process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

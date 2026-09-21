@@ -131,7 +131,7 @@ describe('optional Docker Hub publishing workflow', () => {
     const buildJob = getWorkflowJob(releaseWorkflow, 'docker-publish-build');
 
     expect(buildJob).toContain('platform: linux/amd64');
-    expect(buildJob).toContain('runner: ubuntu-latest');
+    expect(buildJob).toContain('runner: ubuntu-24.04');
     expect(buildJob).toContain('platform: linux/arm64');
     expect(buildJob).toContain('runner: ubuntu-24.04-arm');
     expect(buildJob).toContain('runs-on: ${{ matrix.runner }}');
