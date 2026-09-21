@@ -174,9 +174,10 @@ async function getVersion(source = 'local') {
 /**
  * Check the staged release files with prettier before they are committed.
  *
- * The release commit is pushed with GITHUB_TOKEN, so GitHub never runs
- * workflows on it: a formatting lapse would land on main unnoticed and fail
- * the next CI run only after the tag exists.
+ * A direct release push uses GITHUB_TOKEN, so GitHub does not run workflows on
+ * that commit. A protected-branch fallback is validated as a pull request, but
+ * direct-push repositories still need this local gate or a formatting lapse
+ * would land on main unnoticed and fail only after the tag exists.
  */
 async function checkStagedFormatting() {
   const stagedResult = await $`git diff --cached --name-only`.run({

@@ -232,9 +232,11 @@ the built example app in a headless Chromium via
 Playwright and writes fresh screenshots to
 `docs/screenshots/example-app/example-app-{locale}-{theme}.png` on every
 push to `main` (and on `workflow_dispatch`). Any drift is committed back to
-`main` with `[skip ci]` so README/site images never go stale between
-releases. The job runs in the official Playwright container with the browser
-already installed, avoiding CI stalls from live Chromium downloads.
+`main` so README/site images never go stale between releases. Screenshot-only
+pushes do not match this workflow's path filter, while a protected-branch
+fallback PR remains eligible for its required checks. The job runs in the
+official Playwright container with the browser already installed, avoiding CI
+stalls from live Chromium downloads.
 
 The same script is available locally:
 
@@ -275,6 +277,22 @@ After creating a repository from this template, update the package name in:
 
 Release scripts derive the package name from `package.json` at runtime, so no
 script-level package-name constants need to be edited during template adoption.
+
+### Protected-Branch Release Pull Requests
+
+If `main` requires pull requests and the `Pipeline Status` check, configure a
+repository secret named `RELEASE_PR_TOKEN`. It must be a fine-grained PAT for
+an automation actor other than the workflow's built-in `GITHUB_TOKEN`, scoped
+to this repository with Contents and Pull requests write access and Checks read
+access. The release and generated-preview fallbacks use it to open the PR, wait
+for the PR's own checks, and merge only after they pass. The manual
+changeset-PR mode uses it for the same reason. Teams that generate short-lived
+GitHub App installation tokens can wire that action output to the same workflow
+inputs instead of storing a PAT.
+
+Repositories that allow the release workflow to push directly to `main` do not
+exercise the fallback, but manual changeset PR creation still requires this
+secret.
 
 ### Optional Docker Hub Publishing
 

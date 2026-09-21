@@ -81,10 +81,10 @@ function listCheckouts(workflow) {
 }
 
 // The only jobs allowed to keep the job token in .git/config are the ones
-// whose steps write back to the remote: the version commit push and the
-// changeset pull request. Every other checkout must drop the credential so
+// whose steps write back to the remote using the checkout's built-in token:
+// the version commit pushes. Every other checkout must drop the credential so
 // a compromised install script or a workspace upload cannot read it.
-const JOBS_THAT_PUSH = new Set(['release', 'instant-release', 'changeset-pr']);
+const JOBS_THAT_PUSH = new Set(['release', 'instant-release']);
 
 describe('checkout credential persistence (artipacked)', () => {
   it('drops the credential on every checkout in a job that does not push', () => {
@@ -122,7 +122,6 @@ describe('checkout credential persistence (artipacked)', () => {
     const expected = [
       '.github/workflows/release.yml:release',
       '.github/workflows/release.yml:instant-release',
-      '.github/workflows/release.yml:changeset-pr',
     ].sort();
 
     expect(persisting.sort()).toEqual(expected);

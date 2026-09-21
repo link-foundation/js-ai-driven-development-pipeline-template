@@ -377,6 +377,21 @@ describe('workflow reliability policy', () => {
     // (link-foundation/js-ai-driven-development-pipeline-template#143).
     expect(pushHelper).toContain('isBlockedByRepositoryRule');
     expect(pushHelper).toContain('landViaPullRequest');
+    expect(releaseJob).toContain(
+      'RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}'
+    );
+    expect(instantReleaseJob).toContain(
+      'RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}'
+    );
+    expect(previewRegenJob).toContain(
+      'RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}'
+    );
+    expect(previewRegenJob).toContain('gh auth setup-git');
+    expect(previewRegenJob).not.toContain('preview images [skip ci]');
+    expect(changesetPrJob).toContain('token: ${{ secrets.RELEASE_PR_TOKEN }}');
+    expect(changesetPrJob).toContain(
+      'RELEASE_PR_TOKEN is required to create a changeset pull request'
+    );
     // The push helper exits non-zero only when it could not land the commit
     // through any of its strategies; with errexit on, that exit arrives as a
     // rejection, not a result code, so a swallowed push failure cannot report

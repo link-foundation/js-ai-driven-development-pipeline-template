@@ -138,10 +138,23 @@ violation as a race makes a release die after the version bump has already been
 committed in the runner, with a log that blames a race that never happened
 (link-foundation/js-ai-driven-development-pipeline-template#143).
 
-The fallback needs `pull-requests: write` and a `GH_TOKEN` in the job. The
-temporary branch is never force-pushed and never deleted, so it stays compatible
-with rulesets that forbid destruction on `~ALL` refs, and the merge never assumes
-squash or rebase is allowed.
+The fallback needs a dedicated `RELEASE_PR_TOKEN` secret containing a
+fine-grained PAT from an actor other than the workflow's built-in
+`GITHUB_TOKEN`. Scope it to this repository with Contents and Pull requests
+write access plus Checks read access. Teams can instead generate a short-lived
+GitHub App installation token and wire that action output to the same inputs.
+Pull requests opened by `GITHUB_TOKEN` do not start ordinary `pull_request`
+workflows, so they can never satisfy a required `Pipeline Status` check. The
+helper fails before pushing a temporary branch when the dedicated token is
+absent, opens the PR as that actor, waits for the PR's checks with
+`gh pr checks --watch --fail-fast`, and only then merges it. A real failed check
+or policy error is returned immediately; only brief check-discovery and
+mergeability races are retried.
+
+The temporary branch is never force-pushed and never deleted, so it stays
+compatible with rulesets that forbid destruction on `~ALL` refs, and the merge
+never assumes squash or rebase is allowed. Generated commit messages must not
+contain a skip-checks marker because required checks would then remain pending.
 
 #### Fresh Merge Simulation
 

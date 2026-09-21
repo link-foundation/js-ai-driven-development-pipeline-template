@@ -81,11 +81,11 @@ describe('workflow token permissions', () => {
     }
   });
 
-  it('keeps write escalation on the publishing jobs only', () => {
+  it('keeps built-in-token write escalation on the publishing jobs only', () => {
     const workflow = readWorkflow('release.yml');
     const jobsBody = workflow.slice(workflow.indexOf('\njobs:\n'));
 
-    for (const job of ['release', 'instant-release', 'changeset-pr']) {
+    for (const job of ['release', 'instant-release']) {
       const start = jobsBody.indexOf(`\n  ${job}:\n`);
       expect(start).not.toBe(-1);
 
@@ -95,6 +95,13 @@ describe('workflow token permissions', () => {
 
       expect(block.includes('      contents: write')).toBe(true);
     }
+
+    const changesetStart = jobsBody.indexOf('\n  changeset-pr:\n');
+    const changesetRest = jobsBody.slice(changesetStart + 1);
+    const changesetEnd = changesetRest.search(/\n {2}[a-zA-Z0-9_-]+:\n/);
+    const changesetBlock = changesetRest.slice(0, changesetEnd);
+    expect(changesetBlock).toContain('      contents: read');
+    expect(changesetBlock).not.toContain('      contents: write');
   });
 });
 

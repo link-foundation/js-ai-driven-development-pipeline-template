@@ -35,7 +35,7 @@ env:
 jobs:
   web-build:
     name: Build web app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-web-build
@@ -85,7 +85,7 @@ jobs:
     name: Deploy GitHub Pages
     needs: [web-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: main-writer-${{ github.repository }}-main
@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -155,7 +155,7 @@ jobs:
   android-build:
     name: Build Android app
     if: github.event_name == 'workflow_dispatch' && vars.EXAMPLE_APP_ENABLE_ANDROID_BUILD == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-android-build
@@ -233,7 +233,7 @@ jobs:
   # the current UI. Issue: #62. Implementation: scripts/update-preview-images.mjs.
   preview-regen:
     name: Regenerate Preview Images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       # Keep this release in sync with the playwright package version below.
       # Pinned by digest (a mutable tag is arbitrary code execution in a job
@@ -249,9 +249,6 @@ jobs:
       github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
-      # The push helper opens and merges a pull request when a repository
-      # ruleset declines the direct push to main (issue #143).
-      pull-requests: write
     env:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
@@ -292,8 +289,18 @@ jobs:
       - name: Commit drift back to main
         if: steps.drift.outputs.drift == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The dedicated actor lets required pull_request checks run when a
+          # ruleset sends this generated commit through the fallback PR.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         run: |
+          if [[ -z "$RELEASE_PR_TOKEN" ]]; then
+            echo "::error::RELEASE_PR_TOKEN is required to push generated preview images."
+            exit 1
+          fi
+          # Configure gh as a step-scoped Git credential helper. The checkout
+          # remains credential-free during dependency installation.
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Stage only generated artifacts so unrelated changes can't leak in.
@@ -303,9 +310,9 @@ jobs:
             git status --porcelain
             exit 0
           fi
-          # [skip ci] prevents an infinite re-run loop; the next push to main
-          # will pick up these fresh images for the regular pages-build.
-          git commit -m "chore(preview): regenerate example-app preview images [skip ci]"
+          # Screenshot-only pushes do not match this workflow's path filter.
+          # Do not add [skip ci]: a fallback PR needs its required checks.
+          git commit -m "chore(preview): regenerate example-app preview images"
           node scripts/push-main-with-rebase-retry.mjs origin main --label preview-images
 
       - name: Upload screenshot failure artifacts
@@ -337,7 +344,7 @@ jobs:
   # job in workflows.yml.
   pipeline-status:
     name: Pipeline Status
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-pipeline-status

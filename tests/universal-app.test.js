@@ -122,7 +122,12 @@ describe('universal React example app', () => {
     expect(workflow).toContain('browser-commander');
     expect(workflow).not.toContain('npx playwright install');
     expect(workflow).toContain('node scripts/update-preview-images.mjs');
-    expect(workflow).toContain('[skip ci]');
+    expect(workflow).toContain(
+      'git commit -m "chore(preview): regenerate example-app preview images"'
+    );
+    expect(workflow).not.toContain(
+      'git commit -m "chore(preview): regenerate example-app preview images [skip ci]"'
+    );
 
     expect(script).toContain("from 'browser-commander'");
     expect(script).toContain("from 'playwright'");

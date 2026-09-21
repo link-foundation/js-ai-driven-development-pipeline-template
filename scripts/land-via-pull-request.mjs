@@ -21,15 +21,22 @@
  *     unique instead.
  *   - `allowed_merge_methods` may be `["merge"]` only, so the merge must not
  *     assume squash or rebase.
+ *   - pull requests opened with the workflow's built-in `GITHUB_TOKEN` do not
+ *     start ordinary `pull_request` checks. A separately provisioned token is
+ *     therefore required for PR API operations, and the helper waits for the
+ *     checks associated with that PR before attempting its merge.
  *
  * Addresses issue:
  * - link-foundation/js-ai-driven-development-pipeline-template#143
+ * - link-foundation/js-ai-driven-development-pipeline-template#192
  */
 
 import { CommandFailedError, runCommand, runStrict } from './run-command.mjs';
 
 export const DEFAULT_MERGE_ATTEMPTS = 10;
 export const DEFAULT_MERGE_DELAY_MS = 5000;
+export const DEFAULT_CHECK_DISCOVERY_ATTEMPTS = 10;
+export const DEFAULT_CHECK_DISCOVERY_DELAY_MS = 5000;
 
 /**
  * Default sleep implementation (injectable so tests do not wait).
@@ -69,6 +76,7 @@ export function pullRequestBranchName({
  * @param {Function} options.runner
  * @param {string} options.head
  * @param {string} options.base
+ * @param {object} [options.env]
  * @param {Console} [options.logger]
  * @returns {Promise<string>}
  */
@@ -76,6 +84,7 @@ export async function findOpenPullRequest({
   runner,
   head,
   base,
+  env,
   logger = console,
 }) {
   const result = await runner(
@@ -94,9 +103,23 @@ export async function findOpenPullRequest({
       '--jq',
       '.[0].url // ""',
     ],
-    { logger }
+    { env, logger }
   );
   return result.code === 0 ? (result.stdout || '').trim() : '';
+}
+
+/**
+ * Whether a failed merge is the short mergeability-computation race that is
+ * safe to retry. Policy, authentication, and failed-check errors are invariant
+ * for this attempt and must be returned immediately.
+ * @param {{stdout?: string, stderr?: string}} result
+ * @returns {boolean}
+ */
+export function isTransientMergeFailure(result) {
+  const output = `${result.stderr || ''}\n${result.stdout || ''}`;
+  return /pull request is not mergeable|mergeability is still being calculated/i.test(
+    output
+  );
 }
 
 /**
@@ -112,6 +135,7 @@ export async function findOpenPullRequest({
  * @param {number} [options.maxAttempts]
  * @param {number} [options.delayMs]
  * @param {Function} [options.sleepFn]
+ * @param {object} [options.env]
  * @param {Console} [options.logger]
  * @returns {Promise<{merged: true, attempt: number}>}
  */
@@ -121,6 +145,7 @@ export async function mergePullRequestWithRetry({
   maxAttempts = DEFAULT_MERGE_ATTEMPTS,
   delayMs = DEFAULT_MERGE_DELAY_MS,
   sleepFn = sleep,
+  env,
   logger = console,
 }) {
   // `--merge` only: allowed_merge_methods may exclude squash and rebase.
@@ -128,15 +153,62 @@ export async function mergePullRequestWithRetry({
   let last = { code: 1, stdout: '', stderr: '' };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    last = await runner('gh', args, { logger });
+    last = await runner('gh', args, { env, logger });
     if (last.code === 0) {
       return { merged: true, attempt };
     }
-    if (attempt === maxAttempts) {
+    if (!isTransientMergeFailure(last) || attempt === maxAttempts) {
       break;
     }
     logger.log(
       `Merge attempt ${attempt} of ${maxAttempts} did not succeed yet; GitHub may still be computing mergeability. Retrying...`
+    );
+    await sleepFn(delayMs);
+  }
+
+  throw new CommandFailedError('gh', args, last);
+}
+
+/**
+ * Wait for the checks attached to the pull request itself. Immediately after
+ * creation GitHub can briefly report no checks; only that discovery race is
+ * retried. Once checks exist, `gh pr checks --watch --fail-fast` waits for
+ * completion and returns a real failed check without a merge attempt.
+ * @param {object} options
+ * @param {Function} options.runner
+ * @param {string} options.url
+ * @param {number} [options.maxAttempts]
+ * @param {number} [options.delayMs]
+ * @param {Function} [options.sleepFn]
+ * @param {object} [options.env]
+ * @param {Console} [options.logger]
+ * @returns {Promise<{passed: true, attempt: number}>}
+ */
+export async function waitForPullRequestChecks({
+  runner,
+  url,
+  maxAttempts = DEFAULT_CHECK_DISCOVERY_ATTEMPTS,
+  delayMs = DEFAULT_CHECK_DISCOVERY_DELAY_MS,
+  sleepFn = sleep,
+  env,
+  logger = console,
+}) {
+  const args = ['pr', 'checks', url, '--watch', '--fail-fast'];
+  let last = { code: 1, stdout: '', stderr: '' };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    last = await runner('gh', args, { env, logger });
+    if (last.code === 0) {
+      return { passed: true, attempt };
+    }
+
+    const output = `${last.stderr || ''}\n${last.stdout || ''}`;
+    if (!/no checks reported/i.test(output) || attempt === maxAttempts) {
+      break;
+    }
+
+    logger.log(
+      `No pull-request checks discovered yet (attempt ${attempt} of ${maxAttempts}); retrying...`
     );
     await sleepFn(delayMs);
   }
@@ -158,8 +230,59 @@ function defaultBody(label, base) {
     'pull request, so this workflow opens and merges this pull request instead',
     'of pushing directly.',
     '',
-    'See link-foundation/js-ai-driven-development-pipeline-template#143.',
+    'See link-foundation/js-ai-driven-development-pipeline-template#143 and #192.',
   ].join('\n');
+}
+
+/**
+ * Reuse the pull request for this run, or create it when this is the first
+ * landing attempt.
+ * @param {object} options
+ * @returns {Promise<string>}
+ */
+async function findOrCreatePullRequest({
+  runner,
+  strict,
+  head,
+  branch,
+  title,
+  label,
+  body,
+  env,
+  logger,
+}) {
+  const existing = await findOpenPullRequest({
+    runner,
+    head,
+    base: branch,
+    env,
+    logger,
+  });
+  if (existing) {
+    logger.log(`Reusing existing pull request ${existing}`);
+    return existing;
+  }
+
+  const created = await strict(
+    'gh',
+    [
+      'pr',
+      'create',
+      '--base',
+      branch,
+      '--head',
+      head,
+      '--title',
+      title || label,
+      '--body',
+      body || defaultBody(label, branch),
+    ],
+    { env }
+  );
+  const url =
+    (created.stdout || '').trim().split('\n').filter(Boolean).pop() || head;
+  logger.log(`Created pull request ${url}`);
+  return url;
 }
 
 /**
@@ -175,6 +298,9 @@ function defaultBody(label, base) {
  * @param {string} [options.body]
  * @param {number} [options.mergeAttempts]
  * @param {number} [options.mergeDelayMs]
+ * @param {number} [options.checkAttempts]
+ * @param {number} [options.checkDelayMs]
+ * @param {string} [options.releasePullRequestToken]
  * @param {Function} [options.sleepFn]
  * @param {Console} [options.logger]
  * @returns {Promise<{landed: true, head: string, url: string}>}
@@ -189,11 +315,21 @@ export async function landViaPullRequest({
   body,
   mergeAttempts = DEFAULT_MERGE_ATTEMPTS,
   mergeDelayMs = DEFAULT_MERGE_DELAY_MS,
+  checkAttempts = DEFAULT_CHECK_DISCOVERY_ATTEMPTS,
+  checkDelayMs = DEFAULT_CHECK_DISCOVERY_DELAY_MS,
+  releasePullRequestToken = process.env.RELEASE_PR_TOKEN,
   sleepFn = sleep,
   logger = console,
 }) {
-  const strict = (command, args) =>
-    runStrict(command, args, { runner, logger });
+  if (!releasePullRequestToken?.trim()) {
+    throw new Error(
+      'RELEASE_PR_TOKEN is required to open a fallback pull request whose required checks can run.'
+    );
+  }
+
+  const ghEnv = { GH_TOKEN: releasePullRequestToken };
+  const strict = (command, args, options = {}) =>
+    runStrict(command, args, { runner, logger, ...options });
   const head = pullRequestBranchName({ label, runId });
 
   logger.log(
@@ -202,26 +338,28 @@ export async function landViaPullRequest({
   logger.log(`Pushing commit to ${remote}/${head}...`);
   await strict('git', ['push', remote, `HEAD:refs/heads/${head}`]);
 
-  let url = await findOpenPullRequest({ runner, head, base: branch, logger });
-  if (url) {
-    logger.log(`Reusing existing pull request ${url}`);
-  } else {
-    const created = await strict('gh', [
-      'pr',
-      'create',
-      '--base',
-      branch,
-      '--head',
-      head,
-      '--title',
-      title || label,
-      '--body',
-      body || defaultBody(label, branch),
-    ]);
-    url =
-      (created.stdout || '').trim().split('\n').filter(Boolean).pop() || head;
-    logger.log(`Created pull request ${url}`);
-  }
+  const url = await findOrCreatePullRequest({
+    runner,
+    strict,
+    head,
+    branch,
+    title,
+    label,
+    body,
+    env: ghEnv,
+    logger,
+  });
+
+  await waitForPullRequestChecks({
+    runner,
+    url,
+    maxAttempts: checkAttempts,
+    delayMs: checkDelayMs,
+    sleepFn,
+    env: ghEnv,
+    logger,
+  });
+  logger.log(`Required checks passed for pull request ${url}.`);
 
   await mergePullRequestWithRetry({
     runner,
@@ -229,6 +367,7 @@ export async function landViaPullRequest({
     maxAttempts: mergeAttempts,
     delayMs: mergeDelayMs,
     sleepFn,
+    env: ghEnv,
     logger,
   });
   logger.log(`Pull request ${url} merged into ${branch}.`);
