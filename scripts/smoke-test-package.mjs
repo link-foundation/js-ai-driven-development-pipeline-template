@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
 
 const DEFAULT_CLI_ARGS = ['--help'];
-const DEFAULT_MAX_ATTEMPTS = 5;
+const DEFAULT_MAX_ATTEMPTS = 35;
 const DEFAULT_PREVIEW_LINES = 5;
 const DEFAULT_SERVER_TIMEOUT_SECONDS = 15;
 const DEFAULT_SLEEP_SECONDS = 10;

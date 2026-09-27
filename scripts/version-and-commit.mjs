@@ -28,6 +28,7 @@ import {
 import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 import { printUntrusted } from './github-actions-log.mjs';
+import { checkStagedFormatting } from './check-staged-formatting.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
@@ -169,31 +170,6 @@ async function getVersion(source = 'local') {
     return JSON.parse(result.stdout).version;
   }
   return JSON.parse(readFileSync(packageJsonPath, 'utf8')).version;
-}
-
-/**
- * Check the staged release files with prettier before they are committed.
- *
- * A direct release push uses GITHUB_TOKEN, so GitHub does not run workflows on
- * that commit. A protected-branch fallback is validated as a pull request, but
- * direct-push repositories still need this local gate or a formatting lapse
- * would land on main unnoticed and fail only after the tag exists.
- */
-async function checkStagedFormatting() {
-  const stagedResult = await $`git diff --cached --name-only`.run({
-    capture: true,
-  });
-  const formattable = stagedResult.stdout
-    .split('\n')
-    .map((file) => file.trim())
-    .filter((file) => /\.(m?js|json|md|ts)$/.test(file));
-
-  if (formattable.length > 0) {
-    console.log(
-      `Checking formatting of ${formattable.length} staged file(s) with prettier...`
-    );
-    await $`npx prettier --check ${formattable}`;
-  }
 }
 
 async function main() {

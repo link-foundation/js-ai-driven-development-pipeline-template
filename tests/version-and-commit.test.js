@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const script = readFileSync('scripts/version-and-commit.mjs', 'utf8');
 const useModule = readFileSync('scripts/use-module.mjs', 'utf8');
+const formatting = readFileSync('scripts/check-staged-formatting.mjs', 'utf8');
 
 describe('version-and-commit.mjs formats the release commit', () => {
   it('checks staged files with prettier between staging and committing', () => {
@@ -10,7 +11,7 @@ describe('version-and-commit.mjs formats the release commit', () => {
     // above main(); the ordering that matters is at the call site.
     const staged = script.indexOf('await $`git add -A`');
     const checkCall = script.indexOf('await checkStagedFormatting();');
-    const prettier = script.indexOf('npx prettier --check');
+    const prettier = formatting.indexOf("'prettier', '--check'");
     const commit = script.indexOf('await $`git commit');
 
     expect(staged).toBeGreaterThan(-1);
@@ -20,12 +21,12 @@ describe('version-and-commit.mjs formats the release commit', () => {
   });
 
   it('checks only the formattable staged files, not the whole tree', () => {
-    expect(script).toContain('prettier --check ${formattable}');
-    expect(script).toContain('/\\.(m?js|json|md|ts)$/');
+    expect(formatting).toContain("'prettier', '--check', ...formattable");
+    expect(formatting).toContain('/\\.(m?js|json|md|ts)$/');
   });
 
   it('skips the check when nothing formattable is staged', () => {
-    expect(script).toContain('formattable.length > 0');
+    expect(formatting).toContain('formattable.length > 0');
   });
 });
 

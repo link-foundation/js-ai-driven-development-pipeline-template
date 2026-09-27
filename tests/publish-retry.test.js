@@ -9,6 +9,19 @@ import {
 const noSleep = async () => {};
 
 describe('waitForVersionOnRegistry', () => {
+  it('still verifies after the observed five-minute publication lag', async () => {
+    let checks = 0;
+    const delays = [];
+    const found = await waitForVersionOnRegistry({
+      verify: async () => ++checks === 14,
+      sleepFn: async (ms) => delays.push(ms),
+    });
+    expect(found).toBe(true);
+    expect(checks).toBe(14);
+    expect(delays.reduce((sum, delay) => sum + delay, 0)).toBeGreaterThan(
+      310000
+    );
+  });
   it('returns true as soon as the version becomes visible', async () => {
     let checks = 0;
     const found = await waitForVersionOnRegistry({
@@ -45,6 +58,22 @@ describe('waitForVersionOnRegistry', () => {
     });
     expect(found).toBe(false);
     expect(checks).toBe(4);
+  });
+
+  it('reports a registry outage as unknown after bounded polling', async () => {
+    let error;
+    try {
+      await waitForVersionOnRegistry({
+        verify: async () => {
+          throw new Error('HTTP 503');
+        },
+        attempts: 2,
+        sleepFn: noSleep,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.message).toContain('unknown state: HTTP 503');
   });
 
   it('uses exponential backoff capped at maxDelay', async () => {
@@ -95,6 +124,41 @@ describe('isAlreadyPublishedError', () => {
 });
 
 describe('publishWithRetry', () => {
+  it('publishes once and succeeds when visibility arrives after 310 seconds', async () => {
+    let publishes = 0;
+    let checks = 0;
+    const result = await publishWithRetry({
+      publish: async () => {
+        publishes++;
+        return { success: true, error: null, output: 'published' };
+      },
+      verify: async () => ++checks === 14,
+      sleepFn: noSleep,
+    });
+    expect(result.success).toBe(true);
+    expect(publishes).toBe(1);
+    expect(result.publishAttempts).toBe(1);
+  });
+
+  it('fails within the verification bound when a version stays absent', async () => {
+    let publishes = 0;
+    let checks = 0;
+    const result = await publishWithRetry({
+      publish: async () => {
+        publishes++;
+        return { success: true, error: null, output: 'published' };
+      },
+      verify: async () => {
+        checks++;
+        return false;
+      },
+      sleepFn: noSleep,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.verificationFailed).toBe(true);
+    expect(publishes).toBe(1);
+    expect(checks).toBeGreaterThan(14);
+  });
   it('treats an E409 staged-version conflict as a cue to verify', async () => {
     const result = await publishWithRetry({
       publish: async () => ({

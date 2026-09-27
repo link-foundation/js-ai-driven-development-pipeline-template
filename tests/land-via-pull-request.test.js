@@ -224,7 +224,7 @@ describe('land-via-pull-request landing workflow', () => {
       'gh pr create --base main --head release/1.2.3-77 --title 1.2.3 --body'
     );
     expect(runner.calls[3]).toBe(
-      'gh pr checks https://example.invalid/pr/9 --watch --fail-fast'
+      'gh pr checks https://example.invalid/pr/9 --required --watch --fail-fast'
     );
     expect(runner.calls[4]).toBe(
       'gh pr merge https://example.invalid/pr/9 --merge'
@@ -242,8 +242,147 @@ describe('land-via-pull-request landing workflow', () => {
       expect(invocation.options.env.GH_TOKEN).toBe('dedicated-token');
     }
   });
+});
 
-  it('fails closed before pushing a branch when the dedicated token is missing', async () => {
+describe('built-in release check attestation', () => {
+  it('attests the exact metadata-only commit when no dedicated token is configured', async () => {
+    const sha = 'a'.repeat(40);
+    const parent = 'b'.repeat(40);
+    const runner = makeRunner([
+      {
+        match: /git rev-parse HEAD\^/,
+        result: { code: 0, stdout: `${parent}\n` },
+      },
+      { match: /git rev-parse HEAD/, result: { code: 0, stdout: `${sha}\n` } },
+      {
+        match: /git diff-tree/,
+        result: { code: 0, stdout: 'M\0package.json\0D\0.changeset/fix.md\0' },
+      },
+      { match: /gh pr list/, result: { code: 0, stdout: '\n' } },
+      {
+        match: /gh pr create/,
+        result: { code: 0, stdout: 'https://github.com/owner/repo/pull/9\n' },
+      },
+    ]);
+
+    await landViaPullRequest({
+      runner,
+      label: '1.2.3',
+      runId: '77',
+      githubToken: 'builtin-token',
+      repository: 'owner/repo',
+      parentSha: parent,
+      runUrl: 'https://github.com/owner/repo/actions/runs/77',
+      sleepFn: async () => {},
+      logger: silentLogger,
+    });
+
+    const calls = runner.calls;
+    const checkIndex = calls.findIndex((call) => call.includes('check-runs'));
+    const watchIndex = calls.findIndex((call) =>
+      call.startsWith('gh pr checks')
+    );
+    const mergeIndex = calls.findIndex((call) =>
+      call.startsWith('gh pr merge')
+    );
+    expect(checkIndex).toBeGreaterThan(-1);
+    expect(watchIndex).toBeGreaterThan(checkIndex);
+    expect(mergeIndex).toBeGreaterThan(watchIndex);
+    expect(calls[checkIndex]).toContain(`head_sha=${sha}`);
+    expect(calls[watchIndex]).toContain('--required');
+    for (const invocation of runner.invocations.filter(
+      ({ command }) => command === 'gh'
+    )) {
+      expect(invocation.options.env.GH_TOKEN).toBe('builtin-token');
+    }
+  });
+
+  it('rejects source changes before publishing a validation check or merging', async () => {
+    const runner = makeRunner([
+      {
+        match: /git rev-parse HEAD\^/,
+        result: { code: 0, stdout: `${'b'.repeat(40)}\n` },
+      },
+      {
+        match: /git rev-parse HEAD/,
+        result: { code: 0, stdout: `${'a'.repeat(40)}\n` },
+      },
+      {
+        match: /git diff-tree/,
+        result: { code: 0, stdout: 'M\0src/index.js\0' },
+      },
+    ]);
+    let thrown;
+    try {
+      await landViaPullRequest({
+        runner,
+        githubToken: 'builtin-token',
+        repository: 'owner/repo',
+        parentSha: 'b'.repeat(40),
+        runUrl: 'https://github.com/owner/repo/actions/runs/77',
+        logger: silentLogger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toContain('src/index.js');
+    expect(runner.calls.some((call) => call.startsWith('git push'))).toBe(
+      false
+    );
+    expect(runner.calls.some((call) => call.startsWith('gh pr merge'))).toBe(
+      false
+    );
+  });
+});
+
+describe('release landing failures and reuse', () => {
+  it('stops before merge when the Checks API rejects attestation', async () => {
+    const runner = makeRunner([
+      {
+        match: /git rev-parse HEAD\^/,
+        result: { code: 0, stdout: `${'b'.repeat(40)}\n` },
+      },
+      {
+        match: /git rev-parse HEAD/,
+        result: { code: 0, stdout: `${'a'.repeat(40)}\n` },
+      },
+      {
+        match: /git diff-tree/,
+        result: { code: 0, stdout: 'M\0package.json\0' },
+      },
+      { match: /gh pr list/, result: { code: 0, stdout: '\n' } },
+      {
+        match: /gh pr create/,
+        result: { code: 0, stdout: 'https://github.com/owner/repo/pull/9\n' },
+      },
+      {
+        match: /check-runs/,
+        result: { code: 1, stderr: 'Resource not accessible by integration' },
+      },
+    ]);
+    let thrown;
+    try {
+      await landViaPullRequest({
+        runner,
+        githubToken: 'builtin-token',
+        repository: 'owner/repo',
+        parentSha: 'b'.repeat(40),
+        runUrl: 'https://github.com/owner/repo/actions/runs/77',
+        logger: silentLogger,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toContain('Resource not accessible');
+    expect(runner.calls.some((call) => call.startsWith('gh pr checks'))).toBe(
+      false
+    );
+    expect(runner.calls.some((call) => call.startsWith('gh pr merge'))).toBe(
+      false
+    );
+  });
+
+  it('fails closed before pushing a branch when neither token is available', async () => {
     const runner = makeRunner([]);
 
     let thrown;
