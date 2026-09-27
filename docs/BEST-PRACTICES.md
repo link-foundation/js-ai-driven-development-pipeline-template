@@ -138,18 +138,19 @@ violation as a race makes a release die after the version bump has already been
 committed in the runner, with a log that blames a race that never happened
 (link-foundation/js-ai-driven-development-pipeline-template#143).
 
-The fallback needs a dedicated `RELEASE_PR_TOKEN` secret containing a
-fine-grained PAT from an actor other than the workflow's built-in
-`GITHUB_TOKEN`. Scope it to this repository with Contents and Pull requests
-write access plus Checks read access. Teams can instead generate a short-lived
-GitHub App installation token and wire that action output to the same inputs.
-Pull requests opened by `GITHUB_TOKEN` do not start ordinary `pull_request`
-workflows, so they can never satisfy a required `Pipeline Status` check. The
-helper fails before pushing a temporary branch when the dedicated token is
-absent, opens the PR as that actor, waits for the PR's checks with
-`gh pr checks --watch --fail-fast`, and only then merges it. A real failed check
-or policy error is returned immediately; only brief check-discovery and
-mergeability races are retried.
+The release and instant-release jobs prefer a dedicated `RELEASE_PR_TOKEN` when
+configured. This can be a fine-grained PAT or short-lived GitHub App token with
+Contents and Pull requests write access plus Checks read access. Without it,
+the helper uses the built-in `GITHUB_TOKEN`. Pull requests opened by that token
+do not start ordinary `pull_request` workflows, so the helper first proves the
+version commit is a direct child of the validated workflow SHA and changes only
+release metadata. It creates a successful `Pipeline Status` check on the exact
+new SHA, linked to the validating run. The release jobs have `checks: write` for
+this purpose; GitHub Actions must be allowed to create pull requests in the
+repository settings. Additional exact metadata paths may be set through
+`RELEASE_METADATA_PATHS`. The helper then waits for all required checks with
+`gh pr checks --required --watch --fail-fast` before merging. Unexpected paths,
+API denials, failed checks, and merge-policy errors fail closed.
 
 The temporary branch is never force-pushed and never deleted, so it stays
 compatible with rulesets that forbid destruction on `~ALL` refs, and the merge
@@ -216,7 +217,7 @@ a test, network call, package install, or release step hangs:
   Actions' six-hour default.
 - Matrix test jobs have a 10-minute cap per runtime and operating
   system.
-- Release jobs have 30 minutes for package registry and GitHub API
+- Release jobs have 50 minutes for package registry and GitHub API
   retries without allowing an unbounded release run.
 - The broken link checker has 10 minutes for slow external hosts and
   Web Archive fallback probes.

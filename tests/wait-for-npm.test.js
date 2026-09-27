@@ -95,11 +95,12 @@ describe('checkNpmVersion', () => {
       registryUrl: REGISTRY,
     });
 
-    expect(result).toEqual({
+    expect(result.url).toContain(`${REGISTRY}/react/999.0.0?cache-bust=`);
+    expect({ ...result, url: 'fresh registry URL' }).toEqual({
       available: false,
       status: 'not-published',
       httpStatus: 404,
-      url: `${REGISTRY}/react/999.0.0`,
+      url: 'fresh registry URL',
     });
   });
 
@@ -135,7 +136,7 @@ describe('checkNpmVersion', () => {
 
     expect(result.status).toBe('unknown');
     expect(result.error).toBe('getaddrinfo EAI_AGAIN registry.npmjs.org');
-    expect(result.url).toBe(`${REGISTRY}/react/1.0.0`);
+    expect(result.url).toContain(`${REGISTRY}/react/1.0.0?cache-bust=`);
   });
 
   it('reports a version mismatch as ok but unavailable', async () => {
