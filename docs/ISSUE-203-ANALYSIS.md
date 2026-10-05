@@ -10,8 +10,8 @@
 - [x] Research official documentation and the downstream implementation referenced by #202.
 - [x] Apply fixes to every active caller and add a patch changeset.
 - [x] Run local checks and all three runtime test suites; inspect saved logs.
-- [ ] Commit atomic changes, push only the prepared branch, and review the PR diff.
-- [ ] Inspect CI timestamps and SHAs, preserve failed logs, resolve failures, and mark PR #204 ready.
+- [x] Commit atomic changes, push only the prepared branch, and review the PR diff.
+- [x] Inspect CI timestamps and SHAs, preserve failed logs, and resolve failures.
 
 ## Complete requirement map
 
@@ -61,3 +61,25 @@ also found vulnerable root development dependencies. Refresh the affected
 locks and upgrade Changesets, jscpd, and lint-staged; recheck their integration
 through all tests and the contributing checks. This is needed to satisfy the
 requested passing-CI finalization, and no audit threshold is weakened.
+
+## Verification results
+
+`npm run check` passed. Node and Bun each passed 487 tests; Deno passed
+388 tests and eight steps. Focused link tests passed on all three runtimes after
+the request helper refactor. The isolated Changesets 3 experiment generated a
+patch version and changelog successfully. Root and example audits both report
+zero vulnerabilities.
+
+All five remote workflows passed on implementation SHA
+`78380c9ed37f6277137797928530f97ac9f8b096`, including the nine-platform/runtime
+matrix in [Checks and release run 37293641393](https://github.com/link-foundation/js-ai-driven-development-pipeline-template/actions/runs/37293641393).
+Security, Workflows, Broken Link Checker, and Example app also passed on that SHA.
+During testing, main released 0.11.31; that metadata commit was merged into this
+branch before finalization. PR #204 is marked ready only after final checks.
+
+The intermediate dependency-only run 37293466556 failed because that atomic
+commit had no new changeset (log line 2772), and jscpd's refreshed detector
+reported the existing code above the duplication threshold (line 1812).
+The complete implementation commit includes the patch changeset and passes
+the same unchanged duplication threshold. Both failed runs' logs are preserved
+locally under `ci-logs/`; no security or quality threshold was reduced.
