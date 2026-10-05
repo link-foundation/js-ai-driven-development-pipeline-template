@@ -89,18 +89,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Re-check links that never got an answer
-        # --max-retries never retries a failure during the connect phase
-        # (lycheeverse/lychee#2297), so a healthy URL behind a connection
-        # reset is reported broken without one retry. Ask those URLs again
-        # outside lychee. A failure carrying a status code is a host's
-        # answer and stays final.
+      - name: Re-check transient link failures
+        # Retry transport errors, 429, and 5xx within a shared budget.
+        # GitHub blob/tree pages also use the authenticated contents API.
         if: steps.lychee.outputs.exit_code != 0
         id: recheck
         run: node scripts/recheck-broken-links.mjs
         env:
           LYCHEE_OUTPUT: lychee/out.md
           RECOVERED_OUTPUT: lychee/recovered.txt
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check broken links against Web Archive
         # `!= 'true'`, never `== 'false'`: a skipped re-check leaves the

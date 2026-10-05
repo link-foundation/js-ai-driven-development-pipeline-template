@@ -35,13 +35,14 @@ describe('broken link workflow', () => {
   });
 
   it('re-asks the links that never got an answer before giving up', () => {
-    const recheckStep = getStepBlock('Re-check links that never got an answer');
+    const recheckStep = getStepBlock('Re-check transient link failures');
 
     expect(recheckStep).toContain('id: recheck');
     expect(recheckStep).toContain('node scripts/recheck-broken-links.mjs');
     expect(recheckStep).toContain('if: steps.lychee.outputs.exit_code != 0');
     expect(recheckStep).toContain('LYCHEE_OUTPUT: lychee/out.md');
     expect(recheckStep).toContain('RECOVERED_OUTPUT: lychee/recovered.txt');
+    expect(recheckStep).toContain('GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
   });
 
   // `== 'false'` would read a skipped or crashed re-check as "nothing was

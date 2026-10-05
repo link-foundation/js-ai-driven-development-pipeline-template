@@ -2,6 +2,9 @@
 
 ## Development Workflow
 
+Use Node.js 24 with npm 10.9 or newer for development and release tooling.
+Changesets 3 requires a supported Node.js 22.11, 24, or 26+ runtime.
+
 1. **Fork the repository** and clone your fork
 2. **Create a feature branch**: `git checkout -b feature/my-feature`
 3. **Install dependencies**: `bun install` (or `npm install`)
