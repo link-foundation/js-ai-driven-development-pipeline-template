@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.11.31
+
+### Patch Changes
+
+- Fix every open CI correctness and resilience issue in the pipeline: scope the
+  Docker buildx cache, retry transient fetch and download failures, make the
+  budget wrapper escalate to SIGKILL, add a terminal status gate to every
+  workflow with supersede detection, verify the husky install, make the jscpd
+  gate analyse real files, guard the package manager declaration, turn on
+  command-stream errexit, gate staged formatting before release commits, add
+  release-preflight credential checks, and sweep zizmor/actionlint/persisted
+  credentials/link-recheck fixes across the workflows.
+
+  Allow protected releases to use the built-in GitHub Actions token after
+  metadata-only attestation, wait through npm registry propagation without
+  republishing, and skip deleted changesets during staged formatting checks.
+
+  Make protected-branch release fallbacks wait for real pull-request checks with
+  a dedicated automation token, and pin every Linux CI job to Ubuntu 24.04.
+
+  Harden CI verdicts, Docker manifest publication, timeout cleanup, broken-link
+  rechecks, and contributor-authored workflow logs, and refresh vulnerable
+  transitive development dependencies.
+
 ## 0.11.30
 
 ### Patch Changes
