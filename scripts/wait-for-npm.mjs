@@ -12,10 +12,10 @@ import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildPackageMetadataUrl } from './npm-registry.mjs';
+import { buildPackageVersionUrl } from './npm-registry.mjs';
 import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
 
-const DEFAULT_MAX_ATTEMPTS = 30;
+const DEFAULT_MAX_ATTEMPTS = 92;
 const NPM_REGISTRY_USER_AGENT =
   'js-ai-driven-development-pipeline-template wait-for-npm';
 const DEFAULT_SLEEP_SECONDS = 10;
@@ -88,9 +88,7 @@ export function parseArgs(argv, env = process.env) {
  * @param {string} [registryUrl]
  * @returns {string}
  */
-export function buildPackageVersionUrl(packageName, version, registryUrl) {
-  return `${buildPackageMetadataUrl(packageName, registryUrl)}/${encodeURIComponent(version)}`;
-}
+export { buildPackageVersionUrl };
 
 /**
  * Normalize a check result so callers always see the same shape.
@@ -158,7 +156,7 @@ export async function checkNpmVersion(
 ) {
   let url;
   try {
-    url = buildPackageVersionUrl(packageName, version, registryUrl);
+    url = `${buildPackageVersionUrl(packageName, version, registryUrl)}?cache-bust=${Date.now()}`;
   } catch (error) {
     return { available: false, status: 'unknown', error: error.message };
   }
@@ -167,6 +165,7 @@ export async function checkNpmVersion(
     const response = await fetchFn(url, {
       headers: {
         accept: 'application/json',
+        'cache-control': 'no-cache',
         // Some registries reject requests without a User-Agent with 403.
         'user-agent': NPM_REGISTRY_USER_AGENT,
       },

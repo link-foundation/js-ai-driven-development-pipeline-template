@@ -75,7 +75,7 @@ describe('smoke-test-package.mjs', () => {
     expect(
       parseArgs(['--package-version', '1.2.3'], { MAX_ATTEMPTS: '' })
         .maxAttempts
-    ).toBe(5);
+    ).toBe(35);
   });
 
   it('derives advertised npm bin entries', () => {

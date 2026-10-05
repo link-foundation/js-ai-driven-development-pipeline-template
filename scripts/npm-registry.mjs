@@ -56,6 +56,11 @@ export function buildPackageMetadataUrl(
   return `${normalizeRegistryUrl(registryUrl)}/${encodePackageName(packageName)}`;
 }
 
+/** Request a fresh, small document for one immutable version. */
+export function buildPackageVersionUrl(packageName, version, registryUrl) {
+  return `${buildPackageMetadataUrl(packageName, registryUrl)}/${encodeURIComponent(version)}`;
+}
+
 /**
  * Check whether a package version exists in npm registry metadata.
  * HTTP 404 means the package has not been published yet and is not an error.
@@ -78,10 +83,11 @@ export async function isPackageVersionPublished(
     throw new Error('Package version is required');
   }
 
-  const metadataUrl = buildPackageMetadataUrl(packageName, registryUrl);
+  const metadataUrl = `${buildPackageVersionUrl(packageName, version, registryUrl)}?cache-bust=${Date.now()}`;
   const response = await fetchFn(metadataUrl, {
     headers: {
       accept: 'application/json',
+      'cache-control': 'no-cache',
     },
   });
 
@@ -96,5 +102,5 @@ export async function isPackageVersionPublished(
   }
 
   const metadata = await response.json();
-  return Object.hasOwn(metadata?.versions || {}, version);
+  return metadata?.version === version;
 }

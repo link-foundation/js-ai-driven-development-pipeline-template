@@ -25,20 +25,21 @@ describe('npm registry package version checks', () => {
   });
 
   it('returns true when package metadata contains the requested version', async () => {
+    let request;
     const isPublished = await isPackageVersionPublished(
       '@scope/real-package',
       '1.2.3',
       {
-        fetchFn: async () =>
-          jsonResponse(200, {
-            versions: {
-              '1.2.3': {},
-            },
-          }),
+        fetchFn: async (url, options) => {
+          request = { url, options };
+          return jsonResponse(200, { version: '1.2.3' });
+        },
       }
     );
 
     expect(isPublished).toBe(true);
+    expect(request.url).toContain('@scope%2Freal-package/1.2.3?cache-bust=');
+    expect(request.options.headers['cache-control']).toBe('no-cache');
   });
 
   it('returns false for missing versions without throwing', async () => {
@@ -46,12 +47,7 @@ describe('npm registry package version checks', () => {
       '@scope/real-package',
       '9.9.9',
       {
-        fetchFn: async () =>
-          jsonResponse(200, {
-            versions: {
-              '1.2.3': {},
-            },
-          }),
+        fetchFn: async () => jsonResponse(200, { version: '1.2.3' }),
       }
     );
 
