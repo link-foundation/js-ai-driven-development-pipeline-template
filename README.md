@@ -182,7 +182,7 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) implements a fast-
 
 Every CI job declares an explicit `timeout-minutes` so hung steps fail
 in minutes instead of reaching the GitHub Actions default of six hours.
-Fast checks use 5-10 minute caps, release jobs use 30 minutes, and the
+Fast checks use 5-10 minute caps, release jobs use 50 minutes, and the
 link checker uses 10 minutes for external network variance.
 
 That cap is a backstop, never the deadline: GitHub reports a job it
@@ -280,19 +280,22 @@ script-level package-name constants need to be edited during template adoption.
 
 ### Protected-Branch Release Pull Requests
 
-If `main` requires pull requests and the `Pipeline Status` check, configure a
-repository secret named `RELEASE_PR_TOKEN`. It must be a fine-grained PAT for
-an automation actor other than the workflow's built-in `GITHUB_TOKEN`, scoped
-to this repository with Contents and Pull requests write access and Checks read
-access. The release and generated-preview fallbacks use it to open the PR, wait
-for the PR's own checks, and merge only after they pass. The manual
-changeset-PR mode uses it for the same reason. Teams that generate short-lived
-GitHub App installation tokens can wire that action output to the same workflow
-inputs instead of storing a PAT.
+If `main` requires pull requests and the `Pipeline Status` check, the release
+and instant-release jobs can use their built-in `GITHUB_TOKEN` to open a release
+PR. Enable **Allow GitHub Actions to create and approve pull requests** in
+repository Actions settings. The helper verifies that the version commit is a
+direct child of the validated workflow SHA and contains only package metadata
+and consumed changesets. It then creates a successful `Pipeline Status` check
+on that exact commit, linked to the validating run, waits for every required
+check, and merges the PR only after they pass. The release jobs alone receive
+`checks: write`. Set `RELEASE_METADATA_PATHS` to a comma-separated list of
+additional exact metadata paths for other package layouts.
 
-Repositories that allow the release workflow to push directly to `main` do not
-exercise the fallback, but manual changeset PR creation still requires this
-secret.
+An optional `RELEASE_PR_TOKEN` secret keeps the existing dedicated-token path
+and takes precedence when set. Give that actor Contents and Pull requests write
+access and Checks read access. The manual changeset-PR and generated-preview
+paths still require the dedicated token. A short-lived GitHub App installation
+token can be wired to the same inputs instead of a PAT.
 
 ### Optional Docker Hub Publishing
 

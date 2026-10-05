@@ -206,7 +206,10 @@ function loadSettings(options) {
 export async function loadUse(options = {}) {
   const settings = loadSettings(options);
   const { url, attempts } = settings;
-  if (cachedUse && !options.fetchImpl) {
+  // A caller-supplied URL is a separate source. It must never silently return
+  // the default CDN's cached loader or overwrite that shared cache.
+  const useSharedCache = !options.fetchImpl && !options.url;
+  if (cachedUse && useSharedCache) {
     return cachedUse;
   }
   let lastError;
@@ -214,7 +217,7 @@ export async function loadUse(options = {}) {
     try {
       const use = await fetchUseOnce(settings);
       debug('loaded use-m', { url, attempt });
-      if (!options.fetchImpl) {
+      if (useSharedCache) {
         cachedUse = use;
       }
       return use;

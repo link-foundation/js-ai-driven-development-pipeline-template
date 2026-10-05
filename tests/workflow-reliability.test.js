@@ -92,6 +92,14 @@ function getMultilineIfExpression(jobBlock) {
 
 function evaluateWorkflowIf(expression, context) {
   const javaScriptExpression = expression
+    .replaceAll(
+      "contains(needs.*.result, 'failure')",
+      "Object.values(context.needs).some((job) => job.result === 'failure')"
+    )
+    .replaceAll(
+      "contains(needs.*.result, 'cancelled')",
+      "Object.values(context.needs).some((job) => job.result === 'cancelled')"
+    )
     .replaceAll('!cancelled()', '!context.cancelled')
     .replaceAll('github.event_name', 'context.github.event_name')
     .replaceAll(
@@ -503,9 +511,7 @@ describe('manual release quality gates', () => {
     expect(evaluateWorkflowIf(getMultilineIfExpression(testJob), context)).toBe(
       true
     );
-    expect(instantReleaseJob).toContain(
-      '    needs: [lint, test, release-preflight]'
-    );
+    expect(instantReleaseJob).toContain('        release-preflight,');
     expect(
       evaluateWorkflowIf(getMultilineIfExpression(instantReleaseJob), context)
     ).toBe(true);

@@ -116,12 +116,14 @@ neither of which was involved in the original failure.
 
 ## Current budgets
 
-| Job                    | Backstop | Step budgets                                    |
-| ---------------------- | -------- | ----------------------------------------------- |
-| `test`                 | 15 min   | Node.js 300s, Bun 200s, Deno 100s               |
-| `docker-build`         | 30 min   | image build 20 min                              |
-| `docker-publish-build` | 30 min   | image build and push 20 min                     |
-| `release`              | 30 min   | install 240s, npm publish 420s, smoke test 300s |
+| Job                     | Backstop | Step budgets                                     |
+| ----------------------- | -------- | ------------------------------------------------ |
+| `test`                  | 15 min   | Node.js 300s, Bun 200s, Deno 100s                |
+| `docker-build`          | 30 min   | image build 20 min                               |
+| `docker-publish-config` | 30 min   | npm availability wait 1100s                      |
+| `docker-publish-build`  | 30 min   | image build and push 20 min                      |
+| `release`               | 50 min   | install 240s, npm publish 1200s, smoke test 600s |
+| `instant-release`       | 50 min   | npm publish 1200s, smoke test 600s               |
 
 ## Reference
 
