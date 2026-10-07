@@ -286,6 +286,79 @@ describe('PR changeset validation', () => {
     }));
 });
 
+describe('exact changeset rename detection', () => {
+  if (!canSpawn) {
+    return;
+  }
+  for (const root of ['.', 'js']) {
+    it(`does not count an unchanged pending fragment moved in ${root}`, () =>
+      fixture(
+        ({ git, write, commit, invoke }) => {
+          write('index.js', 'export const value = 2;\n');
+          git(
+            'mv',
+            `${root}/.changeset/existing.md`,
+            `${root}/.changeset/moved fragment.md`
+          );
+          commit();
+          const result = invoke('validate-changeset.mjs');
+          expect(result.status).toBe(1);
+          expect(result.stderr).toContain('No changeset found');
+          write('.changeset/new.md', `${fragment}New work\n`);
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(0);
+        },
+        { root, existing: true }
+      ));
+  }
+  it('counts a new fragment replacing a similar deleted one', () =>
+    fixture(
+      ({ git, write, commit, invoke }) => {
+        git('rm', '.changeset/existing.md');
+        write('index.js', 'export const value = 2;\n');
+        write('.changeset/replacement.md', `${fragment}New work\n`);
+        commit();
+        expect(invoke('validate-changeset.mjs').status).toBe(0);
+      },
+      { existing: true }
+    ));
+  for (const [source, destination] of [
+    ['index.js', 'docs/moved.md'],
+    ['docs/source.md', 'moved.js'],
+  ]) {
+    it(`requires a fragment when moving ${source} to ${destination}`, () =>
+      fixture(({ git, write, commit, invoke }) => {
+        write(source, 'export const moved = 1;\n');
+        commit();
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        mkdirSync(
+          dirname(join(git('rev-parse', '--show-toplevel'), destination)),
+          {
+            recursive: true,
+          }
+        );
+        git('mv', source, destination);
+        commit();
+        expect(invoke('validate-changeset.mjs').status).toBe(1);
+      }));
+  }
+  it('parses NUL-separated rename paths without losing following additions', () =>
+    fixture(
+      ({ git, write, commit, invoke }) => {
+        const destination =
+          process.platform === 'win32'
+            ? '.changeset/moved fragment.md'
+            : '.changeset/moved\tfragment.md';
+        git('mv', '.changeset/existing.md', destination);
+        write('index.js', 'export const value = 2;\n');
+        write('.changeset/z-new.md', `${fragment}New work\n`);
+        commit();
+        expect(invoke('validate-changeset.mjs').status).toBe(0);
+      },
+      { existing: true }
+    ));
+});
+
 describe('trusted release PR identity', () => {
   if (!canSpawn) {
     return;
