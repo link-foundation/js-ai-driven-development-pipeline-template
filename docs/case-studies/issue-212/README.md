@@ -142,7 +142,7 @@ they are not executable release guards and are intentionally not rewritten.
 `node experiments/issue-212-regressions.mjs` archives the actual pre-fix main
 commit `4c8644fb457b65933fcb19b033e60e7d0338f2ad`, copies the current regressions,
 and runs them against that isolated snapshot. It reproduces failures for every
-listed issue: 55 failing assertions out of 112 tests. Some new assertions also
+listed issue: 56 failing assertions out of 113 tests. Some new assertions also
 fail because the old implementation lacks the new helpers/configuration;
 the original formatting, missing-ref, existing-fragment, denied-exchange,
 commit-message, survivor-output, release-recovery, and workflow-version defects
@@ -156,8 +156,8 @@ Captured [pre-fix regression output](validation/baseline-regressions.log.gz) and
 
 | Check                                                                          | Result                                                              |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `npm test`                                                                     | 558 passed, zero failed                                             |
-| `bun test --timeout 30000`                                                     | 558 passed, zero failed                                             |
+| `npm test`                                                                     | 559 passed, zero failed                                             |
+| `bun test --timeout 30000`                                                     | 559 passed, zero failed                                             |
 | `deno test --allow-read`                                                       | 414 applicable tests passed, zero failed                            |
 | `npm run check`                                                                | ESLint, Prettier, and duplication check passed                      |
 | Syntax, file line limits, required docs, workflow policy, status-gate coverage | Passed                                                              |
@@ -194,3 +194,21 @@ The manifests retain their ranges and both configured high-severity audits pass.
 Eight pre-existing moderate findings remain in the electron-builder dependency
 chain; npm's proposed forced fix is a breaking downgrade, so it is outside this
 repair. The example production build also passes with the refreshed lock.
+
+### Windows regression-test correction
+
+Checks and release run [37557125805](https://github.com/link-foundation/js-ai-driven-development-pipeline-template/actions/runs/37557125805)
+was created at `2026-10-07T01:26:41Z`, after submitted commit
+`0c2fb3b3031b4ba5d6d4f6495d08c44ffae69e56` at `01:26:27Z`, with that exact SHA.
+The other four workflows and seven runtime/OS legs passed. Both Windows Node
+and Bun legs failed in the commit-message regression's source matcher because
+Git checked out CRLF source files. The downloaded
+`ci-logs/checks-and-release-37557125805.log` records the null-match error at
+lines 10185 and 11808; its [compressed copy](validation/checks-and-release-37557125805.log.gz)
+is preserved here.
+
+The test now exercises both LF and CRLF source files and accepts either ending
+when locating the production commit block. The explicit CRLF case first failed
+locally with the same error, then both cases passed under Node and Bun. The
+release implementation remains unchanged. [Before](validation/commit-message-crlf-before.log.gz)
+and [after](validation/commit-message-crlf-after.log.gz) logs preserve the reproduction.

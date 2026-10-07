@@ -6,16 +6,18 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const ref = process.argv[2] || '4c8644fb457b65933fcb19b033e60e7d0338f2ad';
 const log = resolve(process.argv[3] || 'ci-logs/issue-212-baseline.log');
+mkdirSync(dirname(log), { recursive: true });
 const snapshot = mkdtempSync(join(tmpdir(), 'issue-212-baseline-'));
 const tests = [
   'pr-guards',
