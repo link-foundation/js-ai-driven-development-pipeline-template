@@ -86,10 +86,17 @@ runTest('validate-changeset.mjs syntax check', () => {
   }
 });
 
-// Test 3: Script runs without crashing (fallback mode)
-runTest('validate-changeset.mjs runs in fallback mode', () => {
-  // Without git diff context, it falls back to checking all changesets
-  const { output } = execCommand(`node ${validateChangesetPath}`);
+// Test 3: Explicit local directory scanning runs without crashing.
+runTest('validate-changeset.mjs runs in explicit local mode', () => {
+  const { output } = execCommand(`node ${validateChangesetPath}`, {
+    env: {
+      ...process.env,
+      ALLOW_LOCAL_CHANGESET_SCAN: 'true',
+      CI: '',
+      GITHUB_ACTIONS: '',
+      GITHUB_EVENT_NAME: '',
+    },
+  });
   // Should either pass (if there's exactly one changeset) or fail (if not)
   // But should not crash with an exception
   if (
