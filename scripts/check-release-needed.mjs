@@ -6,16 +6,12 @@
  * This script checks:
  * 1. If there are changeset files to process
  * 2. If the current version has already been published to npm
+ * 3. If an npm-published version also has its GitHub release
  *
- * IMPORTANT: This script checks npm (the source of truth for JS packages),
- * NOT git tags. This is critical because:
- * - Git tags can exist without the package being published
- * - GitHub releases create tags but don't publish to npm
- * - Only npm publication means users can actually install the package
- *
- * This provides a self-healing mechanism: if a previous release attempt
- * failed or was skipped, the next push to main will detect the unpublished
- * version and trigger a release without requiring a changeset.
+ * npm publication and a GitHub release are independent requirements. If npm
+ * already has the version but its GitHub release is missing, the next main
+ * push retries publication verification and creates that release without a bump.
+ * Unknown GitHub state does not trigger a release.
  *
  * Analogous to check-release-needed.rs in the Rust template.
  *
@@ -30,10 +26,7 @@
  *
  * Outputs (written to GITHUB_OUTPUT):
  *   - should_release: 'true' if a release should be created
- *   - skip_bump: 'true' if version bump should be skipped (version not yet published)
- *
- * Addresses issues documented in:
- * - Issue #36: Release job silently skips when PRs merge without changesets
+ *   - skip_bump: 'true' when recovering the existing version without changesets
  */
 
 import { appendFileSync } from 'fs';
@@ -41,6 +34,8 @@ import { appendFileSync } from 'fs';
 import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
 import { isPackageVersionPublished } from './npm-registry.mjs';
 import { readPackageInfo } from './package-info.mjs';
+import { buildReleaseTag } from './release-naming.mjs';
+import { githubReleaseExists } from './github-release-state.mjs';
 
 const jsRootConfig = parseJsRootConfig();
 const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
@@ -98,11 +93,23 @@ async function main() {
   console.log(`Published on npm: ${isPublished}`);
 
   if (isPublished) {
-    console.log(
-      `No changesets and v${currentVersion} already published on npm — no release needed`
-    );
-    setOutput('should_release', 'false');
-    setOutput('skip_bump', 'false');
+    const tag = buildReleaseTag(currentVersion, { jsRoot });
+    const releaseExists = await githubReleaseExists(tag);
+    if (releaseExists === false) {
+      console.log(
+        `${tag} is on npm but has no GitHub release — self-healing release creation`
+      );
+      setOutput('should_release', 'true');
+      setOutput('skip_bump', 'true');
+    } else {
+      console.log(
+        releaseExists === null
+          ? 'GitHub state unknown — no release will run'
+          : `${tag} is already published on npm and GitHub — no release needed`
+      );
+      setOutput('should_release', 'false');
+      setOutput('skip_bump', 'false');
+    }
   } else {
     console.log(
       `No changesets but v${currentVersion} not yet published to npm — release needed (self-healing)`
