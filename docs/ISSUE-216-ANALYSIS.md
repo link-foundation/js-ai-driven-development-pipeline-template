@@ -122,6 +122,7 @@ Minimum reproductions use real processes in disposable fixtures:
 node --test --test-timeout=30000 tests/changeset-config.test.js tests/pr-guards.test.js
 node experiments/issue-203-changesets-version.mjs
 node experiments/issue-216-release-dry-run.mjs
+node experiments/issue-216-ci-fixtures.mjs
 ```
 
 The release regression asserts Deno is unavailable, runs the actual CLI, and
@@ -142,3 +143,22 @@ tracked metadata and consumed fragments. The worktree was removed afterward.
 Runtime suites were run sequentially after observing that Deno's automatic
 dependency installation rewrites the same node_modules directory used by Node
 and Bun; hosted runtime jobs already use separate checkouts.
+
+The first hosted run of these changes, [37634441807](https://github.com/link-foundation/js-ai-driven-development-pipeline-template/actions/runs/37634441807),
+started 2026-10-07T14:10:06Z at `4941fd30913b036f95438df7631eccd304a737da`.
+The real PR release dry-run passed, but new regression tests exposed two fixture
+assumptions. Full logs are preserved as `checks-37634441807.log`:
+
+- Lines 5606, 9176, and 11528 report Deno's missing
+  `node_modules/@changesets/config/package.json`; clean Deno jobs install only
+  used dependencies. Read its version from the release lockfile under Deno and
+  continue verifying the installed version under Node/Bun.
+- Lines 4425 and 11914 report Prettier rejecting the copied Windows manifest's
+  CRLF line endings. Normalize the fixture manifest to match the Linux release
+  runner, retaining generated-file checks on Windows.
+
+`experiments/issue-216-ci-fixtures.mjs --expect-failure` reproduced both failures
+before these test corrections, using separate worktrees with a CRLF manifest
+and clean Deno dependency installation. Running the experiment without that flag
+passes after the corrections; it also verifies fixture cleanup. No runtime jobs
+are skipped, no timeout is increased, and production release behavior is unchanged.

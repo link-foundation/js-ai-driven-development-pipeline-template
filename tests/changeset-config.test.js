@@ -21,10 +21,20 @@ describe('Changesets release formatter', () => {
     expect(config.format).toBe('prettier');
   });
 
-  it('references the installed Changesets config schema', () => {
-    const { version } = JSON.parse(
-      readFileSync('node_modules/@changesets/config/package.json', 'utf8')
+  it('references the release Changesets config schema', () => {
+    // Deno installs dependencies lazily; this read-only job never runs Changesets.
+    const isDeno = typeof Deno !== 'undefined';
+    const metadata = JSON.parse(
+      readFileSync(
+        isDeno
+          ? 'package-lock.json'
+          : 'node_modules/@changesets/config/package.json',
+        'utf8'
+      )
     );
+    const version = isDeno
+      ? metadata.packages['node_modules/@changesets/config'].version
+      : metadata.version;
     expect(config.$schema).toBe(
       `https://unpkg.com/@changesets/config@${version}/schema.json`
     );
@@ -50,7 +60,13 @@ describe('Changesets release formatter', () => {
         '.changeset/config.json',
         join(cwd, '.changeset/config.json')
       );
-      const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'));
+      // Match the Linux release runner even when the checkout uses Windows CRLF.
+      const manifest = readFileSync(
+        join(cwd, 'package.json'),
+        'utf8'
+      ).replaceAll('\r\n', '\n');
+      writeFileSync(join(cwd, 'package.json'), manifest);
+      const pkg = JSON.parse(manifest);
       writeFileSync(
         join(cwd, '.changeset/release-check.md'),
         `---\n"${pkg.name}": patch\n---\n\nCheck release versioning.\n`
