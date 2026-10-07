@@ -119,7 +119,10 @@ Version and changeset guards compare the PR head with its merge base. CI passes
 `HEAD`. Fetch the base before running the guards. Missing refs, Git failures,
 and invalid package metadata fail validation.
 
-The changeset guard counts added fragments only. Markdown, `docs/`, `examples/`,
+The changeset guard counts added fragments only. Exact file moves do not count
+as new fragments; replacing a deleted fragment with different content does.
+Both paths of a move are checked when deciding whether code requires a fragment.
+Markdown, `docs/`, `examples/`,
 `experiments/`, `dev/log/`, and changeset metadata are exempt. In multi-language
 repositories, unrelated language roots are exempt; shared workflows still
 require a fragment. For local directory validation without Git comparison, use
@@ -143,6 +146,14 @@ The release process is fully automated:
 4. **Changelog update** - `CHANGELOG.md` is updated automatically
 5. **npm publish** - Package is published via OIDC trusted publishing
 6. **GitHub Release** - A release is created with formatted notes
+
+Changesets explicitly uses Prettier in `.changeset/config.json`, matching
+`format:check`. Keep that setting when adding runtime configs: auto-detection
+selects Deno for any `deno.json`, independently of the npm package-manager
+declaration. PR lint checks dry-run `npm run changeset:version` after the fresh
+merge simulation and restore the generated metadata and consumed fragments.
+This requires no publishing credentials and runs independently of release
+credential preflight.
 
 ### Multiple Changesets
 

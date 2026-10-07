@@ -51,7 +51,9 @@ function getAddedChangesetFiles(changesetDir, jsRoot) {
   const prefix =
     packageRoot === '.' ? '' : `${packageRoot.replace(/\/$/, '')}/`;
   const packagePaths = changes
-    .map((change) => change.path)
+    .flatMap((change) =>
+      change.oldPath ? [change.oldPath, change.path] : [change.path]
+    )
     .filter(
       (path) => path.startsWith(prefix) || path.startsWith('.github/workflows/')
     )

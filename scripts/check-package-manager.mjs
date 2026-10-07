@@ -8,10 +8,14 @@
  * friends) probes the known lockfiles in table order, and the non-npm
  * lockfiles come before `package-lock.json`. This repository keeps
  * `deno.lock` at the root because the Deno leg of the test matrix runs
- * `deno test` there, so without a declaration the detector answers `deno`
- * and the release dies with `spawn deno ENOENT` on a runner that has no
- * deno. A `devEngines.packageManager` (or `packageManager`) declaration is
- * honoured ahead of the lockfile table, which is what makes it the fix.
+ * `deno test` there. Without a declaration, package-manager-mediated
+ * commands such as Prettier would be launched through Deno.
+ * A `devEngines.packageManager` (or `packageManager`) declaration is
+ * honoured ahead of the lockfile table, keeping those commands on npm.
+ *
+ * Formatter selection is separate: Changesets detects any deno.json before
+ * Prettier and invokes Deno directly, bypassing the package manager. The
+ * explicit `format: "prettier"` in .changeset/config.json prevents that.
  *
  * The check is dependency-free on purpose: it runs ahead of
  * `npm install` in the versioning job, when node_modules may not exist.

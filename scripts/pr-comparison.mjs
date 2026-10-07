@@ -41,14 +41,24 @@ export function getPrChanges(comparison) {
     'diff',
     '--name-status',
     '-z',
-    '--no-renames',
+    '--find-renames=100%',
     comparison.mergeBase,
     comparison.head,
     '--',
   ]).split('\0');
   const changes = [];
-  for (let index = 0; index < fields.length - 1; index += 2) {
-    changes.push({ status: fields[index], path: fields[index + 1] });
+  for (let index = 0; index < fields.length - 1; ) {
+    const status = fields[index++];
+    const path = fields[index++];
+    // Exact moves are not additions, but both paths still affect package code.
+    if (/^[RC]/.test(status)) {
+      changes.push({ status, oldPath: path, path: fields[index++] });
+    } else {
+      changes.push({ status, path });
+    }
+  }
+  if (process.env.DEBUG) {
+    console.log('PR changes (exact rename detection):', changes);
   }
   return changes;
 }

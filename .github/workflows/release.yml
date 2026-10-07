@@ -246,6 +246,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Exercise versioning without credentials, even if release-preflight fails.
+      # Restore consumed changesets and metadata on success or failure so lint
+      # checks the fresh merge rather than generated release files.
+      - name: Dry-run release versioning (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          trap 'git restore --source=HEAD --staged --worktree -- .' EXIT
+          npm run changeset:version
+          git status --short
+
       - name: Run ESLint
         run: npm run lint
 
