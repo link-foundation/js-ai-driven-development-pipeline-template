@@ -26,6 +26,7 @@ import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
 import { readPackageInfo } from './package-info.mjs';
 import {
   buildNpmVersionBadge,
+  hasGeneratedNpmBadge,
   normalizeReleaseVersionForBadge,
 } from './format-release-notes-helpers.mjs';
 import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
@@ -98,8 +99,8 @@ try {
 
   const currentBody = releaseData.body || '';
 
-  // Skip if already formatted (has shields.io badge image)
-  if (currentBody.includes('img.shields.io')) {
+  // Skip only a generated npm badge image.
+  if (hasGeneratedNpmBadge(currentBody)) {
     console.log('ℹ️ Release notes already formatted');
     process.exit(0);
   }

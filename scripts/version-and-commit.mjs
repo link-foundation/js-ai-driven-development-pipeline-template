@@ -29,6 +29,7 @@ import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 import { printUntrusted } from './github-actions-log.mjs';
 import { checkStagedFormatting } from './check-staged-formatting.mjs';
+import { runStrict } from './run-command.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
@@ -267,9 +268,7 @@ async function main() {
       await checkStagedFormatting();
 
       // Commit with version number as message
-      const commitMessage = newVersion;
-      const escapedMessage = commitMessage.replace(/"/g, '\\"');
-      await $`git commit -m "${escapedMessage}"`;
+      await runStrict('git', ['commit', '-m', newVersion]);
 
       // Push directly to main, rebasing and retrying if another main writer won
       // the race between this commit and the push, and landing the commit

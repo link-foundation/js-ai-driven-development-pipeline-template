@@ -69,6 +69,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check pinned workflow tooling and hosted runners
+        run: node scripts/check-ci-workflows.mjs
+
       - name: Check the status gate covers every job
         # Every workflow here runs a hand-maintained pipeline-status gate;
         # this derives each requirement from the workflow itself.
@@ -96,13 +99,13 @@ jobs:
       # have code scanning enabled, and the job should fail loudly either way.
       #
       # Named `version` rather than left at the default, because the action's
-      # `latest` entry is its own frozen table (v0.6.2 -> zizmor 1.29.0), not
+      # `latest` entry is its own frozen table (v0.6.4 -> zizmor 1.30.1), not
       # the latest zizmor. Naming it keeps the next bump a visible line in the
       # diff rather than a side effect of bumping the action, and documents
       # exactly which analyser reproduces a finding:
-      #   pipx run zizmor==1.29.0 --config .github/zizmor.yml \
+      #   pipx run zizmor==1.30.1 --config .github/zizmor.yml \
       #     --min-confidence low --persona regular .github/workflows
-      - uses: zizmorcore/zizmor-action@v0.6.2
+      - uses: zizmorcore/zizmor-action@v0.6.4
         with:
           advanced-security: false
           annotations: true
@@ -113,7 +116,7 @@ jobs:
           # pins the same invariant in-repo, so the floor only needs to catch
           # the workflows the test cannot see.
           min-confidence: low
-          version: 1.29.0
+          version: 1.30.1
 
       # The job above runs `--persona regular`, which is the right default:
       # pedantic surfaces dozens of stylistic findings. But the audits that
@@ -127,7 +130,7 @@ jobs:
       - name: Audit for pedantic-only high-severity findings
         timeout-minutes: 10
         run: |
-          pipx run zizmor==1.30.0 --config .github/zizmor.yml \
+          pipx run zizmor==1.30.1 --config .github/zizmor.yml \
             --persona pedantic --min-severity high --min-confidence high \
             .github/workflows .github/actions
 

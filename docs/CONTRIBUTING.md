@@ -112,6 +112,27 @@ Add support for custom configuration via config file
 - Changes to markdown files
 - CI/CD workflow updates (unless they affect users)
 
+### PR guard comparison and local validation
+
+Version and changeset guards compare the PR head with its merge base. CI passes
+`GITHUB_BASE_SHA` and `GITHUB_HEAD_SHA`; local runs default to `origin/main` and
+`HEAD`. Fetch the base before running the guards. Missing refs, Git failures,
+and invalid package metadata fail validation.
+
+The changeset guard counts added fragments only. Markdown, `docs/`, `examples/`,
+`experiments/`, `dev/log/`, and changeset metadata are exempt. In multi-language
+repositories, unrelated language roots are exempt; shared workflows still
+require a fragment. For local directory validation without Git comparison, use
+`ALLOW_LOCAL_CHANGESET_SCAN=true node scripts/validate-changeset.mjs`. This
+explicit mode is forbidden in CI. Set `DEBUG=1` to print comparison details.
+
+Automated release PRs are exempt only when their author matches the release
+actor, both repositories match `GITHUB_REPOSITORY`, and their branch uses a
+release prefix. The default author is `github-actions[bot]`. When a dedicated
+release token creates PRs as another account, configure repository variable
+`RELEASE_PR_ACTOR` to that account's exact login. A branch name alone never
+grants an exemption.
+
 ## Release Process
 
 The release process is fully automated:

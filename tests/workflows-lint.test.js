@@ -65,7 +65,7 @@ describe('workflow linting job', () => {
 
   // zizmor-action resolves the version from a static table shipped inside
   // the action, and `latest` there is frozen at the version current when
-  // the action was tagged (v0.6.2 -> zizmor 1.29.0). Naming the version
+  // the action was tagged (v0.6.4 -> zizmor 1.30.1). Naming the version
   // keeps the analyser that reproduces a CI finding pinned in the diff.
   it('pins the zizmor version the action installs', () => {
     const zizmorStep = workflowsWorkflow.slice(
@@ -197,5 +197,39 @@ describe('third-party actions', () => {
     }
 
     expect(images).toEqual([]);
+  });
+});
+
+describe('reproducible workflow tooling and runner policy', () => {
+  it('keeps both zizmor passes and the reproduction comment on the action-supported version', () => {
+    const version = workflowsWorkflow.match(
+      /^\s+version: (\d+\.\d+\.\d+)$/m
+    )?.[1];
+    const versions = Array.from(
+      workflowsWorkflow.matchAll(/zizmor==(\d+\.\d+\.\d+)/g),
+      (match) => match[1]
+    );
+    expect(versions.length).toBe(2);
+    expect(versions).toEqual([version, version]);
+    expect(workflowsWorkflow).toContain('zizmorcore/zizmor-action@v0.6.4');
+    expect(['1.30.0', '1.30.1']).toContain(version);
+  });
+  it('pins both secretlint packages to the same exact version', () => {
+    const cli = releaseWorkflow.match(/-p secretlint@(\d+\.\d+\.\d+)/)?.[1];
+    const preset = releaseWorkflow.match(
+      /-p @secretlint\/secretlint-rule-preset-recommend@(\d+\.\d+\.\d+)/
+    )?.[1];
+    expect(cli).toBe('13.0.7');
+    expect(preset).toBe(cli);
+  });
+  it('pins every hosted OS image in every workflow', () => {
+    for (const file of activeWorkflows) {
+      expect(readWorkflow(file)).not.toMatch(
+        /\b(?:ubuntu|macos|windows)-latest\b/
+      );
+    }
+  });
+  it('runs a workflow policy guard in CI', () => {
+    expect(workflowsWorkflow).toContain('node scripts/check-ci-workflows.mjs');
   });
 });

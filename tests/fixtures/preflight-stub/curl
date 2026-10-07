@@ -18,6 +18,20 @@ FIX="${PREFLIGHT_FIXTURE_DIR:?PREFLIGHT_FIXTURE_DIR must point at the fixture fi
 url="$*"
 
 case "$url" in
+  *token.actions.githubusercontent.com*)
+    printf '%s\n' "${@: -1}" >> "$FIX/requests"
+    printf '%s\n%s' "$(cat "$FIX/oidc.json")" "$(cat "$FIX/oidc_status")"
+    exit 0
+    ;;
+  *-/npm/v1/oidc/token/exchange/package/*)
+    printf '%s\n' "${@: -1}" >> "$FIX/requests"
+    if [[ "$url" != *"-X POST"* ]] || [[ "$url" != *"Bearer private-fixture-jwt"* ]]; then
+      printf '\n403'
+    else
+      printf '%s\n%s' "$(cat "$FIX/exchange.json")" "$(cat "$FIX/exchange_status")"
+    fi
+    exit 0
+    ;;
   *"blobs/uploads/"*)
     case "$url" in
       *"-X DELETE"*)

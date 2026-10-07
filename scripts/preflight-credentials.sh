@@ -20,8 +20,8 @@
 # Rules each caller depends on (each is a defect if dropped):
 #   1. Report every failure, not the first -- no probe aborts the script.
 #   2. Report `unknown`, never a guess: a timeout or a 429 has not said the
-#      credential is broken. But a release-mode run that verified nothing is
-#      not a pass.
+#      credential is broken. Every configured target must verify in release
+#      mode; an unknown answer blocks publication until a later successful probe.
 #   3. Probe with a write, not a login.
 #
 # No set -e on purpose: rule 1 means one failed probe must not hide the rest.
@@ -70,7 +70,65 @@ http() {
 # Run package.json-relative JSON reads through node: the runtime is the one
 # dependency a JS template guarantees, and no jq is needed.
 node_read() {
-  node -e "$1" 2>/dev/null
+  node -e "$@" 2>/dev/null
+}
+
+# Parse only a nonempty string field; never print response bodies to CI logs.
+json_string() {
+  node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const v=JSON.parse(d)[process.argv[1]];if(typeof v!=="string"||!v.trim())process.exit(1);process.stdout.write(v)}catch{process.exit(1)}})' "$1" 2>/dev/null
+}
+
+check_npm_oidc() {
+  local oidc_url="$1" request_token="${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+  local package response status payload jwt separator='?'
+  if [ -z "$request_token" ]; then
+    bad 'npm OIDC request token is missing'
+    return
+  fi
+  package=$(node -e 'import("./scripts/js-paths.mjs").then(async p=>{const i=await import("./scripts/package-info.mjs");process.stdout.write(encodeURIComponent(i.readPackageInfo({jsRoot:p.parseJsRootConfig()}).name))}).catch(()=>process.exit(1))' 2>/dev/null)
+  if [ -z "$package" ]; then
+    bad 'npm OIDC package metadata could not be read'
+    return
+  fi
+  [[ "$oidc_url" == *'?'* ]] && separator='&'
+  response=$(http -H "Authorization: Bearer $request_token" "${oidc_url}${separator}audience=npm%3Aregistry.npmjs.org")
+  status="${response##*"$NEWLINE"}"
+  payload="${response%"${NEWLINE}"*}"
+  if [ "$status" != '200' ]; then
+    unknown "npm OIDC JWT request answered ${status:-no status}; publishing remains unverified"
+    return
+  fi
+  jwt=$(printf '%s' "$payload" | json_string value)
+  if [ -z "$jwt" ]; then
+    bad 'npm OIDC JWT response is malformed'
+    return
+  fi
+  response=$(http -X POST -H "Authorization: Bearer $jwt" \
+    "$NPM_REGISTRY/-/npm/v1/oidc/token/exchange/package/$package")
+  status="${response##*"$NEWLINE"}"
+  payload="${response%"${NEWLINE}"*}"
+  case "$status" in
+    200 | 201)
+      if printf '%s' "$payload" | json_string token >/dev/null; then
+        ok 'npm OIDC package exchange verified (returned token discarded)'
+      else
+        bad 'npm OIDC package exchange response is malformed'
+      fi
+      ;;
+    404)
+      if [ -n "${NPM_TOKEN:-}" ]; then
+        printf '  SKIP: npm package exchange returned 404; checking the documented NPM_TOKEN bootstrap fallback\n'
+      else
+        bad 'npm OIDC package exchange rejected (404); configure a trusted publisher or bootstrap token'
+      fi
+      ;;
+    401 | 403)
+      bad "npm OIDC package exchange rejected (${status}); check the trusted publisher configuration"
+      ;;
+    *)
+      unknown "npm OIDC package exchange answered ${status:-no status}; publishing remains unverified"
+      ;;
+  esac
 }
 
 check_npm() {
@@ -78,11 +136,10 @@ check_npm() {
   local token="${NPM_TOKEN:-}"
 
   printf 'npm:\n'
-
   if [ -n "$oidc_url" ]; then
-    ok 'npm OIDC trusted publishing is available (ACTIONS_ID_TOKEN_REQUEST_URL is set)'
-  else
-    unknown 'npm OIDC trusted publishing is not available (ACTIONS_ID_TOKEN_REQUEST_URL is not set; the job needs id-token: write)'
+    check_npm_oidc "$oidc_url"
+  elif [ -z "$token" ]; then
+    unknown 'npm OIDC trusted publishing is not available (the job needs id-token: write)'
   fi
 
   if [ -z "$token" ]; then
@@ -103,7 +160,7 @@ check_npm() {
     200)
       login=$(printf '%s' "$payload" | node_read 'let d="";process.stdin.on("data",(c)=>{d+=c});process.stdin.on("end",()=>{try{process.stdout.write(String(JSON.parse(d).username||""))}catch{process.stdout.write("")}})')
       if [ -z "$login" ]; then
-        ok 'npm accepted NPM_TOKEN (whoami returned 200)'
+        unknown 'npm whoami response is malformed; token remains unverified'
         return 0
       fi
       if node_read '
@@ -255,19 +312,18 @@ if [ "$n_fail" -gt 0 ]; then
   exit 0
 fi
 
-if [ "$verified" -eq 0 ]; then
-  # Rule 2, second half: every probe came back unknown (or there was nothing
-  # to probe). That is not a pass in release mode -- a release would run on
-  # pure hope.
+if [ "$verified" -eq 0 ] || [ "$n_unknown" -gt 0 ]; then
+  # Every configured target must verify, even when another target succeeds.
   if [ "$MODE" = 'release' ]; then
+    [ "$verified" -ne 0 ] || printf "verified nothing\n"
     emit_annotations warning "$unknowns"
     append_summary unverified
-    printf '::error::release-preflight: verified nothing (%d unknown) -- refusing to release on an unproven credential set\n' "$n_unknown"
+    printf '::error::release-preflight: not all configured targets verified (%d unknown) -- refusing to release on an unproven credential set\n' "$n_unknown"
     exit 1
   fi
   emit_annotations warning "$unknowns"
   append_summary unverified
-  printf 'Report mode: nothing was verified -- advisory only.\n'
+  printf 'Report mode: some credentials remain unverified -- advisory only.\n'
   exit 0
 fi
 
