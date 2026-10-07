@@ -158,6 +158,9 @@ jobs:
         env:
           GITHUB_HEAD_REF: ${{ github.head_ref }}
           GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_PR_ACTOR: ${{ vars.RELEASE_PR_ACTOR }}
         run: node scripts/check-version.mjs
 
   # === CHANGESET CHECK - only runs on PRs with code changes ===
@@ -193,13 +196,8 @@ jobs:
           GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GITHUB_HEAD_REF: ${{ github.head_ref }}
           GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_PR_ACTOR: ${{ vars.RELEASE_PR_ACTOR }}
         run: |
-          # Skip changeset check for automated version PRs
-          if [[ "$GITHUB_HEAD_REF" == "changeset-release/"* ]]; then
-            echo "Skipping changeset check for automated release PR"
-            exit 0
-          fi
-
           # Run changeset validation script
           # This validates that exactly ONE changeset was ADDED by this PR
           # Pre-existing changesets from other merged PRs are ignored
@@ -258,7 +256,7 @@ jobs:
         run: npm run check:duplication
 
       - name: Check for secrets
-        run: npx --yes -p secretlint -p @secretlint/secretlint-rule-preset-recommend secretlint "**/*"
+        run: npx --yes -p secretlint@13.0.7 -p @secretlint/secretlint-rule-preset-recommend@13.0.7 secretlint "**/*"
 
   # Test matrix: 3 runtimes (Node.js, Bun, Deno) x 3 OS (Ubuntu, macOS, Windows)
   # IMPORTANT: Tests must validate the ACTUAL merge result, not a stale merge preview.
@@ -305,7 +303,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-2025]
         runtime: [node, bun, deno]
     steps:
       - uses: actions/checkout@v6
@@ -578,6 +576,7 @@ jobs:
         id: check_release
         env:
           HAS_CHANGESETS: ${{ steps.check_changesets.outputs.has_changesets }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/check-release-needed.mjs
 
       - name: Merge multiple changesets
