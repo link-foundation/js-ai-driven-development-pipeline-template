@@ -243,7 +243,7 @@ describe('run-with-budget-warning.sh SIGKILL escalation', () => {
         `trap 'echo "child ignored SIGTERM"' TERM`,
         'end=$((SECONDS + 600))',
         'while [ "$SECONDS" -lt "$end" ]; do',
-        '  read -r -t 1 _ </dev/null 2>/dev/null || :',
+        '  sleep 1 & wait $!',
         'done',
         '',
       ].join('\n')
@@ -266,6 +266,7 @@ describe('run-with-budget-warning.sh SIGKILL escalation', () => {
       });
 
       expect(result.status).toBe(124);
+      expect(result.output).toContain('child ignored SIGTERM');
       expect(result.output).toContain(
         'stubborn step ignored SIGTERM after 2s; sending SIGKILL.'
       );
@@ -307,5 +308,37 @@ describe('run-with-budget-warning.sh SIGKILL escalation', () => {
     expect(result.output).toContain(
       'BUDGET_POLL_SECONDS must be a positive number, got: soon'
     );
+  });
+});
+
+describe('process group survivor records', () => {
+  it('prints separate real process records with real newlines', () => {
+    if (!canRunShellFixtures) {
+      return;
+    }
+    const groupMembers = script.match(/^group_members\(\) \{[\s\S]*?^\}/m)?.[0];
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `
+      set -m
+      ${groupMembers}
+      (sleep 30 & sleep 31 & wait) &
+      command_pid=$!
+      trap 'kill -KILL -- -"$command_pid" 2>/dev/null; wait "$command_pid" 2>/dev/null' EXIT
+      sleep 0.2
+      group_members
+    `,
+      ],
+      { encoding: 'utf8' }
+    );
+    const records = result.stdout.trim().split('\n');
+    expect(records.length).toBeGreaterThan(1);
+    const children = records.filter((line) => /sleep 3[01]$/.test(line));
+    expect(children.length).toBe(2);
+    for (const child of children) {
+      expect(child).not.toContain('\\n');
+    }
   });
 });

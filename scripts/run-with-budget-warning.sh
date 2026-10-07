@@ -165,7 +165,7 @@ group_members() {
         pid = $2; user = $4
         $1 = ""; $2 = ""; $3 = ""; $4 = ""
         sub(/^ +/, "")
-        printf "%s %s %s\\n", pid, user, $0
+        printf "%s %s %s\n", pid, user, $0
       }'
 }
 

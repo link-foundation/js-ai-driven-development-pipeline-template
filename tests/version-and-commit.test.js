@@ -12,7 +12,7 @@ describe('version-and-commit.mjs formats the release commit', () => {
     const staged = script.indexOf('await $`git add -A`');
     const checkCall = script.indexOf('await checkStagedFormatting();');
     const prettier = formatting.indexOf("'prettier', '--check'");
-    const commit = script.indexOf('await $`git commit');
+    const commit = script.indexOf("await runStrict('git', ['commit'");
 
     expect(staged).toBeGreaterThan(-1);
     expect(prettier).toBeGreaterThan(-1);
