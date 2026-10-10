@@ -4,13 +4,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-status-gate-covers-all-jobs.mjs', import.meta.url)
 );
-// The checker fixtures spawn node and write outside the sandbox, which the
-// Deno leg's `--allow-read`-only test run cannot do.
-const canRunCheckerFixtures = typeof Deno === 'undefined';
 const releaseWorkflow = readFileSync(
   '.github/workflows/release.yml',
   'utf8'
@@ -30,75 +28,72 @@ function writeWorkflow(dir, name, lines) {
 }
 
 describe('check-status-gate-covers-all-jobs.mjs', () => {
-  it('confirms the shipped release workflow is fully covered', () => {
-    if (!canRunCheckerFixtures) {
-      return;
-    }
-    const result = runChecker(['.github/workflows/release.yml']);
+  itUnless(sandboxed)(
+    'confirms the shipped release workflow is fully covered',
+    () => {
+      const result = runChecker(['.github/workflows/release.yml']);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      '.github/workflows/release.yml: pipeline-status covers all 16 other job(s).'
-    );
-  });
-
-  it('names the uncovered job when a job is dropped from needs', () => {
-    if (!canRunCheckerFixtures) {
-      return;
-    }
-    const holed = releaseWorkflow
-      .split('\n')
-      .filter((line) => line !== '      - validate-docs')
-      .join('\n');
-    const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
-    const filePath = writeWorkflow(dir, 'holed.yml', holed.split('\n'));
-
-    try {
-      const result = runChecker([filePath]);
-
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(
-        `job 'validate-docs' is not in pipeline-status.needs; its failure cannot fail the run`
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        '.github/workflows/release.yml: pipeline-status covers all 16 other job(s).'
       );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
     }
-  });
+  );
 
-  it('exits 2 when the workflow has no terminal status gate at all', () => {
-    if (!canRunCheckerFixtures) {
-      return;
+  itUnless(sandboxed)(
+    'names the uncovered job when a job is dropped from needs',
+    () => {
+      const holed = releaseWorkflow
+        .split('\n')
+        .filter((line) => line !== '      - validate-docs')
+        .join('\n');
+      const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
+      const filePath = writeWorkflow(dir, 'holed.yml', holed.split('\n'));
+
+      try {
+        const result = runChecker([filePath]);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(
+          `job 'validate-docs' is not in pipeline-status.needs; its failure cannot fail the run`
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
-    const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
-    const filePath = writeWorkflow(dir, 'gateless.yml', [
-      'name: Gateless',
-      '',
-      'on: push',
-      '',
-      'jobs:',
-      '  build:',
-      '    runs-on: ubuntu-latest',
-      '    steps:',
-      '      - run: "true"',
-      '',
-    ]);
+  );
 
-    try {
-      const result = runChecker([filePath]);
+  itUnless(sandboxed)(
+    'exits 2 when the workflow has no terminal status gate at all',
+    () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
+      const filePath = writeWorkflow(dir, 'gateless.yml', [
+        'name: Gateless',
+        '',
+        'on: push',
+        '',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: "true"',
+        '',
+      ]);
 
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain(
-        "no 'pipeline-status' job: this workflow has no terminal status gate"
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+      try {
+        const result = runChecker([filePath]);
+
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain(
+          "no 'pipeline-status' job: this workflow has no terminal status gate"
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
-  it('accepts a differently named gate via --gate', () => {
-    if (!canRunCheckerFixtures) {
-      return;
-    }
+  itUnless(sandboxed)('accepts a differently named gate via --gate', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
     const filePath = writeWorkflow(dir, 'named.yml', [
       'name: Named gate',
@@ -129,10 +124,7 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
     }
   });
 
-  it('parses the flow form of needs', () => {
-    if (!canRunCheckerFixtures) {
-      return;
-    }
+  itUnless(sandboxed)('parses the flow form of needs', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'gate-coverage-'));
     const filePath = writeWorkflow(dir, 'flow.yml', [
       'name: Flow needs',
@@ -183,22 +175,22 @@ describe('check-status-gate-covers-all-jobs.mjs', () => {
 });
 
 describe('check-status-gate-covers-all-jobs.mjs shipped coverage', () => {
-  it('confirms every other shipped workflow is fully covered', () => {
-    if (!canRunCheckerFixtures) {
-      return;
-    }
-    const expectedJobs = {
-      'links.yml': 'covers all 1 other job(s).',
-      'security.yml': 'covers all 3 other job(s).',
-      'workflows.yml': 'covers all 3 other job(s).',
-      'example-app.yml': 'covers all 6 other job(s).',
-    };
+  itUnless(sandboxed)(
+    'confirms every other shipped workflow is fully covered',
+    () => {
+      const expectedJobs = {
+        'links.yml': 'covers all 1 other job(s).',
+        'security.yml': 'covers all 3 other job(s).',
+        'workflows.yml': 'covers all 3 other job(s).',
+        'example-app.yml': 'covers all 6 other job(s).',
+      };
 
-    for (const [name, message] of Object.entries(expectedJobs)) {
-      const result = runChecker([`.github/workflows/${name}`]);
+      for (const [name, message] of Object.entries(expectedJobs)) {
+        const result = runChecker([`.github/workflows/${name}`]);
 
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain(`${name}: pipeline-status ${message}`);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain(`${name}: pipeline-status ${message}`);
+      }
     }
-  });
+  );
 });

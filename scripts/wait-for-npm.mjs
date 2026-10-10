@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { buildPackageVersionUrl } from './npm-registry.mjs';
 import { formatNpmPackageVersion, readPackageInfo } from './package-info.mjs';
 
-const DEFAULT_MAX_ATTEMPTS = 92;
+// The first check is immediate; 153 ten-second sleeps span 25.5 minutes.
+const DEFAULT_MAX_ATTEMPTS = 154;
 const NPM_REGISTRY_USER_AGENT =
   'js-ai-driven-development-pipeline-template wait-for-npm';
 const DEFAULT_SLEEP_SECONDS = 10;

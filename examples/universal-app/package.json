@@ -5,6 +5,11 @@
   "description": "Universal React example for the JavaScript template package",
   "type": "module",
   "main": "electron/main.cjs",
+  "allowScripts": {
+    "electron-winstaller": true,
+    "esbuild": true,
+    "fsevents": true
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",

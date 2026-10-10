@@ -13,15 +13,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 
-import { describe, it, expect } from 'test-anywhere';
+import { describe, expect } from 'test-anywhere';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/merge-changesets.mjs', import.meta.url)
 );
-const canRunCliFixtures =
-  typeof Deno === 'undefined' &&
-  typeof process !== 'undefined' &&
-  process.execPath;
 
 function createFixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'merge-changesets-'));
@@ -52,8 +49,9 @@ function runMergeChangesets(root, extraEnv = {}) {
 }
 
 describe('merge-changesets.mjs', () => {
-  if (canRunCliFixtures) {
-    it('fails without merging when any changeset has an unparseable bump type', () => {
+  itUnless(sandboxed)(
+    'fails without merging when any changeset has an unparseable bump type',
+    () => {
       const { changesetDir, root } = createFixture();
 
       try {
@@ -93,9 +91,12 @@ This note must not be silently dropped.
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('brackets contributor-authored descriptions as untrusted Actions output', () => {
+  itUnless(sandboxed)(
+    'brackets contributor-authored descriptions as untrusted Actions output',
+    () => {
       const { changesetDir, root } = createFixture();
 
       try {
@@ -132,6 +133,6 @@ ordinary release note
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
-  }
+    }
+  );
 });

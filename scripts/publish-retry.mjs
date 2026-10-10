@@ -12,9 +12,9 @@
  * failure.
  */
 
-// 34 checks span 15.5 minutes with the backoff below. Recent accepted npm
-// publishes took over five minutes to reach the public read path.
-export const DEFAULT_VERIFY_ATTEMPTS = 34;
+// 54 checks span 25.5 minutes, giving headroom beyond observed 874-second
+// propagation delays while staying inside the CI publish step's 30-minute budget.
+export const DEFAULT_VERIFY_ATTEMPTS = 54;
 export const DEFAULT_VERIFY_INITIAL_DELAY = 2000;
 export const DEFAULT_VERIFY_MAX_DELAY = 30000;
 
@@ -86,8 +86,10 @@ export async function waitForVersionOnRegistry({
 }) {
   let delay = initialDelay;
   let lastError = null;
+  let waitedMs = 0;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     await sleepFn(delay);
+    waitedMs += delay;
     let found = false;
     try {
       found = await verify();
@@ -97,7 +99,9 @@ export async function waitForVersionOnRegistry({
       log(`Verification attempt ${attempt} errored: ${error.message}`);
     }
     if (found) {
-      log(`Verification succeeded on attempt ${attempt}`);
+      log(
+        `Verification succeeded on attempt ${attempt} (after ~${waitedMs / 1000}s)`
+      );
       return true;
     }
     log(
@@ -105,6 +109,9 @@ export async function waitForVersionOnRegistry({
     );
     delay = Math.min(delay * 2, maxDelay);
   }
+  log(
+    `Verification exhausted after ${attempts} attempts (after ~${waitedMs / 1000}s)`
+  );
   if (lastError) {
     throw new Error(
       `Registry verification ended in an unknown state: ${lastError.message}`,

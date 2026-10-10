@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const SCRIPT = 'scripts/preflight-credentials.sh';
 // PATH entries are directories, so the stub lives at
@@ -83,7 +84,7 @@ function runPreflight(env, fixtureDir) {
   });
 }
 
-describe('release-preflight workflow wiring (issues #176, #181)', () => {
+describe('release-preflight workflow wiring', () => {
   it('runs the preflight job before anything can publish', () => {
     expect(WORKFLOW).toContain('  release-preflight:');
     expect(WORKFLOW).toContain('bash scripts/preflight-credentials.sh');
@@ -157,162 +158,61 @@ describe('release-preflight workflow wiring (issues #176, #181)', () => {
 });
 
 describe('release-preflight probe behaviour (offline, curl stub)', () => {
-  // The probe fixtures spawn bash and write outside the sandbox, which the
-  // Deno leg's `--allow-read`-only test run cannot do.
-  if (typeof Deno !== 'undefined') {
-    return;
-  }
+  itUnless(sandboxed)(
+    'passes in release mode when OIDC publishing is available',
+    async () => {
+      const fixtures = makeFixtures();
+      const { code, stdout } = await runPreflight(
+        { PREFLIGHT_MODE: 'release', ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL },
+        fixtures
+      );
 
-  it('passes in release mode when OIDC publishing is available', async () => {
-    const fixtures = makeFixtures();
-    const { code, stdout } = await runPreflight(
-      { PREFLIGHT_MODE: 'release', ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL },
-      fixtures
-    );
+      expect(code).toBe(0);
+      expect(stdout).toContain('npm OIDC package exchange verified');
+      expect(readFileSync(join(fixtures, 'requests'), 'utf8')).toContain(
+        'audience=npm%3Aregistry.npmjs.org'
+      );
+      expect(readFileSync(join(fixtures, 'requests'), 'utf8')).toContain(
+        '/exchange/package/%40link-foundation%2Fexample-package-name'
+      );
+      expect(stdout).not.toContain('private-fixture');
+    }
+  );
 
-    expect(code).toBe(0);
-    expect(stdout).toContain('npm OIDC package exchange verified');
-    expect(readFileSync(join(fixtures, 'requests'), 'utf8')).toContain(
-      'audience=npm%3Aregistry.npmjs.org'
-    );
-    expect(readFileSync(join(fixtures, 'requests'), 'utf8')).toContain(
-      '/exchange/package/%40link-foundation%2Fexample-package-name'
-    );
-    expect(stdout).not.toContain('private-fixture');
-  });
+  itUnless(sandboxed)(
+    'fails in release mode when there is nothing to publish with',
+    async () => {
+      const fixtures = makeFixtures();
+      const { code, stdout } = await runPreflight(
+        { PREFLIGHT_MODE: 'release' },
+        fixtures
+      );
 
-  it('fails in release mode when there is nothing to publish with', async () => {
-    const fixtures = makeFixtures();
-    const { code, stdout } = await runPreflight(
-      { PREFLIGHT_MODE: 'release' },
-      fixtures
-    );
+      expect(code).toBe(1);
+      expect(stdout).toContain('::error::');
+      expect(stdout).toContain('npm has no publish path');
+    }
+  );
 
-    expect(code).toBe(1);
-    expect(stdout).toContain('::error::');
-    expect(stdout).toContain('npm has no publish path');
-  });
+  itUnless(sandboxed)(
+    'passes in report mode when there is nothing to publish with',
+    async () => {
+      const fixtures = makeFixtures();
+      const { code, stdout } = await runPreflight(
+        { PREFLIGHT_MODE: 'report' },
+        fixtures
+      );
 
-  it('passes in report mode when there is nothing to publish with', async () => {
-    const fixtures = makeFixtures();
-    const { code, stdout } = await runPreflight(
-      { PREFLIGHT_MODE: 'report' },
-      fixtures
-    );
+      expect(code).toBe(0);
+      expect(stdout).toContain('::warning::');
+      expect(stdout).toContain('Report mode');
+    }
+  );
 
-    expect(code).toBe(0);
-    expect(stdout).toContain('::warning::');
-    expect(stdout).toContain('Report mode');
-  });
-
-  it('verifies the Docker Hub write when the registry accepts it', async () => {
-    const fixtures = makeFixtures({ postStatus: 202 });
-    const { code, stdout } = await runPreflight(
-      {
-        PREFLIGHT_MODE: 'release',
-        ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
-        DOCKERHUB_IMAGE: 'acme/widget',
-        DOCKERHUB_USERNAME: 'acme',
-        DOCKERHUB_TOKEN: 'stub',
-      },
-      fixtures
-    );
-
-    expect(code).toBe(0);
-    expect(stdout).toContain('accepted a blob-upload write for acme/widget');
-  });
-
-  it('fails in release mode when Docker Hub refuses the write', async () => {
-    const fixtures = makeFixtures({ postStatus: 403 });
-    const { code, stdout } = await runPreflight(
-      {
-        PREFLIGHT_MODE: 'release',
-        ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
-        DOCKERHUB_IMAGE: 'acme/widget',
-        DOCKERHUB_USERNAME: 'acme',
-        DOCKERHUB_TOKEN: 'stub',
-      },
-      fixtures
-    );
-
-    expect(code).toBe(1);
-    expect(stdout).toContain('::error::');
-    expect(stdout).toContain('refused the write for acme/widget (403)');
-  });
-
-  it('never blocks a pull request on a refused credential', async () => {
-    const fixtures = makeFixtures({ postStatus: 403 });
-    const { code, stdout } = await runPreflight(
-      {
-        PREFLIGHT_MODE: 'report',
-        ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
-        DOCKERHUB_IMAGE: 'acme/widget',
-        DOCKERHUB_USERNAME: 'acme',
-        DOCKERHUB_TOKEN: 'stub',
-      },
-      fixtures
-    );
-
-    expect(code).toBe(0);
-    expect(stdout).toContain('::warning::');
-    expect(stdout).toContain('refused the write for acme/widget (403)');
-  });
-
-  it('blocks release when any configured target remains unknown', async () => {
-    const fixtures = makeFixtures({ postStatus: 429 });
-    const { code, stdout } = await runPreflight(
-      {
-        PREFLIGHT_MODE: 'release',
-        ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
-        DOCKERHUB_IMAGE: 'acme/widget',
-        DOCKERHUB_USERNAME: 'acme',
-        DOCKERHUB_TOKEN: 'stub',
-      },
-      fixtures
-    );
-
-    expect(code).toBe(1);
-    expect(stdout).toContain('rate-limited the write probe (429)');
-  });
-
-  it('fails in release mode when npm rejects the token', async () => {
-    const fixtures = makeFixtures({ whoamiStatus: 401 });
-    const { code, stdout } = await runPreflight(
-      {
-        PREFLIGHT_MODE: 'release',
-        ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
-        NPM_TOKEN: 'stub-expired-token',
-      },
-      fixtures
-    );
-
-    expect(code).toBe(1);
-    expect(stdout).toContain('::error::');
-    expect(stdout).toContain('npm rejected NPM_TOKEN (401 Unauthorized)');
-  });
-
-  it('fails in release mode when it verified nothing', async () => {
-    // No OIDC URL, an unknown-answering registry (500 has not said the token
-    // is broken), and Docker publishing disabled: zero verified probes.
-    const fixtures = makeFixtures({ whoamiStatus: 500 });
-    const { code, stdout } = await runPreflight(
-      { PREFLIGHT_MODE: 'release', NPM_TOKEN: 'stub-token' },
-      fixtures
-    );
-
-    expect(code).toBe(1);
-    expect(stdout).toContain('::error::');
-    expect(stdout).toContain('verified nothing');
-  });
-});
-
-describe('npm OIDC package exchange regression', () => {
-  if (typeof Deno !== 'undefined') {
-    return;
-  }
-  for (const exchangeStatus of [401, 403, 404, 429, 500, 0]) {
-    it(`does not allow Docker success to hide npm exchange status ${exchangeStatus}`, async () => {
-      const fixtures = makeFixtures({ exchangeStatus });
+  itUnless(sandboxed)(
+    'verifies the Docker Hub write when the registry accepts it',
+    async () => {
+      const fixtures = makeFixtures({ postStatus: 202 });
       const { code, stdout } = await runPreflight(
         {
           PREFLIGHT_MODE: 'release',
@@ -323,10 +223,134 @@ describe('npm OIDC package exchange regression', () => {
         },
         fixtures
       );
+
+      expect(code).toBe(0);
+      expect(stdout).toContain('accepted a blob-upload write for acme/widget');
+    }
+  );
+
+  itUnless(sandboxed)(
+    'fails in release mode when Docker Hub refuses the write',
+    async () => {
+      const fixtures = makeFixtures({ postStatus: 403 });
+      const { code, stdout } = await runPreflight(
+        {
+          PREFLIGHT_MODE: 'release',
+          ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+          DOCKERHUB_IMAGE: 'acme/widget',
+          DOCKERHUB_USERNAME: 'acme',
+          DOCKERHUB_TOKEN: 'stub',
+        },
+        fixtures
+      );
+
       expect(code).toBe(1);
-      expect(stdout).not.toContain('npm OIDC package exchange verified');
-      expect(stdout).not.toContain('private-fixture');
-    });
+      expect(stdout).toContain('::error::');
+      expect(stdout).toContain('refused the write for acme/widget (403)');
+    }
+  );
+
+  itUnless(sandboxed)(
+    'never blocks a pull request on a refused credential',
+    async () => {
+      const fixtures = makeFixtures({ postStatus: 403 });
+      const { code, stdout } = await runPreflight(
+        {
+          PREFLIGHT_MODE: 'report',
+          ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+          DOCKERHUB_IMAGE: 'acme/widget',
+          DOCKERHUB_USERNAME: 'acme',
+          DOCKERHUB_TOKEN: 'stub',
+        },
+        fixtures
+      );
+
+      expect(code).toBe(0);
+      expect(stdout).toContain('::warning::');
+      expect(stdout).toContain('refused the write for acme/widget (403)');
+    }
+  );
+
+  itUnless(sandboxed)(
+    'blocks release when any configured target remains unknown',
+    async () => {
+      const fixtures = makeFixtures({ postStatus: 429 });
+      const { code, stdout } = await runPreflight(
+        {
+          PREFLIGHT_MODE: 'release',
+          ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+          DOCKERHUB_IMAGE: 'acme/widget',
+          DOCKERHUB_USERNAME: 'acme',
+          DOCKERHUB_TOKEN: 'stub',
+        },
+        fixtures
+      );
+
+      expect(code).toBe(1);
+      expect(stdout).toContain('rate-limited the write probe (429)');
+    }
+  );
+});
+
+describe('release-preflight npm token diagnostics', () => {
+  itUnless(sandboxed)(
+    'fails in release mode when npm rejects the token',
+    async () => {
+      const fixtures = makeFixtures({ whoamiStatus: 401 });
+      const { code, stdout } = await runPreflight(
+        {
+          PREFLIGHT_MODE: 'release',
+          ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+          NPM_TOKEN: 'stub-expired-token',
+        },
+        fixtures
+      );
+
+      expect(code).toBe(1);
+      expect(stdout).toContain('::error::');
+      expect(stdout).toContain('npm rejected NPM_TOKEN (401 Unauthorized)');
+    }
+  );
+
+  itUnless(sandboxed)(
+    'fails in release mode when it verified nothing',
+    async () => {
+      // No OIDC URL, an unknown-answering registry (500 has not said the token
+      // is broken), and Docker publishing disabled: zero verified probes.
+      const fixtures = makeFixtures({ whoamiStatus: 500 });
+      const { code, stdout } = await runPreflight(
+        { PREFLIGHT_MODE: 'release', NPM_TOKEN: 'stub-token' },
+        fixtures
+      );
+
+      expect(code).toBe(1);
+      expect(stdout).toContain('::error::');
+      expect(stdout).toContain('verified nothing');
+    }
+  );
+});
+
+describe('npm OIDC package exchange regression', () => {
+  for (const exchangeStatus of [401, 403, 404, 429, 500, 0]) {
+    itUnless(sandboxed)(
+      `does not allow Docker success to hide npm exchange status ${exchangeStatus}`,
+      async () => {
+        const fixtures = makeFixtures({ exchangeStatus });
+        const { code, stdout } = await runPreflight(
+          {
+            PREFLIGHT_MODE: 'release',
+            ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+            DOCKERHUB_IMAGE: 'acme/widget',
+            DOCKERHUB_USERNAME: 'acme',
+            DOCKERHUB_TOKEN: 'stub',
+          },
+          fixtures
+        );
+        expect(code).toBe(1);
+        expect(stdout).not.toContain('npm OIDC package exchange verified');
+        expect(stdout).not.toContain('private-fixture');
+      }
+    );
   }
   for (const response of [
     'invalid JSON',
@@ -334,30 +358,36 @@ describe('npm OIDC package exchange regression', () => {
     '{"token":42}',
     '{"token":""}',
   ]) {
-    it(`rejects malformed npm exchange body ${response}`, async () => {
+    itUnless(sandboxed)(
+      `rejects malformed npm exchange body ${response}`,
+      async () => {
+        const fixtures = makeFixtures();
+        writeFileSync(join(fixtures, 'exchange.json'), response);
+        const { code, stdout } = await runPreflight(
+          { PREFLIGHT_MODE: 'release', ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL },
+          fixtures
+        );
+        expect(code).toBe(1);
+        expect(stdout).not.toContain('npm OIDC package exchange verified');
+      }
+    );
+  }
+  itUnless(sandboxed)(
+    'rejects malformed JWT responses without exchanging them',
+    async () => {
       const fixtures = makeFixtures();
-      writeFileSync(join(fixtures, 'exchange.json'), response);
-      const { code, stdout } = await runPreflight(
+      writeFileSync(join(fixtures, 'oidc.json'), '{}');
+      const { code } = await runPreflight(
         { PREFLIGHT_MODE: 'release', ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL },
         fixtures
       );
       expect(code).toBe(1);
-      expect(stdout).not.toContain('npm OIDC package exchange verified');
-    });
-  }
-  it('rejects malformed JWT responses without exchanging them', async () => {
-    const fixtures = makeFixtures();
-    writeFileSync(join(fixtures, 'oidc.json'), '{}');
-    const { code } = await runPreflight(
-      { PREFLIGHT_MODE: 'release', ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL },
-      fixtures
-    );
-    expect(code).toBe(1);
-    expect(readFileSync(join(fixtures, 'requests'), 'utf8')).not.toContain(
-      '/exchange/'
-    );
-  });
-  it('rejects a missing GitHub request token', async () => {
+      expect(readFileSync(join(fixtures, 'requests'), 'utf8')).not.toContain(
+        '/exchange/'
+      );
+    }
+  );
+  itUnless(sandboxed)('rejects a missing GitHub request token', async () => {
     const fixtures = makeFixtures();
     const { code } = await runPreflight(
       {
@@ -369,18 +399,21 @@ describe('npm OIDC package exchange regression', () => {
     );
     expect(code).toBe(1);
   });
-  it('preserves the token bootstrap path when npm reports a nonexistent package', async () => {
-    const fixtures = makeFixtures({ exchangeStatus: 404 });
-    const { code, stdout } = await runPreflight(
-      {
-        PREFLIGHT_MODE: 'release',
-        ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
-        NPM_TOKEN: 'stub',
-      },
-      fixtures
-    );
-    expect(code).toBe(0);
-    expect(stdout).toContain('bootstrap');
-    expect(stdout).not.toContain('npm OIDC package exchange verified');
-  });
+  itUnless(sandboxed)(
+    'preserves the token bootstrap path when npm reports a nonexistent package',
+    async () => {
+      const fixtures = makeFixtures({ exchangeStatus: 404 });
+      const { code, stdout } = await runPreflight(
+        {
+          PREFLIGHT_MODE: 'release',
+          ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+          NPM_TOKEN: 'stub',
+        },
+        fixtures
+      );
+      expect(code).toBe(0);
+      expect(stdout).toContain('bootstrap');
+      expect(stdout).not.toContain('npm OIDC package exchange verified');
+    }
+  );
 });

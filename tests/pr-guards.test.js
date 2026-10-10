@@ -1,12 +1,13 @@
-import { describe, it, expect } from 'test-anywhere';
+import { blankEnv } from './helpers/env.js';
+import { describe, expect } from 'test-anywhere';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const scripts = resolve('scripts');
 const fragment = "---\n'fixture': patch\n---\n\nFix fixture\n";
-const canSpawn = typeof Deno === 'undefined';
 
 function fixture(run, { root = '.', existing = false } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'pr-guard-'));
@@ -39,16 +40,11 @@ function fixture(run, { root = '.', existing = false } = {}) {
     git('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const base = git('rev-parse', 'HEAD');
     const invoke = (script, env = {}, args = []) => {
-      const cleanEnv = { ...process.env };
-      for (const key of Object.keys(cleanEnv)) {
-        if (
-          /^(GITHUB_|BASE_SHA$|HEAD_SHA$|CI$|JS_ROOT$|ALLOW_LOCAL_CHANGESET_SCAN$)/.test(
-            key
-          )
-        ) {
-          delete cleanEnv[key];
-        }
-      }
+      const cleanEnv = blankEnv(process.env, (key) =>
+        /^(GITHUB_|BASE_SHA$|HEAD_SHA$|CI$|JS_ROOT$|ALLOW_LOCAL_CHANGESET_SCAN$)/.test(
+          key
+        )
+      );
       return spawnSync(process.execPath, [join(scripts, script), ...args], {
         cwd,
         encoding: 'utf8',
@@ -62,10 +58,7 @@ function fixture(run, { root = '.', existing = false } = {}) {
 }
 
 describe('parsed version guard', () => {
-  if (!canSpawn) {
-    return;
-  }
-  it('accepts formatting with an unchanged version', () =>
+  itUnless(sandboxed)('accepts formatting with an unchanged version', () =>
     fixture(({ write, commit, invoke }) => {
       write(
         'package.json',
@@ -73,37 +66,48 @@ describe('parsed version guard', () => {
       );
       commit();
       expect(invoke('check-version.mjs').status).toBe(0);
-    }));
-  it('rejects a changed version', () =>
+    })
+  );
+  itUnless(sandboxed)('rejects a changed version', () =>
     fixture(({ write, commit, invoke }) => {
       write('package.json', '{"name":"fixture","version":"2.0.0"}\n');
       commit();
       expect(invoke('check-version.mjs').status).toBe(1);
-    }));
-  it('fails when the base ref is unavailable', () =>
+    })
+  );
+  itUnless(sandboxed)('fails when the base ref is unavailable', () =>
     fixture(({ invoke }) => {
       expect(
         invoke('check-version.mjs', { GITHUB_BASE_REF: 'missing' }).status
       ).toBe(1);
-    }));
-  it('fails when the explicitly requested PR head is unavailable', () =>
-    fixture(({ invoke }) => {
-      for (const script of ['check-version.mjs', 'validate-changeset.mjs']) {
-        expect(invoke(script, { GITHUB_HEAD_SHA: 'missing' }).status).toBe(1);
-      }
-    }));
-  it('rejects a branch name impersonating release automation', () =>
-    fixture(({ write, commit, invoke }) => {
-      write('package.json', '{"name":"fixture","version":"2.0.0"}\n');
-      commit();
-      for (const GITHUB_HEAD_REF of [
-        'changeset-release/main',
-        'changeset-manual-release-42',
-      ]) {
-        expect(invoke('check-version.mjs', { GITHUB_HEAD_REF }).status).toBe(1);
-      }
-    }));
-  it('rejects invalid JSON and missing versions', () =>
+    })
+  );
+  itUnless(sandboxed)(
+    'fails when the explicitly requested PR head is unavailable',
+    () =>
+      fixture(({ invoke }) => {
+        for (const script of ['check-version.mjs', 'validate-changeset.mjs']) {
+          expect(invoke(script, { GITHUB_HEAD_SHA: 'missing' }).status).toBe(1);
+        }
+      })
+  );
+  itUnless(sandboxed)(
+    'rejects a branch name impersonating release automation',
+    () =>
+      fixture(({ write, commit, invoke }) => {
+        write('package.json', '{"name":"fixture","version":"2.0.0"}\n');
+        commit();
+        for (const GITHUB_HEAD_REF of [
+          'changeset-release/main',
+          'changeset-manual-release-42',
+        ]) {
+          expect(invoke('check-version.mjs', { GITHUB_HEAD_REF }).status).toBe(
+            1
+          );
+        }
+      })
+  );
+  itUnless(sandboxed)('rejects invalid JSON and missing versions', () =>
     fixture(({ write, commit, invoke }) => {
       for (const text of [
         '{invalid',
@@ -114,17 +118,21 @@ describe('parsed version guard', () => {
         commit();
         expect(invoke('check-version.mjs').status).toBe(1);
       }
-    }));
-  it('checks the JavaScript manifest in a multi-language repository', () =>
-    fixture(
-      ({ write, commit, invoke }) => {
-        write('package.json', '{"name":"fixture","version":"2.0.0"}\n');
-        commit();
-        expect(invoke('check-version.mjs').status).toBe(1);
-      },
-      { root: 'js' }
-    ));
-  it('compares the PR manifest with its merge base', () =>
+    })
+  );
+  itUnless(sandboxed)(
+    'checks the JavaScript manifest in a multi-language repository',
+    () =>
+      fixture(
+        ({ write, commit, invoke }) => {
+          write('package.json', '{"name":"fixture","version":"2.0.0"}\n');
+          commit();
+          expect(invoke('check-version.mjs').status).toBe(1);
+        },
+        { root: 'js' }
+      )
+  );
+  itUnless(sandboxed)('compares the PR manifest with its merge base', () =>
     fixture(({ git, write, commit, invoke }) => {
       git('checkout', '-b', 'pr');
       write('README.md', '# Fixture\n');
@@ -141,61 +149,68 @@ describe('parsed version guard', () => {
           GITHUB_HEAD_SHA: head,
         }).status
       ).toBe(0);
-    }));
+    })
+  );
 });
 
 describe('PR changeset validation', () => {
-  if (!canSpawn) {
-    return;
-  }
-  it('does not accept a base fragment when the CI comparison fails', () =>
-    fixture(
-      ({ write, commit, invoke }) => {
-        write('index.js', 'export const value = 2;\n');
-        commit();
-        expect(
-          invoke('validate-changeset.mjs', {
-            CI: 'true',
-            GITHUB_BASE_REF: 'missing',
-          }).status
-        ).toBe(1);
-      },
-      { existing: true }
-    ));
-  it('requires an explicit opt-in to directory scanning locally', () =>
-    fixture(
-      ({ invoke }) => {
-        expect(
-          invoke('validate-changeset.mjs', { GITHUB_BASE_REF: 'missing' })
-            .status
-        ).toBe(1);
-        expect(
-          invoke('validate-changeset.mjs', {
-            GITHUB_BASE_REF: 'missing',
-            ALLOW_LOCAL_CHANGESET_SCAN: 'true',
-          }).status
-        ).toBe(0);
-        expect(
-          invoke('validate-changeset.mjs', {
-            GITHUB_BASE_REF: 'missing',
-            ALLOW_LOCAL_CHANGESET_SCAN: 'true',
-            CI: 'true',
-          }).status
-        ).toBe(1);
-      },
-      { existing: true }
-    ));
-  it('accepts exactly one added fragment and ignores existing ones', () =>
-    fixture(
-      ({ write, commit, invoke }) => {
-        write('index.js', 'export const value = 2;\n');
-        write('.changeset/new.md', fragment);
-        commit();
-        expect(invoke('validate-changeset.mjs').status).toBe(0);
-      },
-      { existing: true }
-    ));
-  it('does not count an edited existing fragment', () =>
+  itUnless(sandboxed)(
+    'does not accept a base fragment when the CI comparison fails',
+    () =>
+      fixture(
+        ({ write, commit, invoke }) => {
+          write('index.js', 'export const value = 2;\n');
+          commit();
+          expect(
+            invoke('validate-changeset.mjs', {
+              CI: 'true',
+              GITHUB_BASE_REF: 'missing',
+            }).status
+          ).toBe(1);
+        },
+        { existing: true }
+      )
+  );
+  itUnless(sandboxed)(
+    'requires an explicit opt-in to directory scanning locally',
+    () =>
+      fixture(
+        ({ invoke }) => {
+          expect(
+            invoke('validate-changeset.mjs', { GITHUB_BASE_REF: 'missing' })
+              .status
+          ).toBe(1);
+          expect(
+            invoke('validate-changeset.mjs', {
+              GITHUB_BASE_REF: 'missing',
+              ALLOW_LOCAL_CHANGESET_SCAN: 'true',
+            }).status
+          ).toBe(0);
+          expect(
+            invoke('validate-changeset.mjs', {
+              GITHUB_BASE_REF: 'missing',
+              ALLOW_LOCAL_CHANGESET_SCAN: 'true',
+              CI: 'true',
+            }).status
+          ).toBe(1);
+        },
+        { existing: true }
+      )
+  );
+  itUnless(sandboxed)(
+    'accepts exactly one added fragment and ignores existing ones',
+    () =>
+      fixture(
+        ({ write, commit, invoke }) => {
+          write('index.js', 'export const value = 2;\n');
+          write('.changeset/new.md', fragment);
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(0);
+        },
+        { existing: true }
+      )
+  );
+  itUnless(sandboxed)('does not count an edited existing fragment', () =>
     fixture(
       ({ write, commit, invoke }) => {
         write('index.js', 'export const value = 2;\n');
@@ -204,61 +219,78 @@ describe('PR changeset validation', () => {
         expect(invoke('validate-changeset.mjs').status).toBe(1);
       },
       { existing: true }
-    ));
-  it('rejects multiple added fragments and malformed frontmatter', () =>
-    fixture(({ git, write, commit, invoke }) => {
-      write('index.js', 'export const value = 2;\n');
-      write('.changeset/a.md', fragment);
-      write('.changeset/b.md', fragment);
-      commit();
-      expect(invoke('validate-changeset.mjs').status).toBe(1);
-      write(
-        '.changeset/b.md',
-        "Not frontmatter\n'fixture': patch\n---\n---\nFake\n"
-      );
-      git('rm', '.changeset/a.md');
-      commit();
-      expect(invoke('validate-changeset.mjs').status).toBe(1);
-    }));
-  it('exempts documentation-only changes', () =>
-    fixture(({ write, commit, invoke }) => {
-      write('README.md', '# Documentation\n');
-      commit();
-      expect(invoke('validate-changeset.mjs').status).toBe(0);
-    }));
-  it('validates optional fragments in documentation-only PRs', () =>
-    fixture(({ write, commit, invoke }) => {
-      write('README.md', '# Documentation\n');
-      write('.changeset/docs.md', 'Invalid fragment\n');
-      commit();
-      expect(invoke('validate-changeset.mjs').status).toBe(1);
-      write('.changeset/docs.md', fragment);
-      commit();
-      expect(invoke('validate-changeset.mjs').status).toBe(0);
-    }));
-  it('requires a fragment for multi-language JS code and handles spaces in names', () =>
-    fixture(
-      ({ write, commit, invoke }) => {
+    )
+  );
+  itUnless(sandboxed)(
+    'rejects multiple added fragments and malformed frontmatter',
+    () =>
+      fixture(({ git, write, commit, invoke }) => {
         write('index.js', 'export const value = 2;\n');
+        write('.changeset/a.md', fragment);
+        write('.changeset/b.md', fragment);
         commit();
         expect(invoke('validate-changeset.mjs').status).toBe(1);
-        write('.changeset/with spaces.md', fragment);
+        write(
+          '.changeset/b.md',
+          "Not frontmatter\n'fixture': patch\n---\n---\nFake\n"
+        );
+        git('rm', '.changeset/a.md');
+        commit();
+        expect(invoke('validate-changeset.mjs').status).toBe(1);
+      })
+  );
+});
+
+describe('PR changeset scope validation', () => {
+  itUnless(sandboxed)('exempts documentation-only changes', () =>
+    fixture(({ write, commit, invoke }) => {
+      write('README.md', '# Documentation\n');
+      commit();
+      expect(invoke('validate-changeset.mjs').status).toBe(0);
+    })
+  );
+  itUnless(sandboxed)(
+    'validates optional fragments in documentation-only PRs',
+    () =>
+      fixture(({ write, commit, invoke }) => {
+        write('README.md', '# Documentation\n');
+        write('.changeset/docs.md', 'Invalid fragment\n');
+        commit();
+        expect(invoke('validate-changeset.mjs').status).toBe(1);
+        write('.changeset/docs.md', fragment);
         commit();
         expect(invoke('validate-changeset.mjs').status).toBe(0);
-      },
-      { root: './js' }
-    ));
-  it('exempts unrelated language roots in a multi-language repository', () =>
-    fixture(
-      ({ cwd, commit, invoke }) => {
-        mkdirSync(join(cwd, 'rust'), { recursive: true });
-        writeFileSync(join(cwd, 'rust/lib.rs'), 'fn main() {}\n');
-        commit();
-        expect(invoke('validate-changeset.mjs').status).toBe(0);
-      },
-      { root: 'js' }
-    ));
-  it('counts PR fragments relative to the merge base', () =>
+      })
+  );
+  itUnless(sandboxed)(
+    'requires a fragment for multi-language JS code and handles spaces in names',
+    () =>
+      fixture(
+        ({ write, commit, invoke }) => {
+          write('index.js', 'export const value = 2;\n');
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(1);
+          write('.changeset/with spaces.md', fragment);
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(0);
+        },
+        { root: './js' }
+      )
+  );
+  itUnless(sandboxed)(
+    'exempts unrelated language roots in a multi-language repository',
+    () =>
+      fixture(
+        ({ cwd, commit, invoke }) => {
+          mkdirSync(join(cwd, 'rust'), { recursive: true });
+          writeFileSync(join(cwd, 'rust/lib.rs'), 'fn main() {}\n');
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(0);
+        },
+        { root: 'js' }
+      )
+  );
+  itUnless(sandboxed)('counts PR fragments relative to the merge base', () =>
     fixture(({ git, write, commit, invoke }) => {
       git('checkout', '-b', 'pr');
       write('index.js', 'export const value = 2;\n');
@@ -283,133 +315,146 @@ describe('PR changeset validation', () => {
           GITHUB_HEAD_SHA: git('rev-parse', 'HEAD'),
         }).status
       ).toBe(0);
-    }));
+    })
+  );
 });
 
 describe('exact changeset rename detection', () => {
-  if (!canSpawn) {
-    return;
-  }
   for (const root of ['.', 'js']) {
-    it(`does not count an unchanged pending fragment moved in ${root}`, () =>
+    itUnless(sandboxed)(
+      `does not count an unchanged pending fragment moved in ${root}`,
+      () =>
+        fixture(
+          ({ git, write, commit, invoke }) => {
+            write('index.js', 'export const value = 2;\n');
+            git(
+              'mv',
+              `${root}/.changeset/existing.md`,
+              `${root}/.changeset/moved fragment.md`
+            );
+            commit();
+            const result = invoke('validate-changeset.mjs');
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('No changeset found');
+            write('.changeset/new.md', `${fragment}New work\n`);
+            commit();
+            expect(invoke('validate-changeset.mjs').status).toBe(0);
+          },
+          { root, existing: true }
+        )
+    );
+  }
+  itUnless(sandboxed)(
+    'counts a new fragment replacing a similar deleted one',
+    () =>
       fixture(
         ({ git, write, commit, invoke }) => {
+          git('rm', '.changeset/existing.md');
           write('index.js', 'export const value = 2;\n');
-          git(
-            'mv',
-            `${root}/.changeset/existing.md`,
-            `${root}/.changeset/moved fragment.md`
-          );
-          commit();
-          const result = invoke('validate-changeset.mjs');
-          expect(result.status).toBe(1);
-          expect(result.stderr).toContain('No changeset found');
-          write('.changeset/new.md', `${fragment}New work\n`);
+          write('.changeset/replacement.md', `${fragment}New work\n`);
           commit();
           expect(invoke('validate-changeset.mjs').status).toBe(0);
         },
-        { root, existing: true }
-      ));
-  }
-  it('counts a new fragment replacing a similar deleted one', () =>
-    fixture(
-      ({ git, write, commit, invoke }) => {
-        git('rm', '.changeset/existing.md');
-        write('index.js', 'export const value = 2;\n');
-        write('.changeset/replacement.md', `${fragment}New work\n`);
-        commit();
-        expect(invoke('validate-changeset.mjs').status).toBe(0);
-      },
-      { existing: true }
-    ));
+        { existing: true }
+      )
+  );
   for (const [source, destination] of [
     ['index.js', 'docs/moved.md'],
     ['docs/source.md', 'moved.js'],
   ]) {
-    it(`requires a fragment when moving ${source} to ${destination}`, () =>
-      fixture(({ git, write, commit, invoke }) => {
-        write(source, 'export const moved = 1;\n');
-        commit();
-        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-        mkdirSync(
-          dirname(join(git('rev-parse', '--show-toplevel'), destination)),
-          {
-            recursive: true,
-          }
-        );
-        git('mv', source, destination);
-        commit();
-        expect(invoke('validate-changeset.mjs').status).toBe(1);
-      }));
+    itUnless(sandboxed)(
+      `requires a fragment when moving ${source} to ${destination}`,
+      () =>
+        fixture(({ git, write, commit, invoke }) => {
+          write(source, 'export const moved = 1;\n');
+          commit();
+          git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+          mkdirSync(
+            dirname(join(git('rev-parse', '--show-toplevel'), destination)),
+            {
+              recursive: true,
+            }
+          );
+          git('mv', source, destination);
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(1);
+        })
+    );
   }
-  it('parses NUL-separated rename paths without losing following additions', () =>
-    fixture(
-      ({ git, write, commit, invoke }) => {
-        const destination =
-          process.platform === 'win32'
-            ? '.changeset/moved fragment.md'
-            : '.changeset/moved\tfragment.md';
-        git('mv', '.changeset/existing.md', destination);
-        write('index.js', 'export const value = 2;\n');
-        write('.changeset/z-new.md', `${fragment}New work\n`);
-        commit();
-        expect(invoke('validate-changeset.mjs').status).toBe(0);
-      },
-      { existing: true }
-    ));
+  itUnless(sandboxed)(
+    'parses NUL-separated rename paths without losing following additions',
+    () =>
+      fixture(
+        ({ git, write, commit, invoke }) => {
+          const destination =
+            process.platform === 'win32'
+              ? '.changeset/moved fragment.md'
+              : '.changeset/moved\tfragment.md';
+          git('mv', '.changeset/existing.md', destination);
+          write('index.js', 'export const value = 2;\n');
+          write('.changeset/z-new.md', `${fragment}New work\n`);
+          commit();
+          expect(invoke('validate-changeset.mjs').status).toBe(0);
+        },
+        { existing: true }
+      )
+  );
 });
 
 describe('trusted release PR identity', () => {
-  if (!canSpawn) {
-    return;
-  }
-  it('preserves the exemption for the same-repository release actor only', () =>
-    fixture(({ cwd, write, commit, invoke }) => {
-      write('package.json', '{"name":"fixture","version":"2.0.0"}');
-      commit();
-      const eventPath = join(cwd, 'event.json');
-      const pr = {
-        user: { login: 'github-actions[bot]' },
-        head: {
-          ref: 'changeset-release/main',
-          repo: { full_name: 'fixture/repo' },
-        },
-        base: { repo: { full_name: 'fixture/repo' } },
-      };
-      const env = {
-        GITHUB_EVENT_PATH: eventPath,
-        GITHUB_REPOSITORY: 'fixture/repo',
-      };
-      writeFileSync(eventPath, JSON.stringify({ pull_request: pr }));
-      expect(invoke('check-version.mjs', env).status).toBe(0);
-      expect(invoke('validate-changeset.mjs', env).status).toBe(0);
-      pr.head.repo.full_name = 'attacker/fork';
-      writeFileSync(eventPath, JSON.stringify({ pull_request: pr }));
-      expect(invoke('check-version.mjs', env).status).toBe(1);
-      pr.head.repo.full_name = 'fixture/repo';
-      pr.user.login = 'human';
-      writeFileSync(eventPath, JSON.stringify({ pull_request: pr }));
-      expect(invoke('check-version.mjs', env).status).toBe(1);
-      expect(
-        invoke('check-version.mjs', { ...env, RELEASE_PR_ACTOR: 'human' })
-          .status
-      ).toBe(0);
-      expect(
-        invoke('check-version.mjs', { ...env, GITHUB_BASE_REF: 'missing' })
-          .status
-      ).toBe(1);
-    }));
-  it('treats shell metacharacters in an unavailable ref as data', () =>
-    fixture(({ cwd, invoke }) => {
-      const result = invoke('check-version.mjs', {
-        GITHUB_BASE_REF: 'missing; touch sentinel',
-      });
-      expect(result.status).toBe(1);
-      expect(
-        spawnSync('git', ['ls-files', '--others', '--exclude-standard'], {
-          cwd,
-          encoding: 'utf8',
-        }).stdout
-      ).toBe('');
-    }));
+  itUnless(sandboxed)(
+    'preserves the exemption for the same-repository release actor only',
+    () =>
+      fixture(({ cwd, write, commit, invoke }) => {
+        write('package.json', '{"name":"fixture","version":"2.0.0"}');
+        commit();
+        const eventPath = join(cwd, 'event.json');
+        const pr = {
+          user: { login: 'github-actions[bot]' },
+          head: {
+            ref: 'changeset-release/main',
+            repo: { full_name: 'fixture/repo' },
+          },
+          base: { repo: { full_name: 'fixture/repo' } },
+        };
+        const env = {
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_REPOSITORY: 'fixture/repo',
+        };
+        writeFileSync(eventPath, JSON.stringify({ pull_request: pr }));
+        expect(invoke('check-version.mjs', env).status).toBe(0);
+        expect(invoke('validate-changeset.mjs', env).status).toBe(0);
+        pr.head.repo.full_name = 'attacker/fork';
+        writeFileSync(eventPath, JSON.stringify({ pull_request: pr }));
+        expect(invoke('check-version.mjs', env).status).toBe(1);
+        pr.head.repo.full_name = 'fixture/repo';
+        pr.user.login = 'human';
+        writeFileSync(eventPath, JSON.stringify({ pull_request: pr }));
+        expect(invoke('check-version.mjs', env).status).toBe(1);
+        expect(
+          invoke('check-version.mjs', { ...env, RELEASE_PR_ACTOR: 'human' })
+            .status
+        ).toBe(0);
+        expect(
+          invoke('check-version.mjs', { ...env, GITHUB_BASE_REF: 'missing' })
+            .status
+        ).toBe(1);
+      })
+  );
+  itUnless(sandboxed)(
+    'treats shell metacharacters in an unavailable ref as data',
+    () =>
+      fixture(({ cwd, invoke }) => {
+        const result = invoke('check-version.mjs', {
+          GITHUB_BASE_REF: 'missing; touch sentinel',
+        });
+        expect(result.status).toBe(1);
+        expect(
+          spawnSync('git', ['ls-files', '--others', '--exclude-standard'], {
+            cwd,
+            encoding: 'utf8',
+          }).stdout
+        ).toBe('');
+      })
+  );
 });

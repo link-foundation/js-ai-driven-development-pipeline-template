@@ -5,13 +5,17 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/**'
-      - '.github/zizmor.yml'
+      - '.github/**'
+      - 'scripts/check-ci-workflows.mjs'
+      - 'scripts/check-status-gate-covers-all-jobs.mjs'
+      - 'scripts/check-pipeline-status.sh'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - '.github/workflows/**'
-      - '.github/zizmor.yml'
+      - '.github/**'
+      - 'scripts/check-ci-workflows.mjs'
+      - 'scripts/check-status-gate-covers-all-jobs.mjs'
+      - 'scripts/check-pipeline-status.sh'
   workflow_dispatch:
 
 # Least-privilege default; these jobs only need to read the checked-out tree.
@@ -104,7 +108,7 @@ jobs:
       # diff rather than a side effect of bumping the action, and documents
       # exactly which analyser reproduces a finding:
       #   pipx run zizmor==1.30.1 --config .github/zizmor.yml \
-      #     --min-confidence low --persona regular .github/workflows
+      #     --min-confidence low --persona regular .
       - uses: zizmorcore/zizmor-action@v0.6.4
         with:
           advanced-security: false
@@ -129,10 +133,12 @@ jobs:
       # nothing, and stays silent until someone reintroduces a mutable image.
       - name: Audit for pedantic-only high-severity findings
         timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pipx run zizmor==1.30.1 --config .github/zizmor.yml \
             --persona pedantic --min-severity high --min-confidence high \
-            .github/workflows .github/actions
+            .
 
   # Terminal status gate: runs even when the jobs above fail or are
   # cancelled, and turns a `timeout-minutes` kill (reported as cancelled)

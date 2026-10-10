@@ -11,16 +11,12 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/simulate-fresh-merge.sh', import.meta.url)
 );
 const script = readFileSync(scriptPath, 'utf8');
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunShellFixtures =
-  !isDenoRuntime &&
-  typeof process !== 'undefined' &&
-  process.platform !== 'win32';
 
 // A stand-in `git` whose fetch behaviour the test controls through a
 // counter file: the whole script runs hermetically, including its
@@ -90,36 +86,38 @@ describe('simulate-fresh-merge.sh', () => {
 });
 
 describe('simulate-fresh-merge.sh fetch retry', () => {
-  if (!canRunShellFixtures) {
-    return;
-  }
+  itUnless(sandboxed, noPosixShell)(
+    'survives a transient fetch failure',
+    () => {
+      const fake = createFakeGit({ failFirstFetches: 1 });
 
-  it('survives a transient fetch failure', () => {
-    const fake = createFakeGit({ failFirstFetches: 1 });
+      try {
+        const result = runFreshMerge(fake.binPath, fake.counterFile);
 
-    try {
-      const result = runFreshMerge(fake.binPath, fake.counterFile);
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toContain('attempt 1/5');
-      expect(result.stdout).toContain('No simulation needed');
-      expect(readFileSync(fake.counterFile, 'utf8').trim()).toBe('2');
-    } finally {
-      rmSync(fake.root, { recursive: true, force: true });
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain('attempt 1/5');
+        expect(result.stdout).toContain('No simulation needed');
+        expect(readFileSync(fake.counterFile, 'utf8').trim()).toBe('2');
+      } finally {
+        rmSync(fake.root, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
-  it('still fails when the base branch cannot be fetched at all', () => {
-    const fake = createFakeGit({ failFirstFetches: 99 });
+  itUnless(sandboxed, noPosixShell)(
+    'still fails when the base branch cannot be fetched at all',
+    () => {
+      const fake = createFakeGit({ failFirstFetches: 99 });
 
-    try {
-      const result = runFreshMerge(fake.binPath, fake.counterFile);
+      try {
+        const result = runFreshMerge(fake.binPath, fake.counterFile);
 
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain('failed 5 times');
-      expect(readFileSync(fake.counterFile, 'utf8').trim()).toBe('5');
-    } finally {
-      rmSync(fake.root, { recursive: true, force: true });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('failed 5 times');
+        expect(readFileSync(fake.counterFile, 'utf8').trim()).toBe('5');
+      } finally {
+        rmSync(fake.root, { recursive: true, force: true });
+      }
     }
-  });
+  );
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'test-anywhere';
+import { describe, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
@@ -11,15 +11,11 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/push-main-with-rebase-retry.mjs', import.meta.url)
 );
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunGitFixtures =
-  !isDenoRuntime &&
-  typeof process !== 'undefined' &&
-  process.platform !== 'win32';
 
 function runCommand(command, args, cwd) {
   const result = spawnSync(command, args, {
@@ -161,8 +157,9 @@ function installFakeGh({ binDir, remote, marker, stateDir }) {
 }
 
 describe('push-main-with-rebase-retry.mjs', () => {
-  if (canRunGitFixtures) {
-    it('rebases and retries when a generated-artifact push races another main writer', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'rebases and retries when a generated-artifact push races another main writer',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'push-main-retry-'));
       const remote = path.join(root, 'remote.git');
       const previewWriter = path.join(root, 'preview-writer');
@@ -215,9 +212,12 @@ describe('push-main-with-rebase-retry.mjs', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('lands the commit through a pull request when a ruleset declines the direct push', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'lands the commit through a pull request when a ruleset declines the direct push',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'push-main-ruleset-'));
       const remote = path.join(root, 'remote.git');
       const releaseWriter = path.join(root, 'release-writer');
@@ -298,9 +298,12 @@ describe('push-main-with-rebase-retry.mjs', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('fails fast on a rejection that neither a rebase nor a pull request can fix', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails fast on a rejection that neither a rebase nor a pull request can fix',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'push-main-auth-'));
       const worker = path.join(root, 'worker');
 
@@ -326,6 +329,6 @@ describe('push-main-with-rebase-retry.mjs', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
-  }
+    }
+  );
 });

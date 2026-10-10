@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
 const workflow = readFileSync(
   '.github/workflows/release.yml',
@@ -28,10 +29,6 @@ const scriptPath = fileURLToPath(
 const concurrencyReaderPath = fileURLToPath(
   new URL('../scripts/read-job-cancel-in-progress.sh', import.meta.url)
 );
-const canRunBash =
-  typeof Deno === 'undefined' &&
-  typeof process !== 'undefined' &&
-  process.platform !== 'win32';
 
 function listWorkflowJobs(source) {
   const jobsStart = source.indexOf('\njobs:\n');
@@ -124,8 +121,9 @@ describe('pipeline status gate', () => {
     );
   });
 
-  if (canRunBash) {
-    it('passes when jobs succeeded or were skipped', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'passes when jobs succeeded or were skipped',
+    () => {
       const result = runGate({
         lint: { result: 'success' },
         release: { result: 'skipped' },
@@ -134,31 +132,37 @@ describe('pipeline status gate', () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Failed jobs:    <none>');
       expect(result.stdout).toContain('Cancelled jobs: <none>');
-    });
+    }
+  );
 
-    it('fails for a failed job on every ref', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails for a failed job on every ref',
+    () => {
       const result = runGate({ lint: { result: 'failure' } });
 
       expect(result.status).toBe(1);
       expect(result.stdout).toContain(
         '::error title=Pipeline failed::Failing jobs: lint'
       );
-    });
+    }
+  );
 
-    it('fails for a cancelled job on main', () => {
-      const result = runGate({ release: { result: 'cancelled' } });
+  itUnless(sandboxed, noPosixShell)('fails for a cancelled job on main', () => {
+    const result = runGate({ release: { result: 'cancelled' } });
 
-      expect(result.status).toBe(1);
-      expect(result.stdout).toContain('Pipeline has cancelled jobs::release');
-    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('Pipeline has cancelled jobs::release');
+  });
 
-    it('fails closed for a cancellation without branch and workflow context', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails closed for a cancellation without branch and workflow context',
+    () => {
       const result = runGate({ test: { result: 'cancelled' } });
 
       expect(result.status).toBe(1);
       expect(result.stdout).toContain('Pipeline has cancelled jobs::test');
-    });
-  }
+    }
+  );
 });
 
 describe('pipeline status gate in every workflow', () => {
@@ -236,8 +240,9 @@ describe('pipeline status gate in every workflow', () => {
 describe('pipeline status supersede detection', () => {
   const cancelled = { lint: { result: 'cancelled' } };
 
-  if (canRunBash) {
-    it('errors when main is at the run commit (a genuine overrun)', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'errors when main is at the run commit (a genuine overrun)',
+    () => {
       const result = runGate(cancelled, {
         RUN_SHA: 'aaa111',
         BRANCH_HEAD_SHA: 'aaa111',
@@ -245,9 +250,12 @@ describe('pipeline status supersede detection', () => {
 
       expect(result.status).toBe(1);
       expect(result.stdout).toContain('Pipeline has cancelled jobs::lint');
-    });
+    }
+  );
 
-    it('warns only when a moved branch could cancel that exact job', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'warns only when a moved branch could cancel that exact job',
+    () => {
       const result = runGate(
         { 'link-checker': { result: 'cancelled' } },
         {
@@ -264,9 +272,12 @@ describe('pipeline status supersede detection', () => {
       expect(result.stdout).toContain(
         'This run tests aaa111; main is at bbb222.'
       );
-    });
+    }
+  );
 
-    it('does not excuse a non-cancellable job after the branch moves', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'does not excuse a non-cancellable job after the branch moves',
+    () => {
       const result = runGate(
         { 'docker-publish': { result: 'cancelled' } },
         {
@@ -281,9 +292,12 @@ describe('pipeline status supersede detection', () => {
       expect(result.stdout).toContain(
         'Pipeline has cancelled jobs::docker-publish'
       );
-    });
+    }
+  );
 
-    it('fails closed when cancel-in-progress is an expression', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails closed when cancel-in-progress is an expression',
+    () => {
       const result = runGate(cancelled, {
         RUN_SHA: 'aaa111',
         BRANCH_HEAD_SHA: 'bbb222',
@@ -292,9 +306,12 @@ describe('pipeline status supersede detection', () => {
 
       expect(result.status).toBe(1);
       expect(result.stdout).toContain('expression or otherwise unreadable');
-    });
+    }
+  );
 
-    it('errors when the branch head cannot be resolved', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'errors when the branch head cannot be resolved',
+    () => {
       const result = runGate(cancelled, {
         RUN_SHA: 'aaa111',
         GIT_REMOTE: 'no-such-remote',
@@ -303,21 +320,25 @@ describe('pipeline status supersede detection', () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('Could not resolve the head of main');
       expect(result.stdout).toContain('Pipeline has cancelled jobs::lint');
-    });
+    }
+  );
 
-    it('errors without a network call when RUN_SHA is missing', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'errors without a network call when RUN_SHA is missing',
+    () => {
       const result = runGate(cancelled);
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('RUN_SHA is unset');
       expect(result.stdout).toContain('Pipeline has cancelled jobs::lint');
-    });
-  }
+    }
+  );
 });
 
 describe('effective job cancellation policy reader', () => {
-  if (canRunBash) {
-    it('distinguishes literal, inherited, absent, missing, and expression values', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'distinguishes literal, inherited, absent, missing, and expression values',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'cancel-policy-'));
       const workflowPath = path.join(root, 'fixture.yml');
       writeFileSync(
@@ -369,9 +390,12 @@ describe('effective job cancellation policy reader', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('reports none when neither job nor workflow declares concurrency', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'reports none when neither job nor workflow declares concurrency',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'cancel-policy-'));
       const workflowPath = path.join(root, 'fixture.yml');
       writeFileSync(
@@ -394,6 +418,6 @@ describe('effective job cancellation policy reader', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
-  }
+    }
+  );
 });

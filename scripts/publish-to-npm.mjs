@@ -173,11 +173,7 @@ function analyzePublishResult(publishResult, commandError) {
     ? `${publishResult.stdout || ''}\n${publishResult.stderr || ''}`
     : '';
 
-  // Log the output for debugging
-  if (combinedOutput.trim()) {
-    console.log('Changeset output:', combinedOutput);
-  }
-
+  // command-stream mirrors captured output live; retain it for failure analysis.
   // Check for failure patterns in output (most reliable for changeset)
   const failurePattern = detectPublishFailure(combinedOutput);
   if (failurePattern) {

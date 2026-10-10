@@ -3,16 +3,10 @@ import { readFileSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { itUnless, sandboxed, noPosixShell } from './helpers/skip.js';
 
 const ACTION_PATH = '.github/actions/setup-buildx-resilient/action.yml';
 const action = readFileSync(ACTION_PATH, 'utf8');
-
-// The subprocess-driven cases need run/write/env access to drive the real
-// pre-pull script through a mock `docker`. Deno's CI invokes tests with
-// `deno test --allow-read` only, so they can't execute there — node and bun
-// run the full suite, and experiments/test-issue75-buildx-mirror-fallback.sh
-// covers the same logic offline. The static action.yml checks run everywhere.
-const CAN_RUN_SUBPROCESS = typeof globalThis.Deno === 'undefined';
 
 // Extract the first `run: |` block verbatim from the action so the test drives
 // the real pre-pull script (not a copy that can drift out of sync). The block
@@ -120,39 +114,46 @@ function runCase({ canonicalOk, mirrorOk }) {
   };
 }
 
-const describeSubprocess = CAN_RUN_SUBPROCESS ? describe : () => {};
+describe('setup-buildx-resilient pre-pull script', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'caches the canonical image and never touches the mirror when Docker Hub is healthy',
+    () => {
+      const result = runCase({ canonicalOk: true, mirrorOk: false });
 
-describeSubprocess('setup-buildx-resilient pre-pull script', () => {
-  it('caches the canonical image and never touches the mirror when Docker Hub is healthy', () => {
-    const result = runCase({ canonicalOk: true, mirrorOk: false });
+      expect(result.status).toBe(0);
+      expect(result.pulled).toContain('moby/buildkit:buildx-stable-1');
+      expect(result.calls).not.toContain('mirror.gcr.io');
+      expect(result.tagged.trim()).toBe('');
+    }
+  );
 
-    expect(result.status).toBe(0);
-    expect(result.pulled).toContain('moby/buildkit:buildx-stable-1');
-    expect(result.calls).not.toContain('mirror.gcr.io');
-    expect(result.tagged.trim()).toBe('');
-  });
+  itUnless(sandboxed, noPosixShell)(
+    'recovers via the mirror and re-tags to canonical when Docker Hub is down',
+    () => {
+      const result = runCase({ canonicalOk: false, mirrorOk: true });
 
-  it('recovers via the mirror and re-tags to canonical when Docker Hub is down (issue #75)', () => {
-    const result = runCase({ canonicalOk: false, mirrorOk: true });
+      expect(result.status).toBe(0);
+      expect(result.pulled).toContain(
+        'mirror.gcr.io/moby/buildkit:buildx-stable-1'
+      );
+      expect(result.tagged).toContain(
+        'tag mirror.gcr.io/moby/buildkit:buildx-stable-1 moby/buildkit:buildx-stable-1'
+      );
+    }
+  );
 
-    expect(result.status).toBe(0);
-    expect(result.pulled).toContain(
-      'mirror.gcr.io/moby/buildkit:buildx-stable-1'
-    );
-    expect(result.tagged).toContain(
-      'tag mirror.gcr.io/moby/buildkit:buildx-stable-1 moby/buildkit:buildx-stable-1'
-    );
-  });
+  itUnless(sandboxed, noPosixShell)(
+    'falls through non-fatally when both the registry and the mirror are down',
+    () => {
+      const result = runCase({ canonicalOk: false, mirrorOk: false });
 
-  it('falls through non-fatally when both the registry and the mirror are down', () => {
-    const result = runCase({ canonicalOk: false, mirrorOk: false });
-
-    // Non-fatal by design: the step still exits 0 so the buildx boot can try
-    // its own pull, preserving the previous worst-case behaviour.
-    expect(result.status).toBe(0);
-    expect(result.calls).toContain('mirror.gcr.io');
-    expect(result.output).toContain('could not pre-pull');
-  });
+      // Non-fatal by design: the step still exits 0 so the buildx boot can try
+      // its own pull, preserving the previous worst-case behaviour.
+      expect(result.status).toBe(0);
+      expect(result.calls).toContain('mirror.gcr.io');
+      expect(result.output).toContain('could not pre-pull');
+    }
+  );
 });
 
 describe('setup-buildx-resilient action.yml', () => {

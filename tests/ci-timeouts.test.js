@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'test-anywhere';
 import { readFileSync } from 'node:fs';
+import { waitForVersionOnRegistry } from '../scripts/publish-retry.mjs';
+import { parseArgs as parseWaitArgs } from '../scripts/wait-for-npm.mjs';
 
 const releaseWorkflow = readWorkflow('.github/workflows/release.yml');
 const linksWorkflow = readWorkflow('.github/workflows/links.yml');
@@ -277,10 +279,10 @@ describe('CI timeout policy', () => {
       lint: 10,
       test: 15,
       'validate-docs': 5,
-      release: 50,
-      'instant-release': 50,
+      release: 65,
+      'instant-release': 65,
       'docker-build': 30,
-      'docker-publish-config': 30,
+      'docker-publish-config': 45,
       'docker-publish-build': 30,
       'docker-publish': 30,
       'changeset-pr': 10,
@@ -343,6 +345,34 @@ describe('CI timeout policy', () => {
 const MAX_BUDGET_SHARE_PERCENT = 70;
 
 describe('CI execution budgets', () => {
+  it('lets publish and Docker waits complete their default propagation window', async () => {
+    let publishWaitSeconds = 0;
+    await waitForVersionOnRegistry({
+      verify: async () => false,
+      sleepFn: async (ms) => {
+        publishWaitSeconds += ms / 1000;
+      },
+      log: () => {},
+    });
+    const wait = parseWaitArgs([], {});
+    const dockerWaitSeconds = (wait.maxAttempts - 1) * wait.sleepSeconds;
+    for (const job of ['release', 'instant-release', 'docker-publish-config']) {
+      const label =
+        job === 'docker-publish-config'
+          ? 'Docker npm availability wait'
+          : 'npm publish and registry verification';
+      const pollingSeconds =
+        job === 'docker-publish-config'
+          ? dockerWaitSeconds
+          : publishWaitSeconds;
+      const budget = getStepBudgetSeconds(releaseWorkflow, job).find(
+        (entry) => entry.label === label
+      );
+      // Keep room for requests and publishing outside the sleep-only window.
+      expect(budget.seconds).toBeGreaterThan(pollingSeconds + 60);
+    }
+  });
+
   it('keeps every declared step budget under the job backstop', () => {
     const jobsWithBudgets = listWorkflowJobs(releaseWorkflow)
       .map((jobName) => ({

@@ -38,7 +38,7 @@ bun test --timeout 30000
 
 # Or with other runtimes:
 npm test
-deno test --allow-read
+deno test -A --parallel
 
 # Lint code
 bun run lint

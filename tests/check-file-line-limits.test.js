@@ -11,15 +11,11 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-file-line-limits.sh', import.meta.url)
 );
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunBashFixtures =
-  !isDenoRuntime &&
-  typeof process !== 'undefined' &&
-  process.platform !== 'win32';
 
 function lines(count) {
   return `${Array.from({ length: count }, (_, index) => `line-${index + 1}`).join('\n')}\n`;
@@ -70,8 +66,9 @@ describe('check-file-line-limits.sh scope', () => {
 });
 
 describe('check-file-line-limits.sh', () => {
-  if (canRunBashFixtures) {
-    it('warns without failing for files above the warning threshold', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'warns without failing for files above the warning threshold',
+    () => {
       const root = createFixture({
         'src/near-limit.mjs': 1351,
         '.github/workflows/release.yml': 1351,
@@ -99,9 +96,12 @@ describe('check-file-line-limits.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('still fails files over the hard limit', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'still fails files over the hard limit',
+    () => {
       const root = createFixture({
         'src/too-large.mjs': 1501,
       });
@@ -120,9 +120,12 @@ describe('check-file-line-limits.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('fails .js and .cjs files over the hard limit', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails .js and .cjs files over the hard limit',
+    () => {
       const root = createFixture({
         'src/too-large.js': 1501,
         'src/legacy.cjs': 1600,
@@ -144,9 +147,12 @@ describe('check-file-line-limits.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('fails Markdown files over the hard limit', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails Markdown files over the hard limit',
+    () => {
       const root = createFixture({
         'docs/HUGE.md': 1501,
       });
@@ -164,11 +170,14 @@ describe('check-file-line-limits.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    // release.yml was the one file this gate was written for; a rename to
-    // .yaml used to be reported as a WARNING inside an exiting-0 step.
-    it('fails workflow files under any name, including .yaml', () => {
+  // release.yml was the one file this gate was written for; a rename to
+  // .yaml used to be reported as a WARNING inside an exiting-0 step.
+  itUnless(sandboxed, noPosixShell)(
+    'fails workflow files under any name, including .yaml',
+    () => {
       const root = createFixture({
         '.github/workflows/release.yaml': 1501,
         'README.md': 1,
@@ -187,9 +196,12 @@ describe('check-file-line-limits.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('exempts case-study generated-data files from the limit', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'exempts case-study generated-data files from the limit',
+    () => {
       const root = createFixture({
         'docs/case-studies/issue-99/data/raw.md': 5000,
         'docs/case-studies/issue-99/data/sample.cjs': 5000,
@@ -211,15 +223,16 @@ describe('check-file-line-limits.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
-  }
+    }
+  );
 });
 
 // What the walk covers: exemptions, the tracked-file boundary, and the
 // "examined nothing" refusals.
 describe('check-file-line-limits.sh walk', () => {
-  if (canRunBashFixtures) {
-    it('never checks git-ignored build output', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'never checks git-ignored build output',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'line-limit-'));
       mkdirSync(path.join(root, 'dist'), { recursive: true });
       writeFileSync(path.join(root, '.gitignore'), 'dist/\n');
@@ -237,9 +250,12 @@ describe('check-file-line-limits.sh walk', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('exits 2 with an error when it examined nothing', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'exits 2 with an error when it examined nothing',
+    () => {
       const root = mkdtempSync(path.join(tmpdir(), 'line-limit-'));
       writeFileSync(path.join(root, 'only.txt'), 'not a matched extension\n');
       spawnSync('git', ['init', '-q'], { cwd: root });
@@ -255,23 +271,26 @@ describe('check-file-line-limits.sh walk', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('exits 2 outside a git repository', () => {
-      const root = mkdtempSync(path.join(tmpdir(), 'line-limit-'));
-      writeFileSync(path.join(root, 'README.md'), 'ok\n');
+  itUnless(sandboxed, noPosixShell)('exits 2 outside a git repository', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'line-limit-'));
+    writeFileSync(path.join(root, 'README.md'), 'ok\n');
 
-      try {
-        const result = runLineLimitCheck(root);
+    try {
+      const result = runLineLimitCheck(root);
 
-        expect(result.status).toBe(2);
-        expect(result.stderr).toContain('not inside a git repository');
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('not inside a git repository');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
-    it('normalizes padded wc output from BSD-like environments', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'normalizes padded wc output from BSD-like environments',
+    () => {
       const root = createFixture({
         'src/near-limit.mjs': 1351,
       });
@@ -301,6 +320,6 @@ awk 'END { printf "    %d\\n", NR }'
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
-  }
+    }
+  );
 });
