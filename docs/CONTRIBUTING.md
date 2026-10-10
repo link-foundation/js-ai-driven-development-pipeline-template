@@ -214,3 +214,7 @@ git push
 ## Questions?
 
 If you have questions about contributing, feel free to open an issue for discussion.
+
+## JavaScript-first mixed-language projects
+
+Follow [the JavaScript-first gate and single push workflow](javascript-first.md) before enabling production Rust jobs for a mixed-language project.
