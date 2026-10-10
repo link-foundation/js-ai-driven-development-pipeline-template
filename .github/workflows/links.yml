@@ -75,11 +75,12 @@ jobs:
             --max-cache-age 1d
             --max-retries 3
             --timeout 30
+            --hidden
+            --extensions md,html
             --exclude-path docs/case-studies
             --exclude-path examples/universal-app/index.html
             --exclude-path tests/fixtures
-            './**/*.md'
-            './**/*.html'
+            .
           # Don't fail the workflow immediately - we want to check web archive first
           fail: false
           # Output file for broken links report (used by check-web-archive.mjs)

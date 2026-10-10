@@ -304,10 +304,12 @@ describe('workflow reliability policy', () => {
     expect(viteSourceHtml).toContain('src="/src/main.js"');
     expect(linksWorkflow).toContain(`--exclude-path ${viteSourceHtmlPath}`);
     expectOrdered(linksWorkflow, [
+      '--hidden',
+      '--extensions md,html',
       '--exclude-path docs/case-studies',
       `--exclude-path ${viteSourceHtmlPath}`,
-      "'./**/*.md'",
-      "'./**/*.html'",
+      '--exclude-path tests/fixtures',
+      '\n            .',
     ]);
   });
 
@@ -349,7 +351,9 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).not.toContain('npx playwright install');
     expect(previewRegenJob).not.toContain('~/.cache/ms-playwright');
   });
+});
 
+describe('workflow artifact and writer reliability', () => {
   it('serializes main writers and retries generated pushes after rebasing', () => {
     const exampleAppWorkflow = readWorkflow(
       '.github/workflows/example-app.yml'

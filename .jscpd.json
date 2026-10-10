@@ -2,7 +2,7 @@
   "threshold": 10,
   "minTokens": 30,
   "minLines": 5,
-  "skipComments": true,
+  "mode": "weak",
   "ignore": [
     "**/node_modules/**",
     "**/build/**",
