@@ -1,3 +1,4 @@
+import { blankEnv } from './helpers/env.js';
 import { describe, it, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
 import {
@@ -10,14 +11,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
 const scriptPath = path.resolve('scripts/install-git-hooks.mjs');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunShellFixtures =
-  !isDenoRuntime &&
-  typeof process !== 'undefined' &&
-  process.platform !== 'win32';
 
 // The real husky always exits 0, and the real `git config --get` exits 1
 // exactly when hooks were never installed. These shims reproduce both
@@ -72,9 +69,7 @@ function makeWorkspace({ withGit }) {
 }
 
 function runPrepare(cwd, extraEnv = {}) {
-  const env = { ...process.env };
-  delete env.CI;
-  delete env.HUSKY;
+  const env = blankEnv(process.env, (name) => ['CI', 'HUSKY'].includes(name));
   return spawnSync('node', [scriptPath], {
     encoding: 'utf8',
     cwd,
@@ -93,66 +88,71 @@ describe('install-git-hooks.mjs', () => {
 });
 
 describe('install-git-hooks.mjs verification', () => {
-  if (!canRunShellFixtures) {
-    return;
-  }
+  itUnless(sandboxed, noPosixShell)(
+    'runs husky and passes when core.hooksPath is set',
+    () => {
+      const binPath = writeShims();
+      const workspace = makeWorkspace({ withGit: true });
+      const marker = path.join(workspace, 'npx-ran');
 
-  it('runs husky and passes when core.hooksPath is set', () => {
-    const binPath = writeShims();
-    const workspace = makeWorkspace({ withGit: true });
-    const marker = path.join(workspace, 'npx-ran');
+      try {
+        const result = runPrepare(workspace, {
+          PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
+          FAKE_HOOKS_PATH: '.husky/_',
+          FAKE_NPX_MARKER: marker,
+        });
 
-    try {
-      const result = runPrepare(workspace, {
-        PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
-        FAKE_HOOKS_PATH: '.husky/_',
-        FAKE_NPX_MARKER: marker,
-      });
-
-      expect(result.status).toBe(0);
-    } finally {
-      rmSync(binPath, { recursive: true, force: true });
-      rmSync(workspace, { recursive: true, force: true });
+        expect(result.status).toBe(0);
+      } finally {
+        rmSync(binPath, { recursive: true, force: true });
+        rmSync(workspace, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
-  it('fails when husky leaves core.hooksPath unset', () => {
-    const binPath = writeShims();
-    const workspace = makeWorkspace({ withGit: true });
+  itUnless(sandboxed, noPosixShell)(
+    'fails when husky leaves core.hooksPath unset',
+    () => {
+      const binPath = writeShims();
+      const workspace = makeWorkspace({ withGit: true });
 
-    try {
-      const result = runPrepare(workspace, {
-        PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
-        FAKE_HUSKY_MESSAGE: ".git can't be found",
-      });
+      try {
+        const result = runPrepare(workspace, {
+          PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
+          FAKE_HUSKY_MESSAGE: ".git can't be found",
+        });
 
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('git hooks were not installed');
-      expect(result.stderr).toContain(".git can't be found");
-    } finally {
-      rmSync(binPath, { recursive: true, force: true });
-      rmSync(workspace, { recursive: true, force: true });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('git hooks were not installed');
+        expect(result.stderr).toContain(".git can't be found");
+      } finally {
+        rmSync(binPath, { recursive: true, force: true });
+        rmSync(workspace, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
-  it('reports it when husky says nothing', () => {
-    const binPath = writeShims();
-    const workspace = makeWorkspace({ withGit: true });
+  itUnless(sandboxed, noPosixShell)(
+    'reports it when husky says nothing',
+    () => {
+      const binPath = writeShims();
+      const workspace = makeWorkspace({ withGit: true });
 
-    try {
-      const result = runPrepare(workspace, {
-        PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
-      });
+      try {
+        const result = runPrepare(workspace, {
+          PATH: `${binPath}${path.delimiter}${process.env.PATH ?? ''}`,
+        });
 
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('husky said nothing');
-    } finally {
-      rmSync(binPath, { recursive: true, force: true });
-      rmSync(workspace, { recursive: true, force: true });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('husky said nothing');
+      } finally {
+        rmSync(binPath, { recursive: true, force: true });
+        rmSync(workspace, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
-  it('skips on CI', () => {
+  itUnless(sandboxed, noPosixShell)('skips on CI', () => {
     const binPath = writeShims();
     const workspace = makeWorkspace({ withGit: true });
     const marker = path.join(workspace, 'npx-ran');
@@ -172,7 +172,7 @@ describe('install-git-hooks.mjs verification', () => {
     }
   });
 
-  it('skips with HUSKY=0', () => {
+  itUnless(sandboxed, noPosixShell)('skips with HUSKY=0', () => {
     const binPath = writeShims();
     const workspace = makeWorkspace({ withGit: true });
     const marker = path.join(workspace, 'npx-ran');
@@ -192,7 +192,7 @@ describe('install-git-hooks.mjs verification', () => {
     }
   });
 
-  it('skips outside a git repository', () => {
+  itUnless(sandboxed, noPosixShell)('skips outside a git repository', () => {
     const binPath = writeShims();
     const workspace = makeWorkspace({ withGit: false });
     const marker = path.join(workspace, 'npx-ran');

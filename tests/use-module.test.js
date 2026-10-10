@@ -3,6 +3,7 @@
 import { createServer } from 'node:http';
 
 import { describe, it, expect } from 'test-anywhere';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 import {
   DEFAULT_ATTEMPTS,
@@ -53,22 +54,6 @@ function textResponse(
       return body;
     },
   };
-}
-
-/**
- * Whether this runtime may bind a local socket. Deno denies it unless the run
- * was granted --allow-net, and the denial is not catchable at the listen call.
- * @returns {Promise<boolean>}
- */
-async function canListen() {
-  if (typeof Deno === 'undefined') {
-    return true;
-  }
-  const status = await Deno.permissions.query({
-    name: 'net',
-    host: '127.0.0.1',
-  });
-  return status.state === 'granted';
 }
 
 describe('use-module interop shim', () => {
@@ -377,41 +362,34 @@ describe('use-m load is bounded in time and retried', () => {
 });
 
 describe('use-m load survives a stalled connection', () => {
-  it('bounds a real connection that is accepted and never answered', async () => {
-    // A stalled connection is bounded only by undici's 300s headersTimeout
-    // default, so without a per-attempt deadline one fetch can burn five
-    // minutes of the job's budget.
-    //
-    // Binding a socket needs a permission the Deno job does not grant (it runs
-    // with --allow-read alone) and the denial surfaces as an uncaught
-    // NotCapable from inside the listen handle, so the check is skipped there;
-    // the Node and Bun runs of this same test keep the coverage.
-    if (!(await canListen())) {
-      console.log(
-        'Skipping: this runtime is not allowed to listen on 127.0.0.1.'
-      );
-      return;
+  itUnless(sandboxed)(
+    'bounds a real connection that is accepted and never answered',
+    async () => {
+      // A stalled connection is bounded only by undici's 300s headersTimeout
+      // default, so without a per-attempt deadline one fetch can burn five
+      // minutes of the job's budget.
+      //
+      const server = createServer(() => {});
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const url = `http://127.0.0.1:${server.address().port}/use-m/use.js`;
+      const started = Date.now();
+      let error;
+      try {
+        await loadUse({
+          url,
+          attempts: 1,
+          timeoutMs: 300,
+          sleep: async () => {},
+        });
+      } catch (caught) {
+        error = caught;
+      } finally {
+        server.close();
+      }
+      expect(error.message.includes(url)).toBe(true);
+      expect(Date.now() - started < 10000).toBe(true);
     }
-    const server = createServer(() => {});
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${server.address().port}/use-m/use.js`;
-    const started = Date.now();
-    let error;
-    try {
-      await loadUse({
-        url,
-        attempts: 1,
-        timeoutMs: 300,
-        sleep: async () => {},
-      });
-    } catch (caught) {
-      error = caught;
-    } finally {
-      server.close();
-    }
-    expect(error.message.includes(url)).toBe(true);
-    expect(Date.now() - started < 10000).toBe(true);
-  });
+  );
 
   it('exposes the defaults that keep the worst case inside a job budget', () => {
     // 3 x 15s of attempts plus 2s + 4s of backoff = 51s.

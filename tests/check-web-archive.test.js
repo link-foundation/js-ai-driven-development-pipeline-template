@@ -3,7 +3,7 @@
 // file, an unresolvable root-relative link - has no Wayback equivalent. Such
 // errors must still be reported, and must keep the check red.
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it } from 'test-anywhere';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -15,18 +15,13 @@ import {
   extractBrokenUrls,
   extractErrorsSection,
 } from '../scripts/check-web-archive.mjs';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const report = readFileSync(
   join(here, 'fixtures', 'lychee-report.md'),
   'utf-8'
 );
-
-// The Deno test run is granted --allow-read only, so spawning the script and
-// writing its fixtures is limited to the Node.js and Bun runs.
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunCliFixtures =
-  !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
 
 describe('extractErrorsSection', () => {
   it('stops at the next top-level heading', () => {
@@ -122,37 +117,36 @@ describe('extractBrokenLinks', () => {
 });
 
 describe('check-web-archive.mjs end to end', () => {
-  if (!canRunCliFixtures) {
-    return;
-  }
-
-  it('fails when the only lychee errors have no http URL to archive', async () => {
-    const scriptPath = join(here, '..', 'scripts', 'check-web-archive.mjs');
-    const workDir = mkdtempSync(join(tmpdir(), 'web-archive-'));
-    const reportPath = join(workDir, 'out.md');
-    const outputPath = join(workDir, 'github-output.txt');
-    writeFileSync(
-      reportPath,
-      `## Errors per input
+  itUnless(sandboxed)(
+    'fails when the only lychee errors have no http URL to archive',
+    async () => {
+      const scriptPath = join(here, '..', 'scripts', 'check-web-archive.mjs');
+      const workDir = mkdtempSync(join(tmpdir(), 'web-archive-'));
+      const reportPath = join(workDir, 'out.md');
+      const outputPath = join(workDir, 'github-output.txt');
+      writeFileSync(
+        reportPath,
+        `## Errors per input
 
 ### Errors in docs/index.md
 
 * [ERROR] <file:///repo/docs/api/Some.Type.yml> (at 15:12) | File not found. Check if file exists and path is correct
 `
-    );
-    writeFileSync(outputPath, '');
+      );
+      writeFileSync(outputPath, '');
 
-    const result = spawnSync(process.execPath, [scriptPath], {
-      encoding: 'utf-8',
-      env: {
-        ...process.env,
-        LYCHEE_OUTPUT: reportPath,
-        GITHUB_OUTPUT: outputPath,
-      },
-    });
+      const result = spawnSync(process.execPath, [scriptPath], {
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          LYCHEE_OUTPUT: reportPath,
+          GITHUB_OUTPUT: outputPath,
+        },
+      });
 
-    assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.match(readFileSync(outputPath, 'utf-8'), /all_archived=false/);
-    rmSync(workDir, { recursive: true, force: true });
-  });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(readFileSync(outputPath, 'utf-8'), /all_archived=false/);
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  );
 });

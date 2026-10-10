@@ -59,7 +59,7 @@ Tests should:
 # Run tests
 bun test --timeout 30000
 npm test
-deno test --allow-read
+deno test -A --parallel
 ```
 
 ## Version Management with Changesets

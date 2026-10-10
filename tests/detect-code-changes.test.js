@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'test-anywhere';
+import { blankEnv } from './helpers/env.js';
+import { describe, expect } from 'test-anywhere';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import {
@@ -11,13 +12,11 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/detect-code-changes.mjs', import.meta.url)
 );
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunCliFixtures =
-  !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
 
 function runGit(root, args) {
   const result = spawnSync('git', args, {
@@ -105,7 +104,7 @@ function runDetectCodeChanges(root, eventName) {
     cwd: root,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...blankEnv(process.env, (key) => /^(GITHUB_|CI$|JS_ROOT$)/.test(key)),
       GITHUB_EVENT_NAME: eventName,
       GITHUB_OUTPUT: outputFile,
     },
@@ -118,8 +117,9 @@ function runDetectCodeChanges(root, eventName) {
 }
 
 describe('detect-code-changes CLI', () => {
-  if (canRunCliFixtures) {
-    it('detects code introduced by a real merge commit pushed to main', () => {
+  itUnless(sandboxed)(
+    'detects code introduced by a real merge commit pushed to main',
+    () => {
       const root = createMergeCommitFixture();
 
       try {
@@ -132,9 +132,12 @@ describe('detect-code-changes CLI', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('keeps pull request merge commits scoped to the PR head commit diff', () => {
+  itUnless(sandboxed)(
+    'keeps pull request merge commits scoped to the PR head commit diff',
+    () => {
       const root = createMergeCommitFixture();
 
       try {
@@ -147,39 +150,42 @@ describe('detect-code-changes CLI', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
-
-    for (const eventName of ['pull_request', 'push']) {
-      for (const filePath of [
-        'experiments/repro.mjs',
-        'dev/log/repro.js',
-        'docs/case-studies/issue-113/repro.md',
-      ]) {
-        it(`ignores ${filePath} changes on ${eventName}`, () => {
-          const root = createChangeFixture(filePath, eventName);
-
-          try {
-            const { outputs, result } = runDetectCodeChanges(root, eventName);
-
-            expect(result.status).toBe(0);
-            expect(outputs).toContain('js-changed=false\n');
-            expect(outputs).toContain('docs-changed=false\n');
-            expect(outputs).toContain('any-code-changed=false\n');
-            expect(outputs).not.toContain('mjs-changed=');
-            expect(outputs).not.toContain('package-changed=');
-            expect(outputs).not.toContain('workflow-changed=');
-          } finally {
-            rmSync(root, { force: true, recursive: true });
-          }
-        });
-      }
     }
+  );
 
-    for (const [filePath, expectedOutput] of [
-      ['src/relevant.mjs', 'js-changed=true\n'],
-      ['docs/relevant.md', 'docs-changed=true\n'],
+  for (const eventName of ['pull_request', 'push']) {
+    for (const filePath of [
+      'experiments/repro.mjs',
+      'dev/log/repro.js',
+      'docs/case-studies/issue-113/repro.md',
     ]) {
-      it(`keeps detecting non-ignored ${filePath} changes`, () => {
+      itUnless(sandboxed)(`ignores ${filePath} changes on ${eventName}`, () => {
+        const root = createChangeFixture(filePath, eventName);
+
+        try {
+          const { outputs, result } = runDetectCodeChanges(root, eventName);
+
+          expect(result.status).toBe(0);
+          expect(outputs).toContain('js-changed=false\n');
+          expect(outputs).toContain('docs-changed=false\n');
+          expect(outputs).toContain('any-code-changed=false\n');
+          expect(outputs).not.toContain('mjs-changed=');
+          expect(outputs).not.toContain('package-changed=');
+          expect(outputs).not.toContain('workflow-changed=');
+        } finally {
+          rmSync(root, { force: true, recursive: true });
+        }
+      });
+    }
+  }
+
+  for (const [filePath, expectedOutput] of [
+    ['src/relevant.mjs', 'js-changed=true\n'],
+    ['docs/relevant.md', 'docs-changed=true\n'],
+  ]) {
+    itUnless(sandboxed)(
+      `keeps detecting non-ignored ${filePath} changes`,
+      () => {
         const root = createChangeFixture(filePath, 'push');
 
         try {
@@ -190,21 +196,24 @@ describe('detect-code-changes CLI', () => {
         } finally {
           rmSync(root, { force: true, recursive: true });
         }
-      });
-    }
+      }
+    );
+  }
 
-    // git prints repository-root-relative paths, so in the multi-language
-    // layout (package.json in js/) the package-relative ignore list matches
-    // only after the js/ prefix has been stripped.
-    for (const eventName of ['pull_request', 'push']) {
-      for (const filePath of [
-        'js/examples/demo.mjs',
-        'js/.changeset/tidy-cats-shine.md',
-        'js/experiments/repro.mjs',
-        'js/dev/log/repro.js',
-        'js/docs/case-studies/issue-141/repro.md',
-      ]) {
-        it(`ignores ${filePath} changes on ${eventName} in the multi-language layout`, () => {
+  // git prints repository-root-relative paths, so in the multi-language
+  // layout (package.json in js/) the package-relative ignore list matches
+  // only after the js/ prefix has been stripped.
+  for (const eventName of ['pull_request', 'push']) {
+    for (const filePath of [
+      'js/examples/demo.mjs',
+      'js/.changeset/tidy-cats-shine.md',
+      'js/experiments/repro.mjs',
+      'js/dev/log/repro.js',
+      'js/docs/case-studies/issue-141/repro.md',
+    ]) {
+      itUnless(sandboxed)(
+        `ignores ${filePath} changes on ${eventName} in the multi-language layout`,
+        () => {
           const root = createChangeFixture(filePath, eventName, {
             packageRoot: 'js',
           });
@@ -219,16 +228,19 @@ describe('detect-code-changes CLI', () => {
           } finally {
             rmSync(root, { force: true, recursive: true });
           }
-        });
-      }
+        }
+      );
     }
+  }
 
-    for (const [filePath, expectedOutputs] of [
-      ['js/src/relevant.mjs', ['js-changed=true\n', 'any-code-changed=true\n']],
-      ['js/docs/relevant.md', ['docs-changed=true\n']],
-      ['.github/workflows/ci.yml', ['any-code-changed=true\n']],
-    ]) {
-      it(`keeps detecting ${filePath} changes in the multi-language layout`, () => {
+  for (const [filePath, expectedOutputs] of [
+    ['js/src/relevant.mjs', ['js-changed=true\n', 'any-code-changed=true\n']],
+    ['js/docs/relevant.md', ['docs-changed=true\n']],
+    ['.github/workflows/ci.yml', ['any-code-changed=true\n']],
+  ]) {
+    itUnless(sandboxed)(
+      `keeps detecting ${filePath} changes in the multi-language layout`,
+      () => {
         const root = createChangeFixture(filePath, 'push', {
           packageRoot: 'js',
         });
@@ -243,10 +255,13 @@ describe('detect-code-changes CLI', () => {
         } finally {
           rmSync(root, { force: true, recursive: true });
         }
-      });
-    }
+      }
+    );
+  }
 
-    it('ignores changes belonging to another language package', () => {
+  itUnless(sandboxed)(
+    'ignores changes belonging to another language package',
+    () => {
       const root = createChangeFixture('rust/Cargo.toml', 'push', {
         packageRoot: 'js',
       });
@@ -260,8 +275,8 @@ describe('detect-code-changes CLI', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
-  }
+    }
+  );
 });
 
 // A pull request can carry several commits, and a superseded run may never
@@ -372,8 +387,9 @@ function pushRangeEnv(baseSha, beforeSha, afterSha, port) {
 }
 
 describe('detect-code-changes push ranges', () => {
-  if (canRunCliFixtures) {
-    it('covers the whole push when the previous head passed', async () => {
+  itUnless(sandboxed)(
+    'covers the whole push when the previous head passed',
+    async () => {
       const fixture = createMultiCommitFixture();
       const { server, port, requests } = await startStubApi((req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -395,9 +411,12 @@ describe('detect-code-changes push ranges', () => {
         server.close();
         rmSync(fixture.root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('widens to the full PR diff when the previous head never passed', async () => {
+  itUnless(sandboxed)(
+    'widens to the full PR diff when the previous head never passed',
+    async () => {
       const fixture = createMultiCommitFixture();
       const { server, port, requests } = await startStubApi((req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -418,37 +437,40 @@ describe('detect-code-changes push ranges', () => {
         server.close();
         rmSync(fixture.root, { force: true, recursive: true });
       }
+    }
+  );
+
+  itUnless(sandboxed)('widens when the lookup fails', async () => {
+    const fixture = createMultiCommitFixture();
+    const { server, port } = await startStubApi((req, res) => {
+      res.writeHead(403, { 'content-type': 'application/json' });
+      res.end('{"message": "Forbidden"}');
     });
 
-    it('widens when the lookup fails', async () => {
-      const fixture = createMultiCommitFixture();
-      const { server, port } = await startStubApi((req, res) => {
-        res.writeHead(403, { 'content-type': 'application/json' });
-        res.end('{"message": "Forbidden"}');
-      });
+    try {
+      const { status, outputs } = await runDetector(
+        fixture.root,
+        pushRangeEnv(fixture.baseSha, fixture.codeSha, fixture.headSha, port)
+      );
 
-      try {
-        const { status, outputs } = await runDetector(
-          fixture.root,
-          pushRangeEnv(fixture.baseSha, fixture.codeSha, fixture.headSha, port)
-        );
+      expect(status).toBe(0);
+      expect(outputs).toContain('js-changed=true\n');
+    } finally {
+      server.close();
+      rmSync(fixture.root, { force: true, recursive: true });
+    }
+  });
 
-        expect(status).toBe(0);
-        expect(outputs).toContain('js-changed=true\n');
-      } finally {
-        server.close();
-        rmSync(fixture.root, { force: true, recursive: true });
-      }
-    });
-
-    it('keeps the push range when the lookup fails with no base SHA', async () => {
+  itUnless(sandboxed)(
+    'keeps the push range when the lookup fails with no base SHA',
+    async () => {
       const fixture = createMultiCommitFixture();
       const { server, port } = await startStubApi((req, res) => {
         res.writeHead(403, { 'content-type': 'application/json' });
         res.end('{"message": "Forbidden"}');
       });
       const env = pushRangeEnv('', fixture.codeSha, fixture.headSha, port);
-      delete env.GITHUB_BASE_SHA;
+      env.GITHUB_BASE_SHA = '';
 
       try {
         const { status, stdout, outputs } = await runDetector(
@@ -465,9 +487,12 @@ describe('detect-code-changes push ranges', () => {
         server.close();
         rmSync(fixture.root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('skips the lookup entirely without push SHAs', async () => {
+  itUnless(sandboxed)(
+    'skips the lookup entirely without push SHAs',
+    async () => {
       const fixture = createMultiCommitFixture();
       const { server, port, requests } = await startStubApi((req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -479,8 +504,8 @@ describe('detect-code-changes push ranges', () => {
         fixture.headSha,
         port
       );
-      delete env.GITHUB_BEFORE_SHA;
-      delete env.GITHUB_AFTER_SHA;
+      env.GITHUB_BEFORE_SHA = '';
+      env.GITHUB_AFTER_SHA = '';
 
       try {
         const { status, stdout, outputs } = await runDetector(
@@ -496,6 +521,6 @@ describe('detect-code-changes push ranges', () => {
         server.close();
         rmSync(fixture.root, { force: true, recursive: true });
       }
-    });
-  }
+    }
+  );
 });

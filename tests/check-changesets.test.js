@@ -1,10 +1,10 @@
 /**
  * Tests for check-changesets.mjs CLI behavior.
- * Reproduces issue #86: stray Markdown docs in .changeset must not count as
+ * stray Markdown docs in .changeset must not count as
  * pending release changesets.
  */
 
-import { describe, it, expect } from 'test-anywhere';
+import { describe, expect } from 'test-anywhere';
 import { spawnSync } from 'node:child_process';
 import {
   mkdtempSync,
@@ -16,13 +16,11 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-changesets.mjs', import.meta.url)
 );
-const isDenoRuntime = typeof Deno !== 'undefined';
-const canRunCliFixtures =
-  !isDenoRuntime && typeof process !== 'undefined' && process.execPath;
 
 function createFixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'check-changesets-'));
@@ -56,8 +54,9 @@ function runCheckChangesets(root) {
 }
 
 describe('check-changesets CLI', () => {
-  if (canRunCliFixtures) {
-    it('ignores stray Markdown files without valid changeset frontmatter', () => {
+  itUnless(sandboxed)(
+    'ignores stray Markdown files without valid changeset frontmatter',
+    () => {
       const root = createFixture();
 
       try {
@@ -76,9 +75,12 @@ describe('check-changesets CLI', () => {
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('counts Markdown files with a recognized package bump in frontmatter', () => {
+  itUnless(sandboxed)(
+    'counts Markdown files with a recognized package bump in frontmatter',
+    () => {
       const root = createFixture();
 
       try {
@@ -102,9 +104,12 @@ Fix the fixture behavior.
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
+    }
+  );
 
-    it('ignores changeset frontmatter for an unknown package', () => {
+  itUnless(sandboxed)(
+    'ignores changeset frontmatter for an unknown package',
+    () => {
       const root = createFixture();
 
       try {
@@ -128,6 +133,6 @@ Update another package.
       } finally {
         rmSync(root, { force: true, recursive: true });
       }
-    });
-  }
+    }
+  );
 });

@@ -1,7 +1,7 @@
 /**
  * Tests for create-github-release.mjs CLI behavior.
- * Reproduces issue #49: failed gh api calls must not be reported as success.
- * Reproduces issue #52: release names should be human-readable titles.
+ * failed gh api calls must not be reported as success.
+ * release names should be human-readable titles.
  */
 
 import { describe, it, expect } from 'test-anywhere';
@@ -25,27 +25,14 @@ import {
   GITHUB_RELEASE_BODY_MAX_BYTES,
   parseArgs,
 } from '../scripts/create-github-release.mjs';
+import { itUnless, sandboxed, windowsNodeCmd } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/create-github-release.mjs', import.meta.url)
 );
-const isDenoRuntime = typeof Deno !== 'undefined';
-const isBunRuntime =
-  typeof process !== 'undefined' && Boolean(process.versions?.bun);
-const isNodeRuntime =
-  typeof process !== 'undefined' &&
-  Boolean(process.versions?.node) &&
-  !isBunRuntime &&
-  !isDenoRuntime;
-const isWindowsNodeRuntime = isNodeRuntime && process.platform === 'win32';
 const textEncoder = new globalThis.TextEncoder();
 // Node on Windows does not execute the .cmd gh fixture through spawnSync.
 // The injected-spawn tests below cover release result handling on that runner.
-const canRunCliFixtures =
-  !isDenoRuntime &&
-  !isWindowsNodeRuntime &&
-  typeof process !== 'undefined' &&
-  process.execPath;
 
 function prependPath(env, binPath) {
   const nextEnv = { ...env };
@@ -56,7 +43,7 @@ function prependPath(env, binPath) {
 
   for (const key of Object.keys(nextEnv)) {
     if (key.toLowerCase() === 'path') {
-      delete nextEnv[key];
+      nextEnv[key] = '';
     }
   }
 
@@ -97,7 +84,7 @@ function createFixture({ jsRoot = '.' } = {}) {
 `
   );
 
-  const fakeGhJs = path.join(binPath, 'fake-gh.js');
+  const fakeGhJs = path.join(binPath, 'fake-gh.cjs');
   writeFileSync(
     fakeGhJs,
     `#!/usr/bin/env node
@@ -136,14 +123,14 @@ process.exit(1);
   writeFileSync(
     fakeGhPath,
     `#!/bin/sh
-exec "${process.execPath}" "$(dirname "$0")/fake-gh.js" "$@"
+exec "${process.execPath}" ${globalThis.Deno ? 'run -A ' : ''}"$(dirname "$0")/fake-gh.cjs" "$@"
 `
   );
   chmodSync(fakeGhPath, 0o755);
 
   writeFileSync(
     path.join(binPath, 'gh.cmd'),
-    `@echo off\r\n"${process.execPath}" "%~dp0fake-gh.js" %*\r\n`
+    `@echo off\r\n"${process.execPath}" ${globalThis.Deno ? 'run -A ' : ''}"%~dp0fake-gh.cjs" %*\r\n`
   );
 
   return root;
@@ -202,7 +189,7 @@ function getUtf8ByteLength(value) {
 }
 
 describe('create-github-release release note extraction', () => {
-  it('extracts notes for an exact version header instead of a prefix match', () => {
+  it('extracts notes for an exact version header', () => {
     const changelog = `# Changelog
 
 ## 1.2.3
@@ -385,8 +372,9 @@ describe('create-github-release.mjs', () => {
     ).toEqual({ alreadyExists: true });
   });
 
-  if (canRunCliFixtures) {
-    it('passes release payload to gh api and reports success only on exit code 0', () => {
+  itUnless(sandboxed, windowsNodeCmd)(
+    'passes release payload to gh api and reports success only on exit code 0',
+    () => {
       const root = createFixture();
 
       try {
@@ -414,9 +402,12 @@ describe('create-github-release.mjs', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('auto-detects multi-language release tags and titles', () => {
+  itUnless(sandboxed, windowsNodeCmd)(
+    'auto-detects multi-language release tags and titles',
+    () => {
       const root = createFixture({ jsRoot: 'js' });
 
       try {
@@ -434,9 +425,12 @@ describe('create-github-release.mjs', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('fails when gh api exits non-zero with an unexpected error', () => {
+  itUnless(sandboxed, windowsNodeCmd)(
+    'fails when gh api exits non-zero with an unexpected error',
+    () => {
       const root = createFixture();
 
       try {
@@ -450,9 +444,12 @@ describe('create-github-release.mjs', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('treats already_exists as an explicit idempotent skip', () => {
+  itUnless(sandboxed, windowsNodeCmd)(
+    'treats already_exists as an explicit idempotent skip',
+    () => {
       const root = createFixture();
 
       try {
@@ -466,6 +463,6 @@ describe('create-github-release.mjs', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
-  }
+    }
+  );
 });

@@ -4,15 +4,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
 const scriptPath = fileURLToPath(
   new URL('../scripts/check-required-docs.sh', import.meta.url)
 );
 const readme = readFileSync('README.md', 'utf8');
-const canRunBash =
-  typeof Deno === 'undefined' &&
-  typeof process !== 'undefined' &&
-  process.platform !== 'win32';
 
 function listRequirements() {
   const result = spawnSync('bash', [scriptPath, '--list'], {
@@ -51,71 +48,73 @@ describe('check-required-docs.sh', () => {
     expect(script).toContain("FAILURES=''");
   });
 
-  it('builds its fixtures from the same table the check reads', () => {
-    if (!canRunBash) {
-      return;
-    }
+  itUnless(sandboxed, noPosixShell)(
+    'builds its fixtures from the same table the check reads',
+    () => {
+      const requirements = listRequirements();
+      const files = [...new Set(requirements.map((entry) => entry.file))];
 
-    const requirements = listRequirements();
-    const files = [...new Set(requirements.map((entry) => entry.file))];
+      expect(files.sort()).toEqual([
+        'CHANGELOG.md',
+        'README.md',
+        'docs/BEST-PRACTICES.md',
+        'docs/CONTRIBUTING.md',
+      ]);
 
-    expect(files.sort()).toEqual([
-      'CHANGELOG.md',
-      'README.md',
-      'docs/BEST-PRACTICES.md',
-      'docs/CONTRIBUTING.md',
-    ]);
+      // Every required file+section pair must exist in this repository, so
+      // the shipped gate is green on the template itself.
+      for (const { file, section } of requirements) {
+        const content = readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
 
-    // Every required file+section pair must exist in this repository, so
-    // the shipped gate is green on the template itself.
-    for (const { file, section } of requirements) {
-      const content = readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
-
-      if (section !== null) {
-        expect(content).toContain(`## ${section}\n`);
+        if (section !== null) {
+          expect(content).toContain(`## ${section}\n`);
+        }
       }
     }
-  });
+  );
 
-  it('pins the sections a reader of the README depends on', () => {
-    if (!canRunBash) {
-      return;
+  itUnless(sandboxed, noPosixShell)(
+    'pins the sections a reader of the README depends on',
+    () => {
+      const requirements = listRequirements();
+      const readmeSections = requirements
+        .filter((entry) => entry.file === 'README.md')
+        .map((entry) => entry.section);
+
+      expect(readmeSections).toContain('Quick Start');
+      expect(readmeSections).toContain('License');
     }
+  );
 
-    const requirements = listRequirements();
-    const readmeSections = requirements
-      .filter((entry) => entry.file === 'README.md')
-      .map((entry) => entry.section);
-
-    expect(readmeSections).toContain('Quick Start');
-    expect(readmeSections).toContain('License');
-  });
-
-  if (canRunBash) {
-    it('passes on the repository as shipped', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'passes on the repository as shipped',
+    () => {
       const result = runCheck(process.cwd());
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain(
         'All documentation requirements satisfied (4 documents checked).'
       );
-    });
+    }
+  );
 
-    // The check resolves the repository root before reading anything, so
-    // every fixture is a (bare) git repository.
-    function createRepoFixture(files) {
-      const root = mkdtempSync(path.join(tmpdir(), 'required-docs-'));
+  // The check resolves the repository root before reading anything, so
+  // every fixture is a (bare) git repository.
+  function createRepoFixture(files) {
+    const root = mkdtempSync(path.join(tmpdir(), 'required-docs-'));
 
-      for (const [name, content] of Object.entries(files)) {
-        writeFileSync(path.join(root, name), content);
-      }
-
-      spawnSync('git', ['init', '-q'], { cwd: root });
-
-      return root;
+    for (const [name, content] of Object.entries(files)) {
+      writeFileSync(path.join(root, name), content);
     }
 
-    it('fails when a required section is deleted but the file remains', () => {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+
+    return root;
+  }
+
+  itUnless(sandboxed, noPosixShell)(
+    'fails when a required section is deleted but the file remains',
+    () => {
       const gutted = readme.split('\n## ')[0];
       const root = createRepoFixture({
         'README.md': gutted,
@@ -136,9 +135,12 @@ describe('check-required-docs.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('is not fooled by a table-of-contents mention of a section', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'is not fooled by a table-of-contents mention of a section',
+    () => {
       const root = createRepoFixture({
         'README.md': '- See the Quick Start section below\n',
         'CHANGELOG.md': '# Changelog\n',
@@ -152,9 +154,12 @@ describe('check-required-docs.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
+    }
+  );
 
-    it('fails a missing required document with its own message', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'fails a missing required document with its own message',
+    () => {
       const root = createRepoFixture({ 'README.md': readme });
 
       try {
@@ -167,6 +172,6 @@ describe('check-required-docs.sh', () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    });
-  }
+    }
+  );
 });

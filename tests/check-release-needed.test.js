@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'test-anywhere';
+import { describe, expect } from 'test-anywhere';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import {
@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { itUnless, sandboxed } from './helpers/skip.js';
 
 const script = resolve('scripts/check-release-needed.mjs');
 
@@ -79,60 +80,81 @@ async function probe({
 }
 
 describe('complete release gate (offline HTTP)', () => {
-  if (typeof Deno !== 'undefined') {
-    return;
-  }
-  it('repairs a missing GitHub release for an npm-published version without bumping', async () => {
-    const result = await probe({ githubStatus: 404 });
-    expect(result.status).toBe(0);
-    expect(result.outputs).toContain('should_release=true');
-    expect(result.outputs).toContain('skip_bump=true');
-    expect(
-      result.requests.some(
-        (path) => path === '/repos/fixture/repo/releases/tags/v1.2.3'
-      )
-    ).toBe(true);
-  });
-  it('does not release when both npm and GitHub already have the version', async () => {
-    const result = await probe();
-    expect(result.outputs).toContain('should_release=false');
-    expect(result.outputs).toContain('skip_bump=false');
-    expect(result.requests.length).toBe(2);
-  });
-  it('uses the same language-prefixed tag as release creation', async () => {
-    const result = await probe({ githubStatus: 404, jsRoot: 'js' });
-    expect(result.outputs).toContain('should_release=true');
-    expect(result.requests.some((path) => path.endsWith('/js_v1.2.3'))).toBe(
-      true
-    );
-  });
+  itUnless(sandboxed)(
+    'repairs a missing GitHub release for an npm-published version without bumping',
+    async () => {
+      const result = await probe({ githubStatus: 404 });
+      expect(result.status).toBe(0);
+      expect(result.outputs).toContain('should_release=true');
+      expect(result.outputs).toContain('skip_bump=true');
+      expect(
+        result.requests.some(
+          (path) => path === '/repos/fixture/repo/releases/tags/v1.2.3'
+        )
+      ).toBe(true);
+    }
+  );
+  itUnless(sandboxed)(
+    'does not release when both npm and GitHub already have the version',
+    async () => {
+      const result = await probe();
+      expect(result.outputs).toContain('should_release=false');
+      expect(result.outputs).toContain('skip_bump=false');
+      expect(result.requests.length).toBe(2);
+    }
+  );
+  itUnless(sandboxed)(
+    'uses the same language-prefixed tag as release creation',
+    async () => {
+      const result = await probe({ githubStatus: 404, jsRoot: 'js' });
+      expect(result.outputs).toContain('should_release=true');
+      expect(result.requests.some((path) => path.endsWith('/js_v1.2.3'))).toBe(
+        true
+      );
+    }
+  );
   for (const githubStatus of [401, 403, 429, 500]) {
-    it(`does not release on an unknown GitHub result (${githubStatus})`, async () => {
-      const result = await probe({ githubStatus });
+    itUnless(sandboxed)(
+      `does not release on an unknown GitHub result (${githubStatus})`,
+      async () => {
+        const result = await probe({ githubStatus });
+        expect(result.outputs).toContain('should_release=false');
+        expect(result.output).toContain('unknown');
+      }
+    );
+  }
+  itUnless(sandboxed)(
+    'does not release on a malformed GitHub response',
+    async () => {
+      const result = await probe({ malformed: true });
       expect(result.outputs).toContain('should_release=false');
       expect(result.output).toContain('unknown');
-    });
-  }
-  it('does not release on a malformed GitHub response', async () => {
-    const result = await probe({ malformed: true });
-    expect(result.outputs).toContain('should_release=false');
-    expect(result.output).toContain('unknown');
-  });
-  it('does not release on a GitHub network failure', async () => {
-    const result = await probe({ disconnect: true });
-    expect(result.outputs).toContain('should_release=false');
-    expect(result.output).toContain('unknown');
-  });
-  it('still releases an unpublished npm version without bumping', async () => {
-    const result = await probe({ npmStatus: 404 });
-    expect(result.outputs).toContain('should_release=true');
-    expect(result.outputs).toContain('skip_bump=true');
-    expect(result.requests.length).toBe(1);
-  });
-  it('processes changesets without making remote lookups', async () => {
-    const result = await probe({ hasChangesets: true });
-    expect(result.outputs).toContain('should_release=true');
-    expect(result.outputs).toContain('skip_bump=false');
-    expect(result.requests.length).toBe(0);
-  });
+    }
+  );
+  itUnless(sandboxed)(
+    'does not release on a GitHub network failure',
+    async () => {
+      const result = await probe({ disconnect: true });
+      expect(result.outputs).toContain('should_release=false');
+      expect(result.output).toContain('unknown');
+    }
+  );
+  itUnless(sandboxed)(
+    'still releases an unpublished npm version without bumping',
+    async () => {
+      const result = await probe({ npmStatus: 404 });
+      expect(result.outputs).toContain('should_release=true');
+      expect(result.outputs).toContain('skip_bump=true');
+      expect(result.requests.length).toBe(1);
+    }
+  );
+  itUnless(sandboxed)(
+    'processes changesets without making remote lookups',
+    async () => {
+      const result = await probe({ hasChangesets: true });
+      expect(result.outputs).toContain('should_release=true');
+      expect(result.outputs).toContain('skip_bump=false');
+      expect(result.requests.length).toBe(0);
+    }
+  );
 });
