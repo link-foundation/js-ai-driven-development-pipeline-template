@@ -100,12 +100,21 @@ describe('Changesets release formatter', () => {
         const run = async (file, args) => {
           // Use the async child API so cleanup follows process completion.
           // Close stdin: these CLI commands need no input.
-          const execution = execFileAsync('node', [resolve(file), ...args], {
-            cwd,
-            env,
-            encoding: 'utf8',
-            timeout: 20000,
-          });
+          const execution = execFileAsync(
+            'node',
+            [
+              '--require',
+              resolve('experiments/trace-changeset-fixture.cjs'),
+              resolve(file),
+              ...args,
+            ],
+            {
+              cwd,
+              env: { ...env, DEBUG_CHANGESET_FIXTURE: '1' },
+              encoding: 'utf8',
+              timeout: 20000,
+            }
+          );
           execution.child.stdin.end();
           try {
             await execution;
