@@ -30,7 +30,7 @@ function createPrettierBins(dependencies) {
   );
   writeFileSync(
     join(bin, 'prettier.cmd'),
-    '@echo off\r\nnode "%~dp0%\\..\\prettier\\bin\\prettier.cjs" %*\r\n'
+    '@echo off\r\nnode "%~dp0..\\prettier\\bin\\prettier.cjs" %*\r\n'
   );
 }
 

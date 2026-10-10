@@ -221,6 +221,15 @@ and disables installation prompts. This preserves the real version, changelog,
 and formatting assertions while avoiding registry/cache behavior and shared-tree
 inspection; the child deadline remains 20 seconds.
 
+Run `38048743499` on `091007b` catches an invalid Windows-only bin shim:
+the new launcher used `%~dp0%` instead of `%~dp0`, inserting a literal percent
+into the Prettier path. Node and Bun report the real formatter failure at lines
+8062 and 12856; Deno reaches its bounded child deadline at line 16597.
+The real versioning test reproduces this on all three Windows runtimes.
+The launcher now uses the documented
+[Windows batch-parameter syntax](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/call#batch-parameters).
+The existing matrix test verifies the corrected executable path.
+
 The final upstream lockfile-table review also finds `upm.lock` before npm's lock.
 The guard omitted it. Adding that lock to the existing mixed-lock fixture first
 fails with `Expected ... to contain "upm.lock"`; the guard now recognizes it and
