@@ -80,15 +80,29 @@ describe('check-package-manager.mjs', () => {
     }
   );
 
-  itUnless(sandboxed)('passes on this repository', () => {
-    const result = runGuard(process.cwd());
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Package manager check passed');
-    // deno.lock exists for the Deno test leg; the declaration outranks it.
-    expect(result.stderr).not.toContain('::warning::');
-    expect(result.stdout).toContain('deno.lock (kept by Deno for deno.json)');
-  });
+  itUnless(sandboxed)(
+    'passes on the repository package and runtime locks',
+    () => {
+      // bun install creates an untracked bun.lock on CI. Test the shipped inputs
+      // in isolation; the foreign-lock fixtures above must still warn about it.
+      const root = createFixture(packageJson, [
+        'package-lock.json',
+        'deno.lock',
+        'deno.json',
+      ]);
+      try {
+        const result = runGuard(root);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Package manager check passed');
+        expect(result.stderr).not.toContain('::warning::');
+        expect(result.stdout).toContain(
+          'deno.lock (kept by Deno for deno.json)'
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
 
   itUnless(sandboxed)(
     'fails when neither packageManager nor devEngines is declared',

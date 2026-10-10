@@ -20,9 +20,9 @@ or comments. No listed issue is deferred.
 - [x] Validate install-script policy and jscpd configuration.
 - [x] Add a patch changeset; run local checks before each implementation commit.
 - [x] Run Node, Bun, full Deno, and read-only Deno; exercise CI-like environment.
-- [ ] Fetch/merge main, review the entire PR diff, and leave a clean working tree.
-- [ ] Update PR title/body and every closing reference; push only the issue branch.
-- [ ] Check fresh CI timestamps/SHA; preserve and investigate non-passing logs.
+- [x] Fetch/merge main, review the entire PR diff, and leave a clean working tree.
+- [x] Update PR title/body and every closing reference; push only the issue branch.
+- [x] Check fresh CI timestamps/SHA; preserve and investigate non-passing logs.
 - [ ] Finish any background work, verify CI, and mark PR #229 ready.
 
 ## Every requirement and the chosen solution
@@ -133,10 +133,10 @@ suite and zero after conversion. To reproduce against the old tree, run the
 new guard/regression tests with the original workflow/config/script files.
 
 Full local runs use the same discovered 63 test files. Node 24 and Bun each pass
-791 tests. Full-permission Deno registers the same 791, with 788 passes and three explicitly ignored tests:
+792 tests. Full-permission Deno registers the same 792, with 789 passes and three explicitly ignored tests:
 the upstream Deno symlink failure and two unsupported command-stream CDN
 integrations. There are no environment-gated suites or vacuous test passes.
-Read-only Deno reports 605 passes and 186 ignored tests, each with its permission
+Read-only Deno reports 606 passes and 186 ignored tests, each with its permission
 reason.
 
 The Deno fixture run sets CI=true and invalid GITHUB_BASE_SHA, GITHUB_BEFORE_SHA,
@@ -161,3 +161,28 @@ The polling arithmetic is 2+4+8+16+50\*30 = 1530 seconds for 54 checks. The issu
 1500-second figure is a rounding mistake; both release polling and the immediate
 smoke check plus 153 ten-second sleeps now span 25.5 minutes. Custom overrides
 and terminal verification failure behavior remain covered by existing tests.
+
+## Fresh CI fixture investigation
+
+All five workflows ran on `b96f7d6` at 2026-10-10T10:55:17Z. Four passed.
+The complete non-passing Checks and release run `38046587982` was preserved in
+`ci-logs/checks-and-release-38046587982.log` (16,923 lines). Its three failures:
+
+- Lines 15857–15864 (also 12773–12780 and 11526–11533): `bun install` creates
+  an untracked `bun.lock`, so the package-manager test's checkout-wide
+  no-warning assertion failed on all Bun platforms. The guard correctly warns;
+  the test now uses isolated shipped inputs and retains unexpected-lock tests.
+  `experiments/ci-lockfile-probe.mjs` reproduces the generated warning.
+- Lines 11265–11317: Windows Bun's fake `gh` could not start (`ENOENT`).
+  The fixture blanked uppercase PATH and populated mixed-case Path. Windows
+  treats these as the same variable, and the child API chooses one. A minimal
+  regression fails before the fix; every PATH alias now gets the same value.
+- Lines 6340–6351: Deno/Windows reports `EBUSY` while removing the Changesets
+  fixture after a 20-second child invocation. The fixture now uses async child
+  execution, closes unused stdin, and unlinks the shared dependency junction
+  before bounded cleanup. Windows CI verifies the actual platform behavior.
+
+[Bun lockfile documentation](https://bun.com/docs/pm/lockfile) confirms automatic
+lock generation; [Node child-process documentation](https://nodejs.org/api/child_process.html)
+documents case-insensitive Windows environment keys and first-key selection.
+The existing test/job time budgets remain unchanged.

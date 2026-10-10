@@ -40,19 +40,38 @@ function prependPath(env, binPath) {
     Object.entries(nextEnv).find(
       ([key]) => key.toLowerCase() === 'path'
     )?.[1] ?? '';
+  const fixturePath = `${binPath}${path.delimiter}${currentPath}`;
 
+  // Windows treats these keys alike; child_process picks the first sorted key.
+  // Keep all aliases equal so a blank PATH cannot hide a populated Path.
   for (const key of Object.keys(nextEnv)) {
     if (key.toLowerCase() === 'path') {
-      nextEnv[key] = '';
+      nextEnv[key] = fixturePath;
     }
   }
 
   return {
     ...nextEnv,
-    [process.platform === 'win32' ? 'Path' : 'PATH']:
-      `${binPath}${path.delimiter}${currentPath}`,
+    [process.platform === 'win32' ? 'Path' : 'PATH']: fixturePath,
   };
 }
+
+describe('release fixture PATH isolation', () => {
+  it('gives every case variant the same path and preserves the parent', () => {
+    const parent = { PATH: '/original', Path: '/original', OTHER: 'kept' };
+    const env = prependPath(parent, '/fixture/bin');
+    const expected = `/fixture/bin${path.delimiter}/original`;
+
+    expect(env.PATH).toBe(expected);
+    expect(env.Path).toBe(expected);
+    expect(env.OTHER).toBe('kept');
+    expect(parent).toEqual({
+      PATH: '/original',
+      Path: '/original',
+      OTHER: 'kept',
+    });
+  });
+});
 
 function createFixture({ jsRoot = '.' } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'create-release-'));

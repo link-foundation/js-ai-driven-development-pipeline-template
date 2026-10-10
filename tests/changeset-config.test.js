@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -8,14 +8,17 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, it, expect } from 'test-anywhere';
 import { itUnless, sandboxed } from './helpers/skip.js';
 
 const config = JSON.parse(readFileSync('.changeset/config.json', 'utf8'));
+const execFileAsync = promisify(execFile);
 
 describe('Changesets release formatter', () => {
   it('uses the same formatter as the project formatting check', () => {
@@ -43,7 +46,7 @@ describe('Changesets release formatter', () => {
 
   itUnless(sandboxed)(
     'versions and formats the real package with Deno absent from PATH',
-    () => {
+    async () => {
       const cwd = mkdtempSync(join(tmpdir(), 'changeset-version-'));
       try {
         for (const file of [
@@ -94,20 +97,23 @@ describe('Changesets release formatter', () => {
           spawnSync('deno', ['--version'], { env }).error?.code,
           'ENOENT'
         );
-        const run = (file, args) => {
-          const result = spawnSync('node', [resolve(file), ...args], {
+        const run = async (file, args) => {
+          // Use the async child API so cleanup follows process completion.
+          // Close stdin: these CLI commands need no input.
+          const execution = execFileAsync('node', [resolve(file), ...args], {
             cwd,
             env,
             encoding: 'utf8',
             timeout: 20000,
           });
-          assert.equal(
-            result.status,
-            0,
-            `${result.error || ''}\n${result.stdout}\n${result.stderr}`
-          );
+          execution.child.stdin.end();
+          try {
+            await execution;
+          } catch (error) {
+            assert.fail(`${error}\n${error.stdout}\n${error.stderr}`);
+          }
         };
-        run('node_modules/@changesets/cli/bin.js', ['version']);
+        await run('node_modules/@changesets/cli/bin.js', ['version']);
         const versionParts = pkg.version.split('.').map(Number);
         versionParts[2] += 1;
         expect(
@@ -119,13 +125,22 @@ describe('Changesets release formatter', () => {
         expect(readFileSync(join(cwd, 'CHANGELOG.md'), 'utf8')).toContain(
           'Check release versioning.'
         );
-        run('node_modules/prettier/bin/prettier.cjs', [
+        await run('node_modules/prettier/bin/prettier.cjs', [
           '--check',
           'package.json',
           'CHANGELOG.md',
         ]);
       } finally {
-        rmSync(cwd, { recursive: true, force: true });
+        // Unlink the shared dependency junction before removing the fixture.
+        if (existsSync(join(cwd, 'node_modules'))) {
+          unlinkSync(join(cwd, 'node_modules'));
+        }
+        rmSync(cwd, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 100,
+        });
       }
     }
   );
