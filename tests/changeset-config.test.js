@@ -110,7 +110,14 @@ describe('Changesets release formatter', () => {
             ],
             {
               cwd,
-              env: { ...env, DEBUG_CHANGESET_FIXTURE: '1' },
+              env: {
+                ...env,
+                DEBUG_CHANGESET_FIXTURE: '1',
+                // Release formatting must use installed dependencies, never fetch.
+                npm_config_offline: 'true',
+                npm_config_yes: 'false',
+                npm_config_loglevel: 'verbose',
+              },
               encoding: 'utf8',
               timeout: 20000,
             }

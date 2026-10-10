@@ -162,7 +162,7 @@ describe('check-package-manager.mjs', () => {
     () => {
       const root = createFixture(
         { name: 'fixture', devEngines: { packageManager: { name: 'npm' } } },
-        ['bun.lock', 'deno.lock']
+        ['bun.lock', 'deno.lock', 'upm.lock']
       );
 
       try {
@@ -172,6 +172,7 @@ describe('check-package-manager.mjs', () => {
         expect(result.stderr).toContain('::warning::');
         expect(result.stderr).toContain('bun.lock');
         expect(result.stderr).toContain('deno.lock');
+        expect(result.stderr).toContain('upm.lock');
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

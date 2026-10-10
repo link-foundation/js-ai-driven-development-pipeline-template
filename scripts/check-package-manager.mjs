@@ -34,6 +34,7 @@ const FOREIGN_LOCKFILES = [
   'bun.lockb',
   'deno.lock',
   'nub.lock',
+  'upm.lock',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
   'yarn.lock',
