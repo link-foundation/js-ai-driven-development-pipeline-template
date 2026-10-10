@@ -23,7 +23,7 @@ or comments. No listed issue is deferred.
 - [x] Fetch/merge main, review the entire PR diff, and leave a clean working tree.
 - [x] Update PR title/body and every closing reference; push only the issue branch.
 - [x] Check fresh CI timestamps/SHA; preserve and investigate non-passing logs.
-- [ ] Finish any background work, verify CI, and mark PR #229 ready.
+- [x] Verify all five workflows and nine matrix jobs on an implementation commit.
 
 ## Every requirement and the chosen solution
 
@@ -185,7 +185,7 @@ The complete non-passing Checks and release run `38046587982` was preserved in
 [Bun lockfile documentation](https://bun.com/docs/pm/lockfile) confirms automatic
 lock generation; [Node child-process documentation](https://nodejs.org/api/child_process.html)
 documents case-insensitive Windows environment keys and first-key selection.
-The existing test/job time budgets remain unchanged.
+Test and matrix-job time budgets remain unchanged.
 
 A final call-site audit found the workflow's 1200-second publish and
 1100-second Docker wrappers would truncate the new 1530-second polling span.
@@ -201,3 +201,27 @@ Run `38047214301` on `c62775c` confirms all three Bun platforms now pass.
 Deno/Windows still fails at lines 16528–16540 with cleanup `EBUSY` after
 20 seconds. Child errors are now printed before cleanup so the primary failure
 can be investigated without being masked by removal of a busy Windows tree.
+
+The primary error in run `38047658950` on `3cb1736` appears at lines
+11730–11736: the real Changesets CLI prints its version, then reaches its
+20-second child deadline before cleanup raises EBUSY (lines 12176–12188).
+The optional `experiments/trace-changeset-fixture.cjs` preload retains subprocess
+commands and file paths on failure, without printing environment values or file
+contents. It is disabled unless explicitly enabled by the release fixture.
+
+All five workflows and all nine runtime/OS jobs pass on both `038f6ad` and
+`20bf9e9`. However, the shared-tree Deno/Windows fixture still takes 18–21 seconds.
+Inspection of [npm exec's implementation](https://github.com/npm/cli/blob/latest/workspaces/libnpmexec/lib/index.js)
+shows that a missing local bin entry sends npm through dependency-tree loading
+before it selects the command. This is a likely source of the delay with Deno's
+automatically installed tree. The fixture now exposes only the real installed
+Changesets CLI and Prettier, with explicit npm-compatible bin entries. It also
+uses [npm offline mode](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
+and disables installation prompts. This preserves the real version, changelog,
+and formatting assertions while avoiding registry/cache behavior and shared-tree
+inspection; the child deadline remains 20 seconds.
+
+The final upstream lockfile-table review also finds `upm.lock` before npm's lock.
+The guard omitted it. Adding that lock to the existing mixed-lock fixture first
+fails with `Expected ... to contain "upm.lock"`; the guard now recognizes it and
+continues warning about every known unexpected package-manager lock.

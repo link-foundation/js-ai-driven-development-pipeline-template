@@ -20,6 +20,20 @@ import { itUnless, sandboxed } from './helpers/skip.js';
 const config = JSON.parse(readFileSync('.changeset/config.json', 'utf8'));
 const execFileAsync = promisify(execFile);
 
+function createPrettierBins(dependencies) {
+  const bin = join(dependencies, '.bin');
+  mkdirSync(bin);
+  writeFileSync(
+    join(bin, 'prettier'),
+    '#!/bin/sh\nexec node "$(dirname "$0")/../prettier/bin/prettier.cjs" "$@"\n',
+    { mode: 0o755 }
+  );
+  writeFileSync(
+    join(bin, 'prettier.cmd'),
+    '@echo off\r\nnode "%~dp0%\\..\\prettier\\bin\\prettier.cjs" %*\r\n'
+  );
+}
+
 describe('Changesets release formatter', () => {
   it('uses the same formatter as the project formatting check', () => {
     expect(config.format).toBe('prettier');
@@ -48,6 +62,11 @@ describe('Changesets release formatter', () => {
     'versions and formats the real package with Deno absent from PATH',
     async () => {
       const cwd = mkdtempSync(join(tmpdir(), 'changeset-version-'));
+      const dependencies = join(cwd, 'node_modules');
+      const links = [
+        join(dependencies, '@changesets/cli'),
+        join(dependencies, 'prettier'),
+      ];
       try {
         for (const file of [
           'package.json',
@@ -74,11 +93,14 @@ describe('Changesets release formatter', () => {
           `---\n"${pkg.name}": patch\n---\n\nCheck release versioning.\n`
         );
         writeFileSync(join(cwd, 'CHANGELOG.md'), `# ${pkg.name}\n`);
-        symlinkSync(
-          resolve('node_modules'),
-          join(cwd, 'node_modules'),
-          'junction'
-        );
+        // Deno's automatic installation does not promise npm-style bin links.
+        // Give npm a minimal local tree with the actual installed CLI/formatter.
+        mkdirSync(join(dependencies, '@changesets'), { recursive: true });
+        for (const link of links) {
+          const relative = link.slice(dependencies.length + 1);
+          symlinkSync(resolve('node_modules', relative), link, 'junction');
+        }
+        createPrettierBins(dependencies);
         const env = { ...process.env };
         const pathKey = Object.keys(env).find(
           (key) => key.toUpperCase() === 'PATH'
@@ -149,9 +171,11 @@ describe('Changesets release formatter', () => {
           'CHANGELOG.md',
         ]);
       } finally {
-        // Unlink the shared dependency junction before removing the fixture.
-        if (existsSync(join(cwd, 'node_modules'))) {
-          unlinkSync(join(cwd, 'node_modules'));
+        // Remove shared dependency links without traversing their targets.
+        for (const link of links) {
+          if (existsSync(link)) {
+            unlinkSync(link);
+          }
         }
         rmSync(cwd, {
           recursive: true,
