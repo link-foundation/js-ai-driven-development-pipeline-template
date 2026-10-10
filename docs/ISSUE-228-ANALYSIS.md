@@ -42,7 +42,7 @@ or comments. No listed issue is deferred.
 | #220         | Preserve HTTP/transport errors in skip reasons                                     | Return HTTP status or underlying cause; bound the probe                                                                   | Mock HTTP and transport failures                                   |
 | #220         | Detect Deno lock drift on every runtime                                            | Compare all declared dependency ranges with workspace lock entries, normalizing equivalent zero-major caret ranges        | Test root lock metadata without spawning or network                |
 | #221         | Give npm propagation a wide margin beyond observed 874 s                           | Deadline loop or more existing attempts; preserve polling design with 54 checks (1530 s)                                  | Fake clock: 950 s recovery, 1530 s exhaustion, one publish only    |
-| #221         | Match smoke/Docker wait margin                                                     | Increase shared waiter to 154 checks: first check is immediate, so 153 sleeps span exactly 1530 s                         | Fake-clock waiter recovery and bounded failure                     |
+| #221         | Match Docker wait margin                                                           | Increase shared waiter to 154 checks: first check is immediate, so 153 sleeps span exactly 1530 s                         | Fake-clock waiter recovery and bounded failure                     |
 | #221         | Report elapsed verification wait                                                   | Accumulate injected sleep duration; log success and exhaustion duration                                                   | Assert fake-clock log messages                                     |
 | #221         | Preserve never-republish-after-success and definitive failures                     | Retain existing orchestration and custom retry overrides                                                                  | Existing conflict/retry tests and new tail-window regression       |
 | #222         | Every runtime reports each unavailable test with a reason                          | Keep test-anywhere; use per-test `itUnless`, as `describe.skip` vanishes on Deno                                          | Node/Bun/Deno counts, read-only ignored names                      |
@@ -133,10 +133,10 @@ suite and zero after conversion. To reproduce against the old tree, run the
 new guard/regression tests with the original workflow/config/script files.
 
 Full local runs use the same discovered 63 test files. Node 24 and Bun each pass
-792 tests. Full-permission Deno registers the same 792, with 789 passes and three explicitly ignored tests:
+793 tests. Full-permission Deno registers the same 793, with 790 passes and three explicitly ignored tests:
 the upstream Deno symlink failure and two unsupported command-stream CDN
 integrations. There are no environment-gated suites or vacuous test passes.
-Read-only Deno reports 606 passes and 186 ignored tests, each with its permission
+Read-only Deno reports 607 passes and 186 ignored tests, each with its permission
 reason.
 
 The Deno fixture run sets CI=true and invalid GITHUB_BASE_SHA, GITHUB_BEFORE_SHA,
@@ -159,7 +159,7 @@ node_modules, retains every requested exclusion, and emits no empty-input warnin
 
 The polling arithmetic is 2+4+8+16+50\*30 = 1530 seconds for 54 checks. The issue's
 1500-second figure is a rounding mistake; both release polling and the immediate
-smoke check plus 153 ten-second sleeps now span 25.5 minutes. Custom overrides
+Docker availability check plus 153 ten-second sleeps now span 25.5 minutes. Custom overrides
 and terminal verification failure behavior remain covered by existing tests.
 
 ## Fresh CI fixture investigation
@@ -186,3 +186,18 @@ The complete non-passing Checks and release run `38046587982` was preserved in
 lock generation; [Node child-process documentation](https://nodejs.org/api/child_process.html)
 documents case-insensitive Windows environment keys and first-key selection.
 The existing test/job time budgets remain unchanged.
+
+A final call-site audit found the workflow's 1200-second publish and
+1100-second Docker wrappers would truncate the new 1530-second polling span.
+The new `ci-timeouts.test.js` regression fails on the old budgets
+(`Expected 1200 to be greater than 1590`). Both publish steps and Docker's wait
+now allow 1800 seconds. Release backstops become 65 minutes and Docker's
+configuration job 45 minutes to preserve the existing 70% budget invariant.
+Although #221 suggests keeping 50 minutes, its analysis omitted these wrapper
+limits and the sum of sequential step budgets. Smoke-install defaults remain
+unchanged: that distinct check follows successful registry verification.
+
+Run `38047214301` on `c62775c` confirms all three Bun platforms now pass.
+Deno/Windows still fails at lines 16528–16540 with cleanup `EBUSY` after
+20 seconds. Child errors are now printed before cleanup so the primary failure
+can be investigated without being masked by removal of a busy Windows tree.

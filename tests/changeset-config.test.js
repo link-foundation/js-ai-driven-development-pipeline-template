@@ -110,6 +110,8 @@ describe('Changesets release formatter', () => {
           try {
             await execution;
           } catch (error) {
+            // Print the primary child failure before cleanup can throw on Windows.
+            console.error(`${error}\n${error.stdout}\n${error.stderr}`);
             assert.fail(`${error}\n${error.stdout}\n${error.stderr}`);
           }
         };
