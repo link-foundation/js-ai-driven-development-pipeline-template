@@ -120,12 +120,18 @@ neither of which was involved in the original failure.
 | ----------------------- | -------- | ------------------------------------------------ |
 | `test`                  | 15 min   | Node.js 300s, Bun 200s, Deno 100s                |
 | `docker-build`          | 30 min   | image build 20 min                               |
-| `docker-publish-config` | 30 min   | npm availability wait 1100s                      |
+| `docker-publish-config` | 45 min   | npm availability wait 1800s                      |
 | `docker-publish-build`  | 30 min   | image build and push 20 min                      |
-| `release`               | 50 min   | install 240s, npm publish 1200s, smoke test 600s |
-| `instant-release`       | 50 min   | npm publish 1200s, smoke test 600s               |
+| `release`               | 65 min   | install 240s, npm publish 1800s, smoke test 600s |
+| `instant-release`       | 65 min   | npm publish 1800s, smoke test 600s               |
 
 ## Reference
 
 `link-assistant/formal-ai` PR #1018 (`scripts/run-with-budget-warning.sh`, the
 `MAX_BUDGET_SHARE_PERCENT` invariant, and the incident reconstruction).
+
+Publishing and Docker's availability wait allow 1800 seconds for the default
+1530-second polling window, leaving 270 seconds for requests and other work.
+The regression derives the polling duration from the scripts and compares it
+with every workflow call site's step budget. The release backstops also leave
+the existing 30% headroom for setup and sequential install/publish/smoke budgets.

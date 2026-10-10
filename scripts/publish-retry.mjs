@@ -13,7 +13,7 @@
  */
 
 // 54 checks span 25.5 minutes, giving headroom beyond observed 874-second
-// propagation delays while staying inside the release job's 50-minute budget.
+// propagation delays while staying inside the CI publish step's 30-minute budget.
 export const DEFAULT_VERIFY_ATTEMPTS = 54;
 export const DEFAULT_VERIFY_INITIAL_DELAY = 2000;
 export const DEFAULT_VERIFY_MAX_DELAY = 30000;
