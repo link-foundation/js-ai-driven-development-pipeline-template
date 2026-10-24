@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe } from 'test-anywhere';
 import { itUnless, sandboxed } from './helpers/skip.js';
 
@@ -20,7 +21,7 @@ describe('Wayback CLI retries and failure reporting', () => {
             'node',
             [
               '--import',
-              resolve('tests/fixtures/wayback-fetch.mjs'),
+              pathToFileURL(resolve('tests/fixtures/wayback-fetch.mjs')).href,
               resolve('scripts/check-web-archive.mjs'),
             ],
             {

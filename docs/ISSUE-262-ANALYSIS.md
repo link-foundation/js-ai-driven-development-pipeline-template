@@ -115,3 +115,14 @@ release formatting, and retry outcomes. Git's actual autocrlf checkout probe pas
 for all 16 tracked shell/hook files. Full-runtime and final-candidate results are
 recorded in the PR after execution. No Rust compilation or user-cache deletion is
 part of this batch.
+
+The first candidate, `e90ccc4`, passed all Linux and macOS runtime jobs, workflow
+validation, security, link checks, and example builds. All three Windows runtime
+jobs exposed the same new CLI-fixture defect: Node's `--import` received a Windows
+drive-letter path instead of a file URL (`ERR_UNSUPPORTED_ESM_URL_SCHEME`). The
+[complete run](https://github.com/link-foundation/js-ai-driven-development-pipeline-template/actions/runs/40106772039)
+was collected before making the next batch; local saved-log lines 13226, 16751,
+and 18436 identify that failure in Bun, Deno, and Node respectively. The actual
+Windows hook installation, offline helper execution, and LF policy tests passed.
+Both preload fixtures now convert their resolved paths to file URLs. Their CLI
+assertions remain intact; final same-revision CI verifies the correction.

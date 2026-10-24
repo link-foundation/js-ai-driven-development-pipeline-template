@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { itUnless, sandboxed, noPosixShell } from './helpers/skip.js';
 
 function format(body) {
@@ -28,7 +29,7 @@ esac
       'node',
       [
         '--import',
-        resolve('experiments/release-notes-fixture.mjs'),
+        pathToFileURL(resolve('experiments/release-notes-fixture.mjs')).href,
         resolve('scripts/format-release-notes.mjs'),
       ],
       {
