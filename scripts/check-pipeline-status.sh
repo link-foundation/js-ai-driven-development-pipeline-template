@@ -7,6 +7,8 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 branch_name="${BRANCH_NAME:-main}"
 git_remote="${GIT_REMOTE:-origin}"
+# The base repository advertises refs/pull/N/head even for fork branches.
+head_ref="${HEAD_REF:-refs/heads/${branch_name}}"
 verbose="${PIPELINE_STATUS_VERBOSE:-0}"
 
 trace() { [ "${verbose}" = "1" ] && echo "[pipeline-status] $*" >&2 || true; }
@@ -19,7 +21,7 @@ run_is_superseded() {
     return 1
   fi
   if [ -z "${head}" ]; then
-    head="$(git ls-remote "${git_remote}" "refs/heads/${branch_name}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    head="$(git ls-remote "${git_remote}" "${head_ref}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
   fi
   if [ -z "${head}" ]; then
     echo "Could not resolve the head of ${branch_name}; assuming this run is current." >&2

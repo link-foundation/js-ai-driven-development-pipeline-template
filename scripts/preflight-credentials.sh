@@ -78,6 +78,30 @@ json_string() {
   node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const v=JSON.parse(d)[process.argv[1]];if(typeof v!=="string"||!v.trim())process.exit(1);process.stdout.write(v)}catch{process.exit(1)}})' "$1" 2>/dev/null
 }
 
+# The exchange answers 404 both for an unpublished package and for a package
+# without a trusted publisher. The public package document tells them apart,
+# so the failure names the maintainer action that fixes this repository.
+explain_npm_exchange_404() {
+  local package="$1" name repo secrets access status
+  name=$(node -e 'process.stdout.write(decodeURIComponent(process.argv[1]))' "$package" 2>/dev/null)
+  repo="${GITHUB_REPOSITORY:-this repository}"
+  secrets="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-OWNER/REPO}/settings/secrets/actions"
+  access="https://www.npmjs.com/package/${name}/access"
+  status=$(http "$NPM_REGISTRY/$package")
+  status="${status##*"$NEWLINE"}"
+  case "$status" in
+    404)
+      bad "npm has no package ${name} yet, and npm configures trusted publishing only for published packages. Add an NPM_TOKEN repository secret (a granular token allowed to publish ${name}) at ${secrets} for the first release, then add a trusted publisher for ${repo}, workflow release.yml, at ${access} and delete the secret"
+      ;;
+    200)
+      bad "npm rejected the OIDC exchange for ${name} (404): add a trusted publisher for ${repo}, workflow release.yml, at ${access}"
+      ;;
+    *)
+      bad "npm rejected the OIDC exchange for ${name} (404) and the package lookup answered ${status:-no status}: add a trusted publisher at ${access}, or an NPM_TOKEN repository secret at ${secrets} if the package was never published"
+      ;;
+  esac
+}
+
 check_npm_oidc() {
   local oidc_url="$1" request_token="${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
   local package response status payload jwt separator='?'
@@ -119,7 +143,7 @@ check_npm_oidc() {
       if [ -n "${NPM_TOKEN:-}" ]; then
         printf '  SKIP: npm package exchange returned 404; checking the documented NPM_TOKEN bootstrap fallback\n'
       else
-        bad 'npm OIDC package exchange rejected (404); configure a trusted publisher or bootstrap token'
+        explain_npm_exchange_404 "$package"
       fi
       ;;
     401 | 403)
@@ -144,7 +168,7 @@ check_npm() {
 
   if [ -z "$token" ]; then
     if [ -n "$oidc_url" ]; then
-      printf '  SKIP: NPM_TOKEN is not set; OIDC trusted publishing is the publish path (NPM_TOKEN is the documented bootstrap fallback, issue #77)\n'
+      printf '  SKIP: NPM_TOKEN is not set; OIDC trusted publishing is the publish path (NPM_TOKEN is the bootstrap fallback for a package npm does not have yet)\n'
     else
       bad 'npm has no publish path: ACTIONS_ID_TOKEN_REQUEST_URL is not set and NPM_TOKEN is not set'
     fi

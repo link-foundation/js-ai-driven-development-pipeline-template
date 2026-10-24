@@ -90,6 +90,59 @@ function runGate(needs, extraEnv = {}) {
 }
 
 describe('pipeline status gate', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'compares fork PR cancellations with the base repository pull head ref',
+    () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'gate-fork-'));
+      const git = (...args) =>
+        spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+      try {
+        git('init', '-q', '-b', 'main');
+        git(
+          '-c',
+          'user.name=test',
+          '-c',
+          'user.email=test@example.invalid',
+          'commit',
+          '-qm',
+          'base',
+          '--allow-empty'
+        );
+        const base = git('rev-parse', 'HEAD').stdout.trim();
+        git(
+          '-c',
+          'user.name=test',
+          '-c',
+          'user.email=test@example.invalid',
+          'commit',
+          '-qm',
+          'fork',
+          '--allow-empty'
+        );
+        const fork = git('rev-parse', 'HEAD').stdout.trim();
+        git('update-ref', 'refs/pull/7/head', fork);
+        git('update-ref', 'refs/heads/main', base);
+        const context = {
+          RUN_SHA: fork,
+          HEAD_REF: 'refs/pull/7/head',
+          BRANCH_NAME: 'main',
+          GIT_REMOTE: dir,
+          WORKFLOW_FILE: '.github/workflows/security.yml',
+          BRANCH_HEAD_SHA: '',
+        };
+        const current = runGate({ codeql: { result: 'cancelled' } }, context);
+        expect(current.status).toBe(1);
+        git('update-ref', 'refs/pull/7/head', base);
+        const superseded = runGate(
+          { codeql: { result: 'cancelled' } },
+          context
+        );
+        expect(superseded.status).toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
   it('stays compatible with the Bash 3.2 shipped by macOS runners', () => {
     const script = readFileSync(scriptPath, 'utf8');
 
@@ -101,13 +154,13 @@ describe('pipeline status gate', () => {
     const gate = getJobBlock(workflow, 'pipeline-status');
 
     expect(gate).toContain('      !cancelled()');
-    expect(gate).toContain('uses: actions/setup-node@v6');
+    expect(gate).toContain('uses: actions/setup-node@v7');
     expect(gate).toContain('NEEDS_JSON: ${{ toJSON(needs) }}');
     expect(gate).toContain(
       'RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'
     );
     expect(gate).toContain(
-      'BRANCH_NAME: ${{ github.head_ref || github.ref_name }}'
+      "HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}"
     );
     expect(listNeededJobs(gate).sort()).toEqual(
       jobs.filter((job) => job !== 'pipeline-status').sort()
@@ -196,9 +249,11 @@ describe('pipeline status gate in every workflow', () => {
       }
 
       if (
-        !gate.includes('BRANCH_NAME: ${{ github.head_ref || github.ref_name }}')
+        !gate.includes(
+          "HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}"
+        )
       ) {
-        problems.push(`${name}: gate does not pass BRANCH_NAME`);
+        problems.push(`${name}: gate does not pass HEAD_REF`);
       }
 
       if (!gate.includes('run: bash scripts/check-pipeline-status.sh')) {

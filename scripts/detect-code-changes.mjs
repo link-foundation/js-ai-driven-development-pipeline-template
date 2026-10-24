@@ -309,12 +309,19 @@ function getChangedFiles() {
   }
 }
 
+/**
+ * Everything else counts as code, so a file type nobody listed (a shell
+ * script, a type declaration, the Dockerfile) still runs the checks.
+ *
+ * @param {string} filePath package-relative path
+ * @returns {boolean}
+ */
 function isExcludedFromCodeChanges(filePath) {
-  if (filePath.endsWith('.md')) {
+  if (filePath.endsWith('.md') || filePath.endsWith('/.gitkeep')) {
     return true;
   }
 
-  return filePath.startsWith('docs/');
+  return filePath.startsWith('docs/') || filePath === '.gitkeep';
 }
 
 async function detectChanges() {
@@ -359,11 +366,7 @@ async function detectChanges() {
   }
   console.log('');
 
-  const codeFileExtensionPattern = /\.(mjs|cjs|js|json|yml|yaml)$/;
-  const anyCodeChanged = codeChangedFiles.some(
-    (file) =>
-      codeFileExtensionPattern.test(file) || file.startsWith(workflowPathPrefix)
-  );
+  const anyCodeChanged = codeChangedFiles.length > 0;
   setOutput('any-code-changed', anyCodeChanged ? 'true' : 'false');
 
   console.log('\nChange detection completed.');

@@ -3,9 +3,10 @@
 /**
  * Lint entry point used by `npm run lint`.
  *
- * All files are linted for errors. Warnings are annotated only on lines that
+ * All files are linted for errors. Warnings are reported only on lines that
  * the current branch changes relative to its base, keeping each run focused on
- * actionable findings. Set LINT_ALL_WARNINGS=1 to report every warning.
+ * actionable findings. Every reported error or warning fails the run. Set
+ * LINT_ALL_WARNINGS=1 to report every warning, as pushes to main do.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -13,6 +14,7 @@ import { ESLint } from 'eslint';
 import {
   parseChangedLines,
   filterWarningsToChangedLines,
+  lintExitCode,
 } from './lint-changed-lines.mjs';
 
 function git(args) {
@@ -84,11 +86,6 @@ async function main() {
     console.log(output);
   }
 
-  const errorCount = reported.reduce(
-    (total, result) => total + result.errorCount,
-    0
-  );
-
   const hiddenWarnings =
     results.reduce((total, result) => total + result.warningCount, 0) -
     reported.reduce((total, result) => total + result.warningCount, 0);
@@ -99,7 +96,7 @@ async function main() {
     );
   }
 
-  process.exit(errorCount > 0 ? 1 : 0);
+  process.exit(lintExitCode(reported));
 }
 
 await main();

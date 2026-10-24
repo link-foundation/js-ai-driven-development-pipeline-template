@@ -215,9 +215,13 @@ command_is_running() {
   group_is_populated
 }
 
+# SECONDS is integer-valued and may tick early relative to wall time.
+# Only enforce a deadline after its entire second has elapsed.
+deadline_elapsed() { [ "${SECONDS}" -gt "$1" ]; }
+
 wait_while_running() {
   local deadline=$((SECONDS + $1))
-  while command_is_running && [ "${SECONDS}" -lt "${deadline}" ]; do
+  while command_is_running && ! deadline_elapsed "${deadline}"; do
     relay_output
     sleep "${poll_seconds}"
   done
@@ -263,7 +267,7 @@ while command_is_running; do
     echo "::warning title=${label} is approaching its execution budget::${label} has run for ${SECONDS}s of its ${budget_seconds}s budget."
   fi
 
-  if [ "${SECONDS}" -ge "${budget_seconds}" ]; then
+  if deadline_elapsed "${budget_seconds}"; then
     terminate_over_budget
   fi
 

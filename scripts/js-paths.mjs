@@ -7,10 +7,6 @@
  * - Single-language repositories (package.json in root)
  * - Multi-language repositories (package.json in js/ subfolder)
  *
- * This utility addresses the issues documented in:
- * - Issue #21: Supporting both single and multi-language repository structures
- * - Reference: link-assistant/agent PR #114
- *
  * Usage:
  *   import { getJsRoot, getPackageJsonPath, getChangesetDir, needsCd } from './js-paths.mjs';
  *

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Script to format GitHub release notes with proper formatting:
- * - Fix special characters like \n
- * - Add link to PR that contains the release commit (if found)
+ * Script to format GitHub release notes:
+ * - Keep the change sections as Changesets wrote them (paragraphs, nested
+ *   lists and rules stay inside their entry)
+ * - Add links to the PRs that contain the changelog commits (if found)
  * - Add shields.io NPM version badge
- * - Format nicely with proper markdown
  *
  * PR Detection Logic:
- * 1. Extract commit hash from changelog entry (if present)
+ * 1. Extract the commit hash of every changelog entry (if present)
  * 2. Fall back to --commit-sha argument (passed from workflow)
- * 3. Look up PRs that contain the commit via GitHub API
+ * 3. Look up PRs that contain each commit via GitHub API
  * 4. If no PR found, simply don't display any PR link (no guessing)
  *
  * Uses link-foundation libraries:
@@ -26,6 +26,7 @@ import { getJsRoot, parseJsRootConfig } from './js-paths.mjs';
 import { readPackageInfo } from './package-info.mjs';
 import {
   buildNpmVersionBadge,
+  buildReleaseDescription,
   hasGeneratedNpmBadge,
   normalizeReleaseVersionForBadge,
 } from './format-release-notes-helpers.mjs';
@@ -105,74 +106,32 @@ try {
     process.exit(0);
   }
 
-  // Extract changes section (Major, Minor, or Patch)
-  // This regex handles multiple formats:
-  // 1. With commit hash: "### [Major|Minor|Patch] Changes\n- abc1234: Description"
-  // 2. Without commit hash: "### [Major|Minor|Patch] Changes\n- Description"
-  const changesPattern =
-    /### (Major|Minor|Patch) Changes\s*\n\s*-\s+(?:([a-f0-9]+):\s+)?(.+?)$/s;
-  const changesMatch = currentBody.match(changesPattern);
-
-  let commitHash = null;
-  let rawDescription = null;
-  let changeType = null;
-
-  if (changesMatch) {
-    // Extract: [full match, changeType, commitHash (optional), description]
-    [, changeType, commitHash, rawDescription] = changesMatch;
-    console.log(`ℹ️ Found ${changeType} Changes section`);
-
-    // If commitHash is undefined and description contains it, try to extract
-    if (!commitHash && rawDescription) {
-      // This handles the case where description itself might be null/undefined
-      // and we need to safely check for commit hash at the start
-      const descWithHashMatch = rawDescription.match(/^([a-f0-9]+):\s+(.+)$/s);
-      if (descWithHashMatch) {
-        [, commitHash, rawDescription] = descWithHashMatch;
-      }
-    }
-  } else {
+  const parsed = buildReleaseDescription(currentBody);
+  if (!parsed) {
     console.log('⚠️ Could not parse changes from release notes');
     console.log('   Looking for pattern: ### [Major|Minor|Patch] Changes');
     process.exit(0);
   }
+  const { description: cleanDescription, commitHashes } = parsed;
 
-  // Clean up the description:
-  // 1. Convert literal \n sequences (escaped newlines from GitHub API) to actual newlines
-  // 2. Remove leading/trailing quotes (including escaped quotes from command-stream shell escaping)
-  // 3. Remove any trailing npm package links or markdown that might be there
-  // 4. Normalize whitespace while preserving line breaks
-  const cleanDescription = rawDescription
-    .replace(/\\n/g, '\n') // Convert escaped \n to actual newlines
-    .replace(/^(\\['"])+/g, '') // Remove leading escaped quotes (e.g., \', \", \'', \'')
-    .replace(/(['"])+$/g, '') // Remove trailing unescaped quotes (e.g., ', ", '', '')
-    .replace(/^(['"])+/g, '') // Remove leading unescaped quotes
-    .replace(/📦.*$/s, '') // Remove any existing npm package info
-    .replace(/---.*$/s, '') // Remove any existing separators and everything after
-    .trim()
-    .split('\n') // Split by lines
-    .map((line) => line.trim()) // Trim whitespace from each line
-    .join('\n') // Rejoin with newlines
-    .replace(/\n{3,}/g, '\n\n'); // Normalize excessive blank lines (3+ becomes 2)
+  // Link the pull requests of every changelog entry; fall back to the
+  // commit the workflow passed when no entry names one. No PR, no link.
+  const commitShas =
+    commitHashes.length > 0 ? commitHashes : [passedCommitSha].filter(Boolean);
+  const prNumbers = [];
 
-  // Find the PR that contains the release commit
-  // Uses commit hash from changelog or passed commit SHA from workflow
-  let prNumber = null;
-
-  // Determine which commit SHA to use for PR lookup
-  const commitShaToLookup = commitHash || passedCommitSha;
-
-  if (commitShaToLookup) {
-    const source = commitHash ? 'changelog' : 'workflow';
-    console.log(
-      `ℹ️ Looking up PR for commit ${commitShaToLookup} (from ${source})`
-    );
+  if (commitShas.length === 0) {
+    console.log('ℹ️ No commit SHA available - not adding PR link');
+  }
+  for (const commitSha of commitShas) {
+    const source = commitHashes.length > 0 ? 'changelog' : 'workflow';
+    console.log(`ℹ️ Looking up PR for commit ${commitSha} (from ${source})`);
 
     try {
       const prResult =
-        await $`gh api "repos/${repository}/commits/${commitShaToLookup}/pulls"`.run(
-          { capture: true }
-        );
+        await $`gh api "repos/${repository}/commits/${commitSha}/pulls"`.run({
+          capture: true,
+        });
       const prsData = JSON.parse(prResult.stdout);
 
       // Find the PR that's not the version bump PR (not "chore: version packages")
@@ -181,8 +140,10 @@ try {
       );
 
       if (relevantPr) {
-        prNumber = relevantPr.number;
-        console.log(`✅ Found PR #${prNumber} containing commit`);
+        if (!prNumbers.includes(relevantPr.number)) {
+          prNumbers.push(relevantPr.number);
+        }
+        console.log(`✅ Found PR #${relevantPr.number} containing commit`);
       } else if (prsData.length > 0) {
         console.log(
           '⚠️ Found PRs but all are version bump PRs, not linking any'
@@ -193,15 +154,12 @@ try {
         );
       }
     } catch (error) {
-      console.log('⚠️ Could not find PR for commit', commitShaToLookup);
+      console.log('⚠️ Could not find PR for commit', commitSha);
       console.log('   Error:', error.message);
       if (process.env.DEBUG) {
         console.error(error);
       }
     }
-  } else {
-    // No commit hash available from any source
-    console.log('ℹ️ No commit SHA available - not adding PR link');
   }
 
   // Build formatted release notes
@@ -210,9 +168,12 @@ try {
 
   let formattedBody = `${cleanDescription}`;
 
-  // Add PR link if available
-  if (prNumber) {
-    formattedBody += `\n\n**Related Pull Request:** #${prNumber}`;
+  if (prNumbers.length === 1) {
+    formattedBody += `\n\n**Related Pull Request:** #${prNumbers[0]}`;
+  } else if (prNumbers.length > 1) {
+    formattedBody += `\n\n**Related Pull Requests:** ${prNumbers
+      .map((number) => `#${number}`)
+      .join(', ')}`;
   }
 
   formattedBody += `\n\n---\n\n${npmBadge}`;
@@ -224,11 +185,10 @@ try {
   );
 
   console.log(`✅ Formatted release notes for v${versionWithoutV}`);
-  if (prNumber) {
+  for (const prNumber of prNumbers) {
     console.log(`   - Added link to PR #${prNumber}`);
   }
   console.log('   - Added shields.io npm badge');
-  console.log('   - Cleaned up formatting');
 } catch (error) {
   console.error('❌ Error formatting release notes:', error.message);
   process.exit(1);

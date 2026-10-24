@@ -67,5 +67,8 @@
     "win": {
       "target": "nsis"
     }
+  },
+  "overrides": {
+    "global-agent": "^4.1.3"
   }
 }

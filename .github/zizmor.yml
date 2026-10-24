@@ -27,3 +27,4 @@ rules:
       - release.yml
       - example-app.yml
       - action.yml
+      - javascript-first-example.yml

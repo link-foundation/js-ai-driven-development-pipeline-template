@@ -5,8 +5,17 @@ if (process.env.DEBUG_CHANGESET_FIXTURE) {
   const childProcess = require('node:child_process');
   const fs = require('node:fs');
   const { syncBuiltinESMExports } = require('node:module');
+  const started = Date.now();
   const report = (operation, value) =>
-    console.error(`[changeset fixture] ${operation}: ${JSON.stringify(value)}`);
+    console.error(
+      `[changeset fixture +${Date.now() - started}ms] ${operation}: ${JSON.stringify(value)}`
+    );
+  // Time between process start and this preload: slow runner startup.
+  report('preload', {
+    sinceProcessStartMs: Math.round(
+      require('node:perf_hooks').performance.now()
+    ),
+  });
   for (const method of ['spawn', 'execFile']) {
     const original = childProcess[method];
     childProcess[method] = function (command, args, ...rest) {
@@ -15,6 +24,12 @@ if (process.env.DEBUG_CHANGESET_FIXTURE) {
       child.on('exit', (code, signal) =>
         report('exit', { command, code, signal })
       );
+      // Formatter failures are otherwise swallowed by the parent's pipe.
+      for (const stream of ['stdout', 'stderr']) {
+        child[stream]?.on('data', (data) =>
+          report(stream, { command, data: String(data) })
+        );
+      }
       child.on('error', (error) =>
         report('error', { command, message: error.message })
       );

@@ -9,6 +9,7 @@ import {
 } from '../scripts/publish-retry.mjs';
 import { parseArgs, waitForNpmVersion } from '../scripts/wait-for-npm.mjs';
 import { itUnless, sandboxed } from './helpers/skip.js';
+import { HANG_GUARD_MS } from './helpers/bounded-run.js';
 
 const read = (file) => readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
 const workflow = read('.github/workflows/workflows.yml');
@@ -51,6 +52,7 @@ describe('link checker input selection', () => {
     expect(args.trim().endsWith('\n            .')).toBe(true);
     for (const file of [
       'docs/case-studies',
+      'dev/log',
       'examples/universal-app/index.html',
       'tests/fixtures',
     ]) {
@@ -184,7 +186,7 @@ describe('quiet, effective tooling configuration', () => {
             '100',
             fixture,
           ],
-          { encoding: 'utf8', timeout: 15000 }
+          { encoding: 'utf8', timeout: HANG_GUARD_MS }
         );
         expect(`${result.stdout}${result.stderr}`).not.toMatch(
           /unknown field/i

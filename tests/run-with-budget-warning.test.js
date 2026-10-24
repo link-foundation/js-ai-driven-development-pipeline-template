@@ -328,3 +328,26 @@ describe('process group survivor records', () => {
     }
   );
 });
+
+describe('budget boundary regression', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'never kills a command that finishes inside its budget at a second boundary',
+    () => {
+      const align = `
+        const { spawnSync } = require('node:child_process');
+        const delay = (750 - Date.now() % 1000 + 1000) % 1000;
+        setTimeout(() => {
+          const result = spawnSync('bash', [process.argv[1], '2', 'aligned', 'sleep', '1.4'], {
+            encoding: 'utf8', env: { ...process.env, BUDGET_POLL_SECONDS: '0.05' }
+          });
+          process.stdout.write(result.stdout + result.stderr);
+          process.exit(result.status);
+        }, delay);
+      `;
+      const result = spawnSync('node', ['-e', align, scriptPath], {
+        encoding: 'utf8',
+      });
+      expect(result.status).toBe(0);
+    }
+  );
+});

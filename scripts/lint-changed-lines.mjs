@@ -109,3 +109,17 @@ export function filterWarningsToChangedLines(results, changedLines, cwd) {
     };
   });
 }
+
+/**
+ * Exit code for the reported results: any error or any reported warning
+ * fails. The pre-commit hook runs ESLint with --max-warnings 0, so CI rejects
+ * what a skipped hook would have rejected.
+ *
+ * @param {Array<object>} reported ESLint results after filtering
+ * @returns {0 | 1}
+ */
+export function lintExitCode(reported) {
+  return reported.some((result) => result.errorCount + result.warningCount > 0)
+    ? 1
+    : 0;
+}

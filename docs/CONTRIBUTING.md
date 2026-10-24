@@ -214,3 +214,16 @@ git push
 ## Questions?
 
 If you have questions about contributing, feel free to open an issue for discussion.
+
+## JavaScript-first mixed-language projects
+
+Follow [the JavaScript-first gate and single push workflow](javascript-first.md) before enabling production Rust jobs for a mixed-language project.
+
+Standalone shell scripts and Husky hooks are checked with ShellCheck 0.11.0.
+Install [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html) for the staged-file hook;
+it runs the same pinned `shellcheck-py==0.11.0.1` package as CI. To check all shell
+files locally, run:
+
+```sh
+git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --spec shellcheck-py==0.11.0.1 shellcheck
+```
