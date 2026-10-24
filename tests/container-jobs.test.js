@@ -58,6 +58,90 @@ describe('container jobs', () => {
   });
 });
 
+describe('preview push authentication', () => {
+  const job = containerJobs.find(({ name }) => name === 'preview-regen').job;
+
+  itUnless(sandboxed, noPosixShell)(
+    'uses the available push token and records only successfully landed images',
+    () => {
+      const commit = stepScript(job, 'Commit drift back to main');
+      const root = mkdtempSync(join(tmpdir(), 'preview-push-'));
+      try {
+        const output = join(root, 'output');
+        const requests = join(root, 'requests');
+        for (const [name, body] of Object.entries({
+          gh: 'printf "gh token=%s\\n" "$GH_TOKEN" >> "$REQUESTS"',
+          git: `printf 'git %s\\n' "$*" >> "$REQUESTS"
+if [[ "$1" == diff ]]; then exit "$NO_CHANGES"; fi
+if [[ "$1" == add ]]; then exit "$ADD_STATUS"; fi`,
+          node: `printf 'push token=%s\\n' "$GH_TOKEN" >> "$REQUESTS"
+exit "$PUSH_STATUS"`,
+        })) {
+          writeFileSync(join(root, name), `#!/usr/bin/env bash\n${body}\n`, {
+            mode: 0o755,
+          });
+        }
+        function run(env = {}) {
+          writeFileSync(output, '');
+          writeFileSync(requests, '');
+          const result = spawnSync('bash', ['-eu', '-c', commit], {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              PATH: `${root}:${process.env.PATH}`,
+              GITHUB_OUTPUT: output,
+              REQUESTS: requests,
+              RELEASE_PR_TOKEN: '',
+              BUILT_IN_TOKEN: 'built-in-fixture-token',
+              SECRETS_URL:
+                'https://github.com/owner/repo/settings/secrets/actions',
+              NO_CHANGES: '1',
+              PUSH_STATUS: '0',
+              ADD_STATUS: '0',
+              ...env,
+            },
+          });
+          return {
+            ...result,
+            output: readFileSync(output, 'utf8'),
+            requests: readFileSync(requests, 'utf8'),
+          };
+        }
+        for (const dedicated of ['', 'dedicated-fixture-token']) {
+          const result = run({ RELEASE_PR_TOKEN: dedicated });
+          expect(result.status).toBe(0);
+          expect(result.output).toBe('landed=true\n');
+          expect(result.requests).toContain(
+            `push token=${dedicated || 'built-in-fixture-token'}`
+          );
+          expect(result.requests).toContain(
+            'git add -- docs/screenshots/example-app/'
+          );
+        }
+        const denied = run({ PUSH_STATUS: '1' });
+        expect(denied.status).toBe(1);
+        expect(denied.output).toBe('');
+        expect(denied.stdout).toContain(
+          'Contents and Pull requests read/write'
+        );
+        expect(denied.stdout).toContain(
+          'https://github.com/owner/repo/settings/secrets/actions'
+        );
+        const unchanged = run({ NO_CHANGES: '0' });
+        expect(unchanged.status).toBe(0);
+        expect(unchanged.output).toBe('');
+        expect(unchanged.requests).not.toContain('push token=');
+        const stagingFailure = run({ ADD_STATUS: '23' });
+        expect(stagingFailure.status).toBe(23);
+        expect(stagingFailure.output).toBe('');
+        expect(stagingFailure.requests).not.toContain('push token=');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+});
+
 describe('preview drift detection', () => {
   const job = containerJobs.find(({ name }) => name === 'preview-regen').job;
   const script = stepScript(job, 'Detect drift');
