@@ -16,9 +16,9 @@ const changesPattern =
   /### (Major|Minor|Patch) Changes\s*\n\s*-\s+(?:([a-f0-9]+):\s+)?(.+?)$/s;
 const changesMatch = testBody.match(changesPattern);
 
-let commitHash = null;
-let rawDescription = null;
-let changeType = null;
+let commitHash;
+let rawDescription;
+let changeType;
 
 if (changesMatch) {
   [, changeType, commitHash, rawDescription] = changesMatch;

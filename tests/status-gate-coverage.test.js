@@ -28,6 +28,20 @@ function writeWorkflow(dir, name, lines) {
 }
 
 describe('check-status-gate-covers-all-jobs.mjs', () => {
+  itUnless(sandboxed)('accepts comments and blank lines in block needs', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'gate-comments-'));
+    try {
+      const source = releaseWorkflow.replace(
+        '      - lint',
+        '      # Quality checks\n\n      - lint # includes formatting\n'
+      );
+      const file = writeWorkflow(dir, 'comments.yml', source.split('\n'));
+      const result = runChecker([file]);
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   itUnless(sandboxed)(
     'confirms the shipped release workflow is fully covered',
     () => {
@@ -180,8 +194,8 @@ describe('check-status-gate-covers-all-jobs.mjs shipped coverage', () => {
     () => {
       const expectedJobs = {
         'links.yml': 'covers all 1 other job(s).',
-        'security.yml': 'covers all 3 other job(s).',
-        'workflows.yml': 'covers all 3 other job(s).',
+        'security.yml': 'covers all 4 other job(s).',
+        'workflows.yml': 'covers all 4 other job(s).',
         'example-app.yml': 'covers all 6 other job(s).',
       };
 

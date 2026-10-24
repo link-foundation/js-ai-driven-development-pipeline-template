@@ -21,6 +21,7 @@ on:
           - changeset-pr
       bump_type:
         description: 'Manual release type'
+        default: patch
         required: true
         type: choice
         options:
@@ -68,7 +69,7 @@ jobs:
       docs-changed: ${{ steps.changes.outputs.docs-changed }}
       any-code-changed: ${{ steps.changes.outputs.any-code-changed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -99,7 +100,7 @@ jobs:
     if: |
       needs.detect-changes.outputs.js-changed == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -120,7 +121,7 @@ jobs:
       needs.detect-changes.outputs.docs-changed == 'true' ||
       needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -149,7 +150,7 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -176,13 +177,13 @@ jobs:
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -197,6 +198,7 @@ jobs:
           GITHUB_HEAD_REF: ${{ github.head_ref }}
           GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           RELEASE_PR_ACTOR: ${{ vars.RELEASE_PR_ACTOR }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           # Run changeset validation script
           # This validates that exactly ONE changeset was ADDED by this PR
@@ -226,7 +228,7 @@ jobs:
         needs.detect-changes.outputs.any-code-changed == 'true'
       )
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # For PRs, fetch enough history to merge with base branch
           fetch-depth: 0
@@ -239,7 +241,7 @@ jobs:
         run: bash scripts/simulate-fresh-merge.sh
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -257,6 +259,8 @@ jobs:
           git status --short
 
       - name: Run ESLint
+        env:
+          LINT_ALL_WARNINGS: ${{ github.event_name != 'pull_request' && '1' || '0' }}
         run: npm run lint
 
       - name: Check formatting
@@ -273,7 +277,7 @@ jobs:
   # See docs/case-studies/issue-23 for why this is critical.
   # Fast-fail: slow test matrix only runs after fast checks pass (hive-mind principle #5)
   test:
-    name: Test (${{ matrix.runtime }} on ${{ matrix.os }})
+    name: Test runtimes
     runs-on: ${{ matrix.os }}
     # Typical run: <1min per runtime/OS on warm runners, with Windows
     # sometimes slower on cold starts. Each test step owns an explicit
@@ -316,7 +320,7 @@ jobs:
         os: [ubuntu-24.04, macos-15, windows-2025]
         runtime: [node, bun, deno]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # For PRs, fetch enough history to merge with base branch
           fetch-depth: 0
@@ -331,7 +335,7 @@ jobs:
 
       - name: Setup Node.js
         if: matrix.runtime == 'node'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -397,7 +401,7 @@ jobs:
       DOCKER_CONTEXT: ${{ vars.DOCKER_CONTEXT }}
       DOCKERFILE: ${{ vars.DOCKERFILE }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -445,7 +449,7 @@ jobs:
     if: |
       needs.detect-changes.outputs.docs-changed == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -479,7 +483,7 @@ jobs:
       # finding.
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -524,6 +528,7 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     # Use !cancelled() instead of always() so cancellation propagates correctly (hive-mind issue #1278)
     # This is needed because lint/test jobs have a transitive dependency on changeset-check
     if: |
@@ -551,13 +556,13 @@ jobs:
       # `git push origin main` to publish the version bump, which needs the
       # token wired into the remote. Every other checkout in this
       # repository sets persist-credentials: false.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
@@ -683,6 +688,7 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     # Permissions required for npm OIDC trusted publishing
     permissions:
       contents: write
@@ -698,13 +704,13 @@ jobs:
       # commit to main, which needs the token wired into the remote.
       # Every other checkout in this repository sets
       # persist-credentials: false.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
@@ -772,6 +778,7 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     if: |
       !cancelled() &&
       needs.release-preflight.result == 'success' &&
@@ -796,7 +803,7 @@ jobs:
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
       RELEASE_VERSION: ${{ needs.release.outputs.published_version || needs.instant-release.outputs.published_version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -819,7 +826,7 @@ jobs:
   # Build each architecture on a native runner. Each build is pushed by digest;
   # docker-publish combines those immutable digests into the release tags.
   docker-publish-build:
-    name: Build Docker Image (${{ matrix.platform }})
+    name: Build Docker Image
     needs: [docker-publish-config]
     if: needs.docker-publish-config.outputs.enabled == 'true'
     timeout-minutes: 30
@@ -835,7 +842,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -877,11 +884,12 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -955,12 +963,13 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
     steps:
       # peter-evans/create-pull-request receives the dedicated token directly;
       # dependency installation does not need a credential in .git/config.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -975,7 +984,7 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -991,7 +1000,7 @@ jobs:
       - name: Format changeset with Prettier
         run: |
           # Run Prettier on the changeset file to ensure it matches project style
-          npx prettier --write ".changeset/*.md" || true
+          npx prettier --write ".changeset/*.md"
 
           echo "Formatted changeset files"
 
@@ -1051,12 +1060,12 @@ jobs:
       - docker-publish
       - changeset-pr
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -1064,5 +1073,5 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh

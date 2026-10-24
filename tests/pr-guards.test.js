@@ -9,6 +9,33 @@ import { itUnless, sandboxed } from './helpers/skip.js';
 const scripts = resolve('scripts');
 const fragment = "---\n'fixture': patch\n---\n\nFix fixture\n";
 
+describe('Dependabot changeset exemption', () => {
+  itUnless(sandboxed)(
+    'exempts the exact bot author before reading a diff',
+    () =>
+      fixture(({ invoke }) => {
+        const result = invoke('validate-changeset.mjs', {
+          PR_AUTHOR: 'dependabot[bot]',
+          GITHUB_HEAD_SHA: 'unavailable',
+        });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('dependabot[bot]');
+      })
+  );
+  itUnless(sandboxed)('does not exempt a branch impersonating Dependabot', () =>
+    fixture(({ write, commit, invoke }) => {
+      write('index.js', 'export const value = 2;\n');
+      commit();
+      expect(
+        invoke('validate-changeset.mjs', {
+          PR_AUTHOR: 'someone',
+          GITHUB_HEAD_REF: 'dependabot/npm/fake',
+        }).status
+      ).toBe(1);
+    })
+  );
+});
+
 function fixture(run, { root = '.', existing = false } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'pr-guard-'));
   const git = (...args) =>

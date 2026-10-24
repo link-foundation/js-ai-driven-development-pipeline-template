@@ -36,6 +36,7 @@ function makeFixtures({
   postStatus = 202,
   oidcStatus = 200,
   exchangeStatus = 201,
+  packageStatus = 200,
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'preflight-fixtures-'));
   writeFileSync(join(dir, 'whoami_status'), String(whoamiStatus));
@@ -48,6 +49,7 @@ function makeFixtures({
     JSON.stringify({ value: 'private-fixture-jwt' })
   );
   writeFileSync(join(dir, 'exchange_status'), String(exchangeStatus));
+  writeFileSync(join(dir, 'package_status'), String(packageStatus));
   writeFileSync(
     join(dir, 'exchange.json'),
     JSON.stringify({ token: 'private-fixture-npm-token' })
@@ -416,4 +418,46 @@ describe('npm OIDC package exchange regression', () => {
       expect(stdout).not.toContain('npm OIDC package exchange verified');
     }
   );
+  for (const [packageStatus, expected] of [
+    [
+      404,
+      [
+        'npm has no package @link-foundation/example-package-name yet',
+        'Add an NPM_TOKEN repository secret',
+        'https://github.com/acme/widget/settings/secrets/actions',
+        'add a trusted publisher for acme/widget, workflow release.yml, at https://www.npmjs.com/package/@link-foundation/example-package-name/access',
+      ],
+    ],
+    [
+      200,
+      [
+        'npm rejected the OIDC exchange for @link-foundation/example-package-name (404): add a trusted publisher for acme/widget',
+      ],
+    ],
+    ['000', ['the package lookup answered 000']],
+  ]) {
+    itUnless(sandboxed)(
+      `names the maintainer action when npm answers the package lookup with ${packageStatus}`,
+      async () => {
+        const fixtures = makeFixtures({ exchangeStatus: 404, packageStatus });
+        const { code, stdout } = await runPreflight(
+          {
+            PREFLIGHT_MODE: 'release',
+            ACTIONS_ID_TOKEN_REQUEST_URL: OIDC_URL,
+            GITHUB_SERVER_URL: 'https://github.com',
+            GITHUB_REPOSITORY: 'acme/widget',
+          },
+          fixtures
+        );
+        expect(code).toBe(1);
+        for (const text of expected) {
+          expect(stdout).toContain(text);
+        }
+        expect(stdout).toContain('::error::release-preflight: npm ');
+        expect(readFileSync(join(fixtures, 'requests'), 'utf8')).toContain(
+          'https://registry.npmjs.org/%40link-foundation%2Fexample-package-name'
+        );
+      }
+    );
+  }
 });

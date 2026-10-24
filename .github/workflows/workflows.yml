@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - '.github/**'
+      - '**.sh'
+      - '.husky/**'
       - 'scripts/check-ci-workflows.mjs'
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
@@ -13,6 +15,8 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - '.github/**'
+      - '**.sh'
+      - '.husky/**'
       - 'scripts/check-ci-workflows.mjs'
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
@@ -38,7 +42,7 @@ jobs:
       group: check-${{ github.workflow }}-${{ github.ref }}-actionlint
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -55,7 +59,22 @@ jobs:
       #   docker inspect --format='{{index .RepoDigests 0}}' rhysd/actionlint:<tag>
       - uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
-          args: -color
+          # queue:max is supported by GitHub; actionlint's schema lags it.
+          args: -color -ignore "unexpected key .queue. for .concurrency. section"
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-shellcheck
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check standalone shell scripts and hooks
+        run: git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --spec shellcheck-py==0.11.0.1 shellcheck
 
   # The terminal status job of release.yml keys branch protection; its
   # needs list is hand-maintained, so a job left out of it could fail while
@@ -69,7 +88,7 @@ jobs:
       group: check-${{ github.workflow }}-${{ github.ref }}-status-gate-coverage
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -95,7 +114,7 @@ jobs:
       group: check-${{ github.workflow }}-${{ github.ref }}-zizmor
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -160,13 +179,14 @@ jobs:
       - actionlint
       - status-gate-coverage
       - zizmor
+      - shellcheck
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -174,5 +194,5 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh

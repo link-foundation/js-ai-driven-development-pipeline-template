@@ -68,14 +68,15 @@
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
-    "eslint": "^9.38.0",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
     "jscpd": "^5.4.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.6.2",
-    "test-anywhere": "^0.8.48"
+    "test-anywhere": "^0.8.48",
+    "@eslint/js": "^10.0.1"
   },
   "lint-staged": {
     "*.{js,mjs,cjs}": [
@@ -86,6 +87,12 @@
     "*.md": [
       "prettier --write",
       "prettier --check"
+    ],
+    "*.sh": [
+      "pipx run --spec shellcheck-py==0.11.0.1 shellcheck"
+    ],
+    ".husky/*": [
+      "pipx run --spec shellcheck-py==0.11.0.1 shellcheck"
     ]
   }
 }

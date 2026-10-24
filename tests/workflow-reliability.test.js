@@ -2,7 +2,13 @@ import { describe, it, expect } from 'test-anywhere';
 import { readFileSync, readdirSync } from 'node:fs';
 
 const WORKFLOW_DIRECTORY = '.github/workflows';
-const SUPPORTED_CONCURRENCY_KEYS = new Set(['group', 'cancel-in-progress']);
+// GitHub documents `queue` although actionlint 1.7.12 does not know it yet:
+// https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+const SUPPORTED_CONCURRENCY_KEYS = new Set([
+  'group',
+  'cancel-in-progress',
+  'queue',
+]);
 
 function readWorkflow(filePath) {
   return readFileSync(filePath, 'utf8').replaceAll('\r\n', '\n');
@@ -130,7 +136,7 @@ function expectOrdered(text, markers) {
 
 function expectMainWriterConcurrency(jobBlock) {
   expect(jobBlock).toContain(
-    '    concurrency:\n      group: main-writer-${{ github.repository }}-main\n      cancel-in-progress: false'
+    '    concurrency:\n      group: main-writer-${{ github.repository }}-main\n      cancel-in-progress: false\n      queue: max'
   );
 }
 
@@ -188,10 +194,39 @@ describe('workflow concurrency policy', () => {
       '      group: main-writer',
       '      cancel-in-progress: false',
       '      queue: max',
+      '      cancel-in-flight: true',
       '    steps: []',
     ].join('\n');
 
-    expect(getUnsupportedConcurrencyKeys(invalidWorkflow)).toEqual(['queue']);
+    expect(getUnsupportedConcurrencyKeys(invalidWorkflow)).toEqual([
+      'cancel-in-flight',
+    ]);
+  });
+
+  it('keeps every waiting main writer in the queue', () => {
+    // With the default `queue: single`, a third writer that starts waiting
+    // cancels the one already waiting, so a due release ends up cancelled.
+    const writers = [];
+
+    for (const workflowPath of listWorkflowPaths()) {
+      const blocks = readWorkflow(workflowPath).split(/\n {4}concurrency:\n/);
+
+      for (const block of blocks.slice(1)) {
+        const settings = block.split(/\n(?! {6})/)[0];
+
+        if (settings.includes('group: main-writer-')) {
+          writers.push(settings);
+          expect(settings).toContain('cancel-in-progress: false');
+          expect(settings).toContain('queue: max');
+        }
+        // GitHub rejects the workflow when a queue may also cancel.
+        if (settings.includes('queue: max')) {
+          expect(settings).not.toContain('cancel-in-progress: true');
+        }
+      }
+    }
+
+    expect(writers.length).toBe(7);
   });
 
   it('uses only keys supported by GitHub Actions', () => {
@@ -290,7 +325,7 @@ describe('workflow reliability policy', () => {
         'workflow_dispatch:',
         gitDefaultBranchEnv,
         'jobs:',
-        '- uses: actions/checkout@v6',
+        '- uses: actions/checkout@v7',
       ]);
     }
   });
@@ -307,6 +342,7 @@ describe('workflow reliability policy', () => {
       '--hidden',
       '--extensions md,html',
       '--exclude-path docs/case-studies',
+      '--exclude-path dev/log',
       `--exclude-path ${viteSourceHtmlPath}`,
       '--exclude-path tests/fixtures',
       '\n            .',
@@ -327,9 +363,9 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).toContain(
       'name: preview-regen-failure-${{ github.run_id }}'
     );
-    expect(previewRegenJob).toContain('docs/screenshots/');
-    expect(previewRegenJob).toContain('web/test-results/');
-    expect(previewRegenJob).toContain('web/playwright-report/');
+    expect(previewRegenJob).toContain('path: docs/screenshots/example-app/');
+    expect(previewRegenJob).not.toContain('web/test-results/');
+    expect(previewRegenJob).not.toContain('web/playwright-report/');
     expect(previewRegenJob).toContain('retention-days: 7');
     expect(previewRegenJob).toContain('if-no-files-found: ignore');
   });
@@ -612,7 +648,7 @@ describe('npm user config cleanup', () => {
       const job = getJobBlock(workflow, jobName);
 
       expectOrdered(job, [
-        'uses: actions/setup-node@v6',
+        'uses: actions/setup-node@v7',
         '- name: Remove deprecated npm auth config',
         '- name: Install dependencies',
       ]);

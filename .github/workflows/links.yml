@@ -52,9 +52,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Restore link cache
+        uses: actions/cache@v5
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ runner.os }}-${{ github.sha }}
+          restore-keys: cache-lychee-
 
       - name: Check links with lychee
         id: lychee
@@ -78,6 +85,7 @@ jobs:
             --hidden
             --extensions md,html
             --exclude-path docs/case-studies
+            --exclude-path dev/log
             --exclude-path examples/universal-app/index.html
             --exclude-path tests/fixtures
             .
@@ -113,6 +121,14 @@ jobs:
           LYCHEE_OUTPUT: lychee/out.md
           RECOVERED_URLS: lychee/recovered.txt
 
+      - name: Upload broken-link diagnostics
+        if: "!cancelled() && steps.lychee.outputs.exit_code != '0'"
+        uses: actions/upload-artifact@v7
+        with:
+          name: lychee-report
+          path: lychee/
+          if-no-files-found: warn
+
       - name: Fail if broken links were found
         if: >-
           !cancelled() &&
@@ -134,7 +150,7 @@ jobs:
           echo "     b. Remove the link if the content is no longer relevant."
           echo "     c. Add the URL to .lycheeignore if it is a known false positive."
           echo ""
-          echo "Report location: lychee/out.md (available as a workflow artifact if configured)."
+          echo "Report location: lychee/out.md (download the lychee-report workflow artifact)."
           exit 1
 
   # Terminal status gate: runs even when the jobs above fail or are
@@ -156,12 +172,12 @@ jobs:
     needs:
       - link-checker
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
@@ -169,5 +185,5 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh

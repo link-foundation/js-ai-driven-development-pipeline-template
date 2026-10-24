@@ -62,7 +62,7 @@ describe('security workflow', () => {
     );
     expect(codeql).toContain('      actions: read');
     expect(codeql).toContain('      security-events: write');
-    expect(codeql).toContain('uses: actions/checkout@v6');
+    expect(codeql).toContain('uses: actions/checkout@v7');
     expect(codeql).toContain('uses: github/codeql-action/init@v4');
     expect(codeql).toContain('languages: ${{ matrix.language }}');
     expect(codeql).toContain('uses: github/codeql-action/autobuild@v4');
@@ -75,6 +75,10 @@ describe('security workflow', () => {
     expect(dependencyReview).toContain(
       "    if: github.event_name == 'pull_request'"
     );
+    expect(dependencyReview).toContain('needs: [dependency-graph]');
+    expect(dependencyReview).toContain(
+      "needs.dependency-graph.outputs.enabled == 'true'"
+    );
     expect(dependencyReview).toContain('    timeout-minutes: 10');
     expect(dependencyReview).toContain(
       '      group: check-${{ github.workflow }}-${{ github.ref }}-dependency-review\n      cancel-in-progress: true'
@@ -86,6 +90,20 @@ describe('security workflow', () => {
     expect(dependencyReview).toContain('          fail-on-severity: high');
     expect(dependencyReview).toContain(
       '          comment-summary-in-pr: on-failure'
+    );
+  });
+
+  it('probes the graph on every event, requiring it outside PRs', () => {
+    const graph = getJobBlock('dependency-graph');
+    expect(graph).toContain('scripts/check-dependency-graph.sh');
+    expect(graph).toContain(
+      "REQUIRE_GRAPH: ${{ github.event_name != 'pull_request' && '1' || '0' }}"
+    );
+    expect(graph).toContain(
+      'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}'
+    );
+    expect(getJobBlock('pipeline-status')).toContain(
+      '      - dependency-graph'
     );
   });
 
@@ -105,7 +123,7 @@ describe('security workflow', () => {
 
     expect(auditedLocks).toEqual(listPackageLocks());
     expect(audit).toContain('    timeout-minutes: 10');
-    expect(audit).toContain('uses: actions/setup-node@v6');
+    expect(audit).toContain('uses: actions/setup-node@v7');
     expect(audit).toContain('node-version: 24');
     expect(audit).toContain('working-directory: ${{ matrix.directory }}');
     expect(audit).toContain(

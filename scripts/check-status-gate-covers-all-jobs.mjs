@@ -75,7 +75,11 @@ function listNeededJobs(jobBlock) {
   const neededJobs = [];
 
   for (const line of lines.slice(needsStart + 1)) {
-    const item = line.match(/^ {6}- ([a-zA-Z0-9_-]+)\s*$/);
+    const content = line.replace(/\s+#.*$/, '');
+    if (!content.trim() || content.trimStart().startsWith('#')) {
+      continue;
+    }
+    const item = content.match(/^ {6}- ([a-zA-Z0-9_-]+)\s*$/);
 
     if (!item) {
       break;
