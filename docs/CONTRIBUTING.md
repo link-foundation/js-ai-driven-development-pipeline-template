@@ -227,3 +227,14 @@ files locally, run:
 ```sh
 git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --spec shellcheck-py==0.11.0.1 shellcheck
 ```
+
+Release scripts load `command-stream` and `lino-arguments` from installed,
+lockfile-pinned development dependencies. Run `npm ci` before invoking them;
+they do not download or install helpers at runtime. Keep both `package-lock.json`
+and `deno.lock` synchronized when updating these dependencies. CI runs its pinned
+secrets scan after Node setup and before installing project dependencies, so the
+scanner and its preset resolve from the same npm execution tree.
+
+Shell scripts and Git hooks use LF on every platform through `.gitattributes`.
+The prepare script calls Husky's installed API and verifies `core.hooksPath`.
+Set `CI_SCRIPTS_DEBUG=1` for optional dependency and hook installation tracing.

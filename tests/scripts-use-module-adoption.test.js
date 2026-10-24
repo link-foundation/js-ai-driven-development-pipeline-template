@@ -1,7 +1,7 @@
 /* eslint local/no-changelog-comments: "off" */
 
 /**
- * Guard that keeps every pipeline script on the use-m interop shim.
+ * Guard that keeps every pipeline script on the installed-dependency shim.
  *
  * A raw `const { $ } = await use('command-stream')` yields `undefined` on Node
  * 22.12+ because of the synthetic `module.exports` CommonJS export, so the
@@ -34,7 +34,7 @@ function scriptSources() {
     }));
 }
 
-describe('pipeline scripts load use-m through the interop shim', () => {
+describe('pipeline scripts load installed dependencies through the interop shim', () => {
   it('never destructures a package straight off use()', () => {
     const offenders = scriptSources()
       .filter(({ source }) =>

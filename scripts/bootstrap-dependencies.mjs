@@ -3,12 +3,9 @@
 /**
  * Module-scope dependency bootstrap for the pipeline scripts.
  *
- * Seven release scripts load `command-stream` / `lino-arguments` through the
- * use-m CDN at module scope, outside their own `main()`. An unhandled failure
- * there aborts module initialisation: the script prints nothing, writes
- * nothing to `GITHUB_OUTPUT`, and the job's only diagnostic is a stack inside
- * the loader, which reads like a defect in the release logic when the real
- * cause is a third-party outage.
+ * Release scripts load installed command-stream / lino-arguments helpers at
+ * module scope, outside main(). Missing or invalid dependencies must still
+ * produce a useful annotation and fallback workflow outputs.
  *
  * `bootstrapDependencies()` runs those loads behind the script's own error
  * handling: on failure it prints a GitHub `::error::` annotation naming the
