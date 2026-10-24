@@ -57,7 +57,7 @@ describe('Wayback CLI retries and failure reporting', () => {
             assert.match(result.stdout, /Re-run the job/);
             assert.doesNotMatch(result.stdout, /Fix or remove/);
           } else {
-            assert.match(result.stdout, /https:\/\/web.archive.org/);
+            assert.match(result.stdout, /https:\/\/web\.archive\.org\//);
           }
         } finally {
           rmSync(root, { recursive: true, force: true });
