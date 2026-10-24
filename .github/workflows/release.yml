@@ -169,7 +169,7 @@ jobs:
   changeset-check:
     name: Check for Changesets
     runs-on: ubuntu-24.04
-    # Typical run: <30s including npm install. 10min covers cold runners.
+    # Typical run: <30s including npm ci. 10min covers cold runners.
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-changeset-check
@@ -188,7 +188,7 @@ jobs:
           node-version: '24.x'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Check for changesets
         env:
@@ -245,8 +245,11 @@ jobs:
         with:
           node-version: '24.x'
 
+      - name: Check for secrets
+        run: npx --yes -p secretlint@13.0.7 -p @secretlint/secretlint-rule-preset-recommend@13.0.7 secretlint "**/*"
+
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       # Exercise versioning without credentials, even if release-preflight fails.
       # Restore consumed changesets and metadata on success or failure so lint
@@ -268,9 +271,6 @@ jobs:
 
       - name: Check code duplication
         run: npm run check:duplication
-
-      - name: Check for secrets
-        run: npx --yes -p secretlint@13.0.7 -p @secretlint/secretlint-rule-preset-recommend@13.0.7 secretlint "**/*"
 
   # Test matrix: 3 runtimes (Node.js, Bun, Deno) x 3 OS (Ubuntu, macOS, Windows)
   # IMPORTANT: Tests must validate the ACTUAL merge result, not a stale merge preview.
@@ -334,14 +334,14 @@ jobs:
         run: bash scripts/simulate-fresh-merge.sh
 
       - name: Setup Node.js
-        if: matrix.runtime == 'node'
+        if: matrix.runtime == 'node' || matrix.runtime == 'bun'
         uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
       - name: Install dependencies (Node.js)
         if: matrix.runtime == 'node'
-        run: npm install
+        run: npm ci
 
       - name: Run tests (Node.js)
         if: matrix.runtime == 'node'
@@ -354,9 +354,10 @@ jobs:
         with:
           bun-version: '1.x'
 
+      # Reuse the npm lockfile; Bun still executes this matrix leg's tests.
       - name: Install dependencies (Bun)
         if: matrix.runtime == 'bun'
-        run: bun install
+        run: npm ci
 
       - name: Run tests (Bun)
         if: matrix.runtime == 'bun'
@@ -579,7 +580,7 @@ jobs:
         run: node scripts/check-package-manager.mjs
 
       - name: Install dependencies
-        run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm install
+        run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm ci
 
       - name: Update npm for OIDC trusted publishing
         run: node scripts/setup-npm.mjs
@@ -719,7 +720,7 @@ jobs:
         run: node scripts/sanitize-npm-userconfig.mjs
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Update npm for OIDC trusted publishing
         run: node scripts/setup-npm.mjs
@@ -989,7 +990,7 @@ jobs:
           node-version: '24.x'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Create changeset file
         env:

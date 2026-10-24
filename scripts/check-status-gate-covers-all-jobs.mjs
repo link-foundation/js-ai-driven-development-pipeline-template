@@ -5,7 +5,7 @@
  * `needs`, i.e. when its failure cannot turn the run red.
  *
  * `pipeline-status` is the job a branch protection rule keys on: it runs
- * `if: always()`, `needs:` every other job, and turns any failure among
+ * `if: !cancelled()`, `needs:` every other job, and turns any failure among
  * them into a red run. Its `needs` list is hand-maintained, so a job left
  * out of it can fail while the gate reports success. This script derives
  * the requirement from the workflow itself, so the gate cannot drift from

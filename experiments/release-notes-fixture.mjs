@@ -35,11 +35,22 @@ globalThis.releaseFixtureModule = (name) => {
   }
   throw new Error(`Unexpected fixture dependency: ${name}`);
 };
-globalThis.fetch = () =>
-  Promise.resolve({
-    ok: true,
-    text: () =>
-      Promise.resolve(
-        '({use: async (name) => globalThis.releaseFixtureModule(name)})'
-      ),
-  });
+// Intercept local imports only in this fixture process. Production has no
+// environment/global override for dependency resolution.
+const { registerHooks } = await import('node:module');
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    const name = specifier;
+    if (['command-stream', 'lino-arguments'].includes(name)) {
+      const source =
+        name === 'command-stream'
+          ? "export const { $, shell } = globalThis.releaseFixtureModule('command-stream');"
+          : "export const { makeConfig } = globalThis.releaseFixtureModule('lino-arguments');";
+      return {
+        url: `data:text/javascript,${encodeURIComponent(source)}`,
+        shortCircuit: true,
+      };
+    }
+    return nextResolve(specifier, context);
+  },
+});

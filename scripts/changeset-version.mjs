@@ -14,7 +14,7 @@
  * - Environment: JS_ROOT=<path>
  *
  * Uses link-foundation libraries:
- * - use-m: Dynamic package loading without package.json dependencies
+ * - Lockfile-installed command-stream and lino-arguments helpers
  * - command-stream: Modern shell command execution with streaming support
  *
  * Repository layout: single-language and multi-language repositories are both
@@ -26,7 +26,7 @@ import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream } from './use-module.mjs';
 
 // Import command-stream for shell command execution
-// Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
+// Loaded through bootstrapDependencies: when installed helpers are unavailable,
 // this script reports the failure and writes its outputs, and the process
 // does not die inside module initialisation.
 const [{ $ }] = await bootstrapDependencies([loadCommandStream]);

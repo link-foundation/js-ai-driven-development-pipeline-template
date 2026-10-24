@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
  * Node.js 20.x ships with npm 10.x, so we need to update
  *
  * Uses link-foundation libraries:
- * - use-m: Dynamic package loading without package.json dependencies
+ * - Lockfile-installed command-stream and lino-arguments helpers
  * - command-stream: Modern shell command execution with streaming support
  */
 

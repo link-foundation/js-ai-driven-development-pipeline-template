@@ -28,6 +28,7 @@
  *        error that has no http(s) URL to look up (missing local file, ...)
  */
 
+import { setTimeout as sleep } from 'node:timers/promises';
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -148,53 +149,113 @@ export function splitRecoveredUrls(urls, recoveredText) {
   };
 }
 
-/**
- * Check if a URL has an archived version in the Wayback Machine
- * Uses the Wayback Machine Availability API:
- * https://archive.org/help/wayback_api.php
- * @param {string} url - The URL to check
- * @returns {Promise<{available: boolean, archiveUrl: string|null, timestamp: string|null}>}
- */
-async function checkWaybackMachine(url) {
-  const apiUrl = `${WAYBACK_API}${encodeURIComponent(url)}`;
+const NOT_ARCHIVED = { available: false, archiveUrl: null, timestamp: null };
 
+function parseWaybackSnapshot(data) {
+  const snapshots = data?.archived_snapshots;
+  if (!snapshots || typeof snapshots !== 'object' || Array.isArray(snapshots)) {
+    throw new Error('unreadable answer: missing archived_snapshots');
+  }
+  const snapshot = snapshots.closest;
+  if (snapshot?.available === true) {
+    if (
+      typeof snapshot.url !== 'string' ||
+      !/^https?:\/\//.test(snapshot.url) ||
+      typeof snapshot.timestamp !== 'string'
+    ) {
+      throw new Error('unreadable answer: invalid snapshot');
+    }
+    return {
+      available: true,
+      archiveUrl: snapshot.url.replace(/^http:\/\//, 'https://'),
+      timestamp: snapshot.timestamp,
+    };
+  }
+  if (Object.keys(snapshots).length === 0 || snapshot?.available === false) {
+    return { ...NOT_ARCHIVED };
+  }
+  throw new Error('unreadable answer: invalid archived_snapshots');
+}
+
+async function fetchWaybackSnapshot(apiUrl, { fetchImpl, timeoutMs }) {
   const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 10000);
-
+  const timer = globalThis.setTimeout(
+    () => controller.abort(new Error(`Timed out after ${timeoutMs}ms`)),
+    timeoutMs
+  );
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetchImpl(apiUrl, {
       headers: {
         'User-Agent': 'broken-link-checker/1.0 (GitHub Actions CI)',
       },
       signal: controller.signal,
     });
-
+    if (response.status === 429 || response.status >= 500) {
+      throw new Error(`HTTP ${response.status}`);
+    }
     if (!response.ok) {
-      console.warn(`  Wayback API returned ${response.status} for ${url}`);
-      return { available: false, archiveUrl: null, timestamp: null };
+      return { ...NOT_ARCHIVED, error: `HTTP ${response.status}` };
     }
-
-    const data = await response.json();
-
-    if (data.archived_snapshots?.closest?.available === true) {
-      const snapshot = data.archived_snapshots.closest;
-      const archiveUrl = snapshot.url.replace(/^http:\/\//, 'https://');
-      return {
-        available: true,
-        archiveUrl,
-        timestamp: snapshot.timestamp,
-      };
-    }
-
-    return { available: false, archiveUrl: null, timestamp: null };
+    return parseWaybackSnapshot(await response.json());
   } catch (error) {
-    console.warn(
-      `  Failed to check Wayback Machine for ${url}: ${error.message}`
-    );
-    return { available: false, archiveUrl: null, timestamp: null };
+    const reason = controller.signal.aborted ? controller.signal.reason : error;
+    const cause = reason.cause?.code ?? reason.cause?.message;
+    throw new Error(cause ? `${reason.message}: ${cause}` : reason.message, {
+      cause: error,
+    });
   } finally {
-    globalThis.clearTimeout(timeoutId);
+    globalThis.clearTimeout(timer);
   }
+}
+
+function validateLookupOptions({ attempts, timeoutMs, delayMs }) {
+  if (
+    !Number.isInteger(attempts) ||
+    attempts < 1 ||
+    !Number.isFinite(timeoutMs) ||
+    timeoutMs <= 0 ||
+    !Number.isFinite(delayMs) ||
+    delayMs < 0
+  ) {
+    throw new RangeError(
+      'Wayback attempts and timeout must be positive; delay must be nonnegative'
+    );
+  }
+}
+
+/**
+ * Check the availability API with bounded retries for transient lookup failures.
+ * Empty snapshots confirm absence; exhausted lookups return an error instead.
+ * @param {string} url - The URL to check
+ * @returns {Promise<{available: boolean, archiveUrl: string|null, timestamp: string|null, error?: string}>}
+ */
+export async function checkWaybackMachine(
+  url,
+  {
+    fetchImpl = fetch,
+    attempts = 3,
+    delayMs = 2000,
+    timeoutMs = 10000,
+    sleep: wait = sleep,
+  } = {}
+) {
+  validateLookupOptions({ attempts, timeoutMs, delayMs });
+  const apiUrl = `${WAYBACK_API}${encodeURIComponent(url)}`;
+  let failure;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (attempt > 1) {
+      console.log(
+        `  Retrying Wayback lookup (attempt ${attempt}/${attempts}) after: ${failure}`
+      );
+      await wait(delayMs * 2 ** (attempt - 2));
+    }
+    try {
+      return await fetchWaybackSnapshot(apiUrl, { fetchImpl, timeoutMs });
+    } catch (error) {
+      failure = error.message;
+    }
+  }
+  return { ...NOT_ARCHIVED, error: `${failure} (after ${attempts} attempts)` };
 }
 
 /**
@@ -301,6 +362,48 @@ function reportUnarchivedUrls(withoutArchive) {
   }
 }
 
+function reportLookupSummary({
+  withArchive,
+  withoutArchive,
+  lookupFailures,
+  unarchivableLinks,
+}) {
+  console.log('\n=== Web Archive Check Summary ===\n');
+
+  reportArchivedLinks(withArchive);
+  reportUnarchivedUrls(withoutArchive);
+  for (const { url, error } of lookupFailures) {
+    console.log(
+      `::error title=Broken link - Web Archive lookup failed::${url}: ${error}\n` +
+        'Re-run the job or check the Wayback Machine manually when the service recovers.\n' +
+        'The lookup did not establish whether an archived version exists.'
+    );
+  }
+
+  const allArchived =
+    withoutArchive.length === 0 &&
+    unarchivableLinks.length === 0 &&
+    lookupFailures.length === 0;
+  setOutput('all_archived', allArchived ? 'true' : 'false');
+
+  if (!allArchived) {
+    if (withoutArchive.length || unarchivableLinks.length) {
+      console.log(
+        '\nAction required: Fix or remove the confirmed broken links listed above.'
+      );
+    }
+    console.log(
+      'For links with Web Archive versions, you can replace them with the suggested archive.org URLs.'
+    );
+    return 1;
+  } else {
+    console.log(
+      '\nAll broken links have Web Archive versions. Consider replacing them with the suggested archive.org URLs.'
+    );
+    return 0;
+  }
+}
+
 /**
  * Main function
  */
@@ -348,12 +451,16 @@ async function main() {
 
   const withArchive = [];
   const withoutArchive = [];
+  const lookupFailures = [];
 
   for (const url of brokenUrls) {
     console.log(`Checking: ${url}`);
     const result = await checkWaybackMachine(url);
 
-    if (result.available) {
+    if (result.error) {
+      console.log(`  ✗ Web Archive lookup failed: ${result.error}`);
+      lookupFailures.push({ url, error: result.error });
+    } else if (result.available) {
       const date = formatTimestamp(result.timestamp);
       console.log(`  ✓ Archived on ${date}: ${result.archiveUrl}`);
       withArchive.push({ url, archiveUrl: result.archiveUrl, date });
@@ -366,29 +473,14 @@ async function main() {
     await new Promise((resolve) => globalThis.setTimeout(resolve, 500));
   }
 
-  console.log('\n=== Web Archive Check Summary ===\n');
-
-  reportArchivedLinks(withArchive);
-  reportUnarchivedUrls(withoutArchive);
-
-  const allArchived =
-    withoutArchive.length === 0 && unarchivableLinks.length === 0;
-  setOutput('all_archived', allArchived ? 'true' : 'false');
-
-  if (!allArchived) {
-    console.log(
-      '\nAction required: Fix or remove the broken links listed above.'
-    );
-    console.log(
-      'For links with Web Archive versions, you can replace them with the suggested archive.org URLs.'
-    );
-    process.exit(1);
-  } else {
-    console.log(
-      '\nAll broken links have Web Archive versions. Consider replacing them with the suggested archive.org URLs.'
-    );
-    process.exit(0);
-  }
+  process.exit(
+    reportLookupSummary({
+      withArchive,
+      withoutArchive,
+      lookupFailures,
+      unarchivableLinks,
+    })
+  );
 }
 
 const isDirectExecution =

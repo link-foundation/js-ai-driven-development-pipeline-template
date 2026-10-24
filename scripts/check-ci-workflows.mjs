@@ -49,7 +49,17 @@ export function checkWorkflowPolicy(text) {
 }
 
 function workflowFiles(directory) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+  let entries;
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch (error) {
+    // Composite actions are optional. Do not hide other filesystem errors.
+    if (error.code === 'ENOENT' && directory === '.github/actions') {
+      return [];
+    }
+    throw error;
+  }
+  return entries.flatMap((entry) => {
     const path = join(directory, entry.name);
     return entry.isDirectory()
       ? workflowFiles(path)
