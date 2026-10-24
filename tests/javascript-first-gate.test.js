@@ -63,6 +63,12 @@ describe('JavaScript-first prerequisite and real mixed-language caller', () => {
     for (const action of ['checkout', 'setup-node']) {
       expect(source).toMatch(new RegExp(`actions/${action}@[a-f0-9]{40}`));
     }
+    // A caller can select a PR revision even when dispatching from main.
+    // Do not let that code write a dependency cache in main's trust scope.
+    expect(source).toContain('package-manager-cache: false');
+    expect(source).not.toMatch(
+      /uses: actions\/cache@|\bcache: (npm|yarn|pnpm)/
+    );
   });
   it('wires every Rust path to successful prerequisites and exactly the tested revision', () => {
     const caller = read('.github/workflows/javascript-first-example.yml');

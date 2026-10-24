@@ -64,6 +64,15 @@ builds and runtime suites sequential, Node heaps at 384 MiB, Node test concurren
 at one and Deno worker count at one locally. Use CI for the cross-OS matrix and
 Rust downstream execution. No user caches or dependency directories were deleted.
 
+The first batch at `1885f26` passed the native JavaScript prerequisite, all six
+Rust paths, both dependency audits, workflow checks and desktop packaging. Link
+run 40085623968 identified a moved pipx installation URL at log lines 303 and
+321–323. CodeQL check 120847976552 identified three cache-poisoning paths: the
+callable gate executes a caller-selected revision while setup-node automatically
+enables package-manager caching. Disable that cache explicitly; the gate
+regression fails before the fix (`cache-isolation-before.log`). Preserve both run
+logs and all remaining same-revision failures before the next validated push.
+
 ## Local validation notes
 
 Node and Bun each pass all 897 tests. Deno passes 894 with three existing runtime
