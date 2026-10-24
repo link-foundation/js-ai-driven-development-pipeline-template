@@ -93,6 +93,18 @@ describe('JavaScript-first prerequisite and real mixed-language caller', () => {
       );
     }
   });
+  it('isolates caller-selected source execution to PR checks and trusted pushes', () => {
+    const caller = read('.github/workflows/javascript-first-example.yml');
+    const triggers = caller.split('\npermissions:')[0];
+    expect(triggers).toContain('  pull_request:');
+    expect(triggers).toContain('  push:');
+    // Manual dispatch inherits the selected branch's writable cache scope.
+    // Running an input-selected revision there exposes its runner cache token
+    // even when setup-node's automatic cache is disabled.
+    expect(triggers).not.toMatch(
+      /workflow_dispatch:|repository_dispatch:|pull_request_target:|workflow_run:/
+    );
+  });
   itUnless(sandboxed, noPosixShell)(
     'blocks all downstream work for failed/skipped checks, parity gaps, drift and revision changes',
     () => {

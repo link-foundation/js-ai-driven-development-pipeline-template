@@ -26,6 +26,12 @@ For projects whose JavaScript port is unfinished, keep the readiness gate red an
 report the blockers rather than representing the rollout as complete. Adoption of
 this opt-in workflow does not by itself migrate existing Rust applications.
 
+Run untrusted candidates through `pull_request` so runner caches stay in the PR
+scope. A manual or release caller must establish that its selected candidate is
+trusted before executing it in a default-branch context. Never pass an unvalidated
+dispatch input as `source-sha`: read-only repository permissions and disabled
+dependency caching still leave the runner's cache credentials accessible to code.
+
 The [working mixed-language example](../examples/javascript-first/README.md)
 supplies actual native tests, strict inventory and pinned translation commands.
 Its caller exercises every downstream Rust path with the gate's tested SHA.

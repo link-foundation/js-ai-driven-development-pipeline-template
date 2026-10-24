@@ -28,6 +28,11 @@ example requires no registry credentials. Rust's typed input enforces the i32
 domain that JavaScript checks at runtime. Both native runtimes execute the same
 observations; a successful source regeneration alone is not execution parity.
 
+The example runs on pull requests and trusted pushes to main. PR code executes
+in the PR's cache scope. It does not expose a manual-dispatch path that could
+execute caller-selected code with main's runner cache credentials; disabling
+dependency caching alone does not remove those credentials.
+
 The root regression suite runs the workflow's actual shell steps in temporary
 Git repositories. Deliberate native-test failure, skipped prerequisites, every
 incomplete inventory state, generated drift, dirty worktrees and revision changes

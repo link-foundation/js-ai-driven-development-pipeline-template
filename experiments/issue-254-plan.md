@@ -73,6 +73,14 @@ enables package-manager caching. Disable that cache explicitly; the gate
 regression fails before the fix (`cache-isolation-before.log`). Preserve both run
 logs and all remaining same-revision failures before the next validated push.
 
+At `2795357`, the link check passes, but final CodeQL analysis 2018680050 still
+reports the three paths. Its SARIF confirms that the cache token itself remains
+available regardless of setup-node caching. Remove the new example's optional
+manual-dispatch trigger: its real caller needs only PR checks (isolated cache
+scope) and trusted main pushes. Keep immutable candidate support in the reusable
+gate and document the trust requirement for future release/manual callers. The
+caller-trigger regression fails before this fix (`caller-trust-before.log`).
+
 ## Local validation notes
 
 Node and Bun each pass all 897 tests. Deno passes 894 with three existing runtime
