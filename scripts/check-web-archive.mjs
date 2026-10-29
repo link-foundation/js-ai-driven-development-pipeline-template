@@ -404,25 +404,35 @@ function reportLookupSummary({
   }
 }
 
-/**
- * Main function
- */
-async function main() {
-  const lycheeOutput = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
-
-  console.log('=== Web Archive Fallback Check ===\n');
-  console.log(`Reading lychee output from: ${lycheeOutput}\n`);
-
+function readRequiredReport(lycheeOutput) {
   if (!existsSync(lycheeOutput)) {
-    console.log('No lychee output file found. Skipping web archive check.');
-    setOutput('all_archived', 'true');
-    process.exit(0);
+    throw new Error(`Required lychee report is missing: ${lycheeOutput}`);
   }
 
   const content = readFileSync(lycheeOutput, 'utf-8');
   const { urls: extractedUrls, others: unarchivableLinks } =
     extractBrokenLinks(content);
+  const checkerFailed =
+    process.env.LYCHEE_EXIT_CODE !== undefined &&
+    process.env.LYCHEE_EXIT_CODE !== '0';
+  const hasFailures = extractedUrls.length + unarchivableLinks.length > 0;
+  const cleanReport =
+    /^# Link Checker Report\s*$/m.test(content) &&
+    /\|[^|]*Errors\s*\|\s*0\s*\|/m.test(content);
+  if (!content.trim() || (!hasFailures && (checkerFailed || !cleanReport))) {
+    throw new Error(
+      'Lychee report is empty, malformed, or contains no evidence for the failed checker'
+    );
+  }
 
+  return { extractedUrls, unarchivableLinks };
+}
+
+async function main() {
+  const lycheeOutput = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
+  console.log('=== Web Archive Fallback Check ===\n');
+  console.log(`Reading lychee output from: ${lycheeOutput}\n`);
+  const { extractedUrls, unarchivableLinks } = readRequiredReport(lycheeOutput);
   const recoveredFile = process.env.RECOVERED_URLS || 'lychee/recovered.txt';
   const recoveredText = existsSync(recoveredFile)
     ? readFileSync(recoveredFile, 'utf-8')
@@ -489,6 +499,7 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   main().catch((error) => {
+    setOutput('all_archived', 'false');
     console.error('Unexpected error:', error);
     process.exit(1);
   });

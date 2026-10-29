@@ -60,6 +60,9 @@ function workflowFiles(directory) {
     throw error;
   }
   return entries.flatMap((entry) => {
+    if (entry.name === 'node_modules') {
+      return [];
+    }
     const path = join(directory, entry.name);
     return entry.isDirectory()
       ? workflowFiles(path)

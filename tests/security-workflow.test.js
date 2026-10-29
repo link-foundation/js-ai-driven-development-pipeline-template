@@ -109,7 +109,7 @@ describe('security workflow', () => {
 
   it('fails closed on high-severity advisories in every npm lock', () => {
     const audit = getJobBlock('npm-audit');
-    const directoryList = audit.match(/directory: \[([^\]]+)\]/)?.[1] ?? '';
+    const directoryList = audit.match(/directory:\s*\[([^\]]+)\]/)?.[1] ?? '';
     const auditedLocks = directoryList
       .split(',')
       .map((directory) => directory.trim().replace(/^['"]|['"]$/g, ''))

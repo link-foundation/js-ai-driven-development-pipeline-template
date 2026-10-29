@@ -54,7 +54,7 @@ describe('complete pipeline requirements', () => {
     expect(source).toContain('uses: actions/cache@v5');
     expect(source).toContain('path: .lycheecache');
     expect(source).toContain('restore-keys: cache-lychee-');
-    expect(source).toContain('uses: actions/upload-artifact@v7');
+    expect(source).toContain('uses: ./.github/actions/artifact-transport');
     expect(source).toContain('path: lychee/');
   });
   it('gives skipped matrix jobs static names', () => {

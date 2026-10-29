@@ -28,3 +28,5 @@ rules:
       - example-app.yml
       - action.yml
       - javascript-first-example.yml
+      - links.yml
+      - security.yml

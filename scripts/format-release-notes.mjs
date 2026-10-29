@@ -32,6 +32,10 @@ import {
 } from './format-release-notes-helpers.mjs';
 import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
+import {
+  validateReleaseData,
+  validatePullRequestPages,
+} from './github-api-evidence.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when installed helpers are unavailable,
@@ -96,7 +100,9 @@ try {
   const result = await $`gh api repos/${repository}/releases/${releaseId}`.run({
     capture: true,
   });
-  const releaseData = JSON.parse(result.stdout);
+  const releaseData = validateReleaseData(JSON.parse(result.stdout), {
+    id: releaseId,
+  });
 
   const currentBody = releaseData.body || '';
 
@@ -107,10 +113,10 @@ try {
   }
 
   const parsed = buildReleaseDescription(currentBody);
-  if (!parsed) {
+  if (!parsed?.description) {
     console.log('⚠️ Could not parse changes from release notes');
     console.log('   Looking for pattern: ### [Major|Minor|Patch] Changes');
-    process.exit(0);
+    process.exit(1);
   }
   const { description: cleanDescription, commitHashes } = parsed;
 
@@ -127,37 +133,18 @@ try {
     const source = commitHashes.length > 0 ? 'changelog' : 'workflow';
     console.log(`ℹ️ Looking up PR for commit ${commitSha} (from ${source})`);
 
-    try {
-      const prResult =
-        await $`gh api "repos/${repository}/commits/${commitSha}/pulls"`.run({
-          capture: true,
-        });
-      const prsData = JSON.parse(prResult.stdout);
-
-      // Find the PR that's not the version bump PR (not "chore: version packages")
-      const relevantPr = prsData.find(
-        (pr) => !pr.title.includes('version packages')
+    const prResult =
+      await $`gh api "repos/${repository}/commits/${commitSha}/pulls" --paginate --slurp`.run(
+        { capture: true }
       );
-
-      if (relevantPr) {
-        if (!prNumbers.includes(relevantPr.number)) {
-          prNumbers.push(relevantPr.number);
-        }
-        console.log(`✅ Found PR #${relevantPr.number} containing commit`);
-      } else if (prsData.length > 0) {
-        console.log(
-          '⚠️ Found PRs but all are version bump PRs, not linking any'
-        );
-      } else {
-        console.log(
-          'ℹ️ No PR found containing this commit - not adding PR link'
-        );
-      }
-    } catch (error) {
-      console.log('⚠️ Could not find PR for commit', commitSha);
-      console.log('   Error:', error.message);
-      if (process.env.DEBUG) {
-        console.error(error);
+    const prsData = validatePullRequestPages(JSON.parse(prResult.stdout));
+    for (const pr of prsData) {
+      if (
+        !pr.title.toLowerCase().includes('version packages') &&
+        !prNumbers.includes(pr.number)
+      ) {
+        prNumbers.push(pr.number);
+        console.log(`✅ Found PR #${pr.number} containing commit`);
       }
     }
   }

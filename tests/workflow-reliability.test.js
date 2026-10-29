@@ -359,7 +359,9 @@ describe('workflow reliability policy', () => {
       'name: Upload screenshot failure artifacts'
     );
     expect(previewRegenJob).toContain('if: failure()');
-    expect(previewRegenJob).toContain('uses: actions/upload-artifact@v7');
+    expect(previewRegenJob).toContain(
+      'uses: ./.github/actions/artifact-transport'
+    );
     expect(previewRegenJob).toContain(
       'name: preview-regen-failure-${{ github.run_id }}'
     );
@@ -367,7 +369,7 @@ describe('workflow reliability policy', () => {
     expect(previewRegenJob).not.toContain('web/test-results/');
     expect(previewRegenJob).not.toContain('web/playwright-report/');
     expect(previewRegenJob).toContain('retention-days: 7');
-    expect(previewRegenJob).toContain('if-no-files-found: ignore');
+    expect(previewRegenJob).toContain('if-no-files-found: error');
   });
 
   it('uses the official Playwright image for preview regeneration with browser downloads disabled', () => {

@@ -8,6 +8,9 @@ on:
       - '**.md'
       - '**.html'
       - '.github/workflows/links.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
       - 'scripts/recheck-broken-links.mjs'
@@ -20,6 +23,9 @@ on:
       - '**.md'
       - '**.html'
       - '.github/workflows/links.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
       - 'scripts/recheck-broken-links.mjs'
@@ -120,14 +126,15 @@ jobs:
         env:
           LYCHEE_OUTPUT: lychee/out.md
           RECOVERED_URLS: lychee/recovered.txt
+          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
 
       - name: Upload broken-link diagnostics
         if: "!cancelled() && steps.lychee.outputs.exit_code != '0'"
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: lychee-report
-          path: lychee/
-          if-no-files-found: warn
+          path: lychee/out.md
+          if-no-files-found: error
 
       - name: Fail if broken links were found
         if: >-

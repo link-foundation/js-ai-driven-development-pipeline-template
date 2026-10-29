@@ -25,6 +25,8 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      CODEQL_ACTION_DIFF_INFORMED_QUERIES: 'false'
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-codeql-${{ matrix.language }}
       cancel-in-progress: true
@@ -52,6 +54,20 @@ jobs:
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
+        with:
+          output: codeql-results
+
+      - name: Require clean CodeQL results
+        if: ${{ !cancelled() }}
+        run: node scripts/check-codeql-results.mjs codeql-results
+
+      - name: Preserve CodeQL reports
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/artifact-transport
+        with:
+          name: codeql-results-${{ matrix.language }}
+          path: codeql-results
+          if-no-files-found: error
 
   dependency-graph:
     name: Dependency Graph Prerequisite
@@ -112,7 +128,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        directory: ['.', examples/universal-app]
+        directory:
+          ['.', examples/universal-app, .github/actions/artifact-transport]
     steps:
       - uses: actions/checkout@v7
         with:

@@ -256,6 +256,9 @@ jobs:
       # checks the fresh merge rather than generated release files.
       - name: Dry-run release versioning (PR only)
         if: github.event_name == 'pull_request'
+        env:
+          npm_config_offline: 'true'
+          npm_config_ignore_scripts: 'true'
         run: |
           trap 'git restore --source=HEAD --staged --worktree -- .' EXIT
           npm run changeset:version
@@ -870,7 +873,7 @@ jobs:
           touch "/tmp/digests/${DIGEST#sha256:}"
 
       - name: Upload image digest
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: docker-digest-${{ strategy.job-index }}
           path: /tmp/digests/*
@@ -904,13 +907,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Download image digests
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/artifact-transport
         env:
           NODE_OPTIONS: --disable-warning=DEP0005
         with:
           path: /tmp/digests
           pattern: docker-digest-*
-          merge-multiple: true
+          mode: download
 
       - name: Create multi-architecture manifest
         working-directory: /tmp/digests

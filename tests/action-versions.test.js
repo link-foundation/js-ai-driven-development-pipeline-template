@@ -4,6 +4,9 @@ import { describe, expect, it } from 'test-anywhere';
 
 function yamlFiles(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name === 'node_modules') {
+      return [];
+    }
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       return yamlFiles(path);
