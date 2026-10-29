@@ -6,6 +6,8 @@ inputs:
   path:
     description: Upload glob(s) or download destination
     required: true
+  required-file:
+    description: Optional nonempty file required even when other diagnostics exist
   pages:
     description: Package a static site in the official Pages tar layout
     default: 'false'
@@ -39,6 +41,7 @@ runs:
       with:
         name: ${{ inputs.name }}
         path: ${{ inputs.path }}
+        required-file: ${{ inputs.required-file }}
         pages: ${{ inputs.pages }}
         retention-days: ${{ inputs.retention-days }}
         if-no-files-found: ${{ inputs.if-no-files-found }}

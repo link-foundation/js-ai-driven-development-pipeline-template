@@ -13,6 +13,7 @@ on:
       - 'scripts/artifact-files.mjs'
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
+      - 'scripts/lychee-report.mjs'
       - 'scripts/recheck-broken-links.mjs'
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
@@ -28,6 +29,7 @@ on:
       - 'scripts/artifact-files.mjs'
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
+      - 'scripts/lychee-report.mjs'
       - 'scripts/recheck-broken-links.mjs'
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
@@ -133,7 +135,8 @@ jobs:
         uses: ./.github/actions/artifact-transport
         with:
           name: lychee-report
-          path: lychee/out.md
+          path: lychee/
+          required-file: lychee/out.md
           if-no-files-found: error
 
       - name: Fail if broken links were found

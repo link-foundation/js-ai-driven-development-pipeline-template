@@ -32,10 +32,15 @@ async function main() {
   const pages = core.getInput('pages') === 'true';
   const search = await glob.create(input, {
     implicitDescendants: true,
-    followSymbolicLinks: false,
+    followSymbolicLinks: true,
+    omitBrokenSymbolicLinks: true,
     excludeHiddenFiles: true,
   });
-  const evidence = await collectArtifactFiles(search, input);
+  const evidence = await collectArtifactFiles(
+    search,
+    input,
+    core.getInput('required-file')
+  );
   const retentionDays = Number(core.getInput('retention-days'));
   if (!Number.isInteger(retentionDays) || retentionDays < 0) {
     throw new Error('Invalid artifact retention');

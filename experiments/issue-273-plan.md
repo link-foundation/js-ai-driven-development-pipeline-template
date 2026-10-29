@@ -12,9 +12,10 @@ No merge, release, deployment, cache deletion, or default-branch writes are auth
 - [x] Implement every requirement in the matrix below throughout maintained code/workflows.
 - [x] Run focused checks, then the full Node, Bun, and Deno suites sequentially within the 2.92 GiB budget; retain large logs.
 - [x] Run lint, formatting, duplication, syntax, shell/workflow policy, file limits, documentation, changeset/version guards, and an offline release rehearsal.
-- [ ] Fetch default branch, merge if needed, review the entire candidate diff and commit atomic changes.
-- [ ] Validate the exact candidate revision and push once for the batch.
-- [ ] Collect every same-revision CI failure, preserve logs in ci-logs, fix together and repeat validation if necessary.
+- [x] Fetch default branch, merge if needed, review the entire candidate diff and commit atomic changes (first batch `edc0abed`).
+- [x] Validate the exact candidate revision and push once for the first batch.
+- [x] Collect every first-revision CI failure and preserve all six run logs in ci-logs; fix together before the next push.
+- [ ] Validate and push the follow-up candidate once; collect and resolve all final-revision CI results.
 - [ ] Update PR title/body with reproduction, evidence, limitations, and one positive closing reference per issue 264–273; review gh pr diff and mark PR 274 ready after verification.
 
 ## Requirements and solution choices
@@ -41,4 +42,46 @@ Native JavaScript is the implementation language. No Rust translation or adapter
 - Full requirement inventory, research and component choices: `docs/issue-273-analysis.md`.
 - Regression failures and complete command logs retained in ignored `ci-logs/*.log`; downloaded research is in `ci-logs/issue-273-research/`.
 - Latest issue and all three PR comment types remain empty. `origin/main` is already an ancestor of this branch.
-- Hosted 300+ file verification and final-revision CI remain pending.
+- Hosted 300+ file verification completed on the first candidate; final-revision CI remains pending.
+
+## First hosted batch and follow-up
+
+Candidate `edc0abed770b2b29a343e6d702141419226c4ed0` was pushed once after
+exact-revision checks. PR 274 changed 355 files, including 301 owned temporary
+Markdown fixtures. GitHub's PR diff endpoint rejected that candidate with its
+300-file limit, confirming the regression boundary was exercised.
+
+The JavaScript CodeQL analysis completed and uploaded SARIF. The new gate rejected
+one real finding, `js/incomplete-url-substring-sanitization`, in the executable
+historical release formatter at `docs/case-studies/issue-3/original-format-release-notes.mjs:87`.
+Job 123748804999 log lines 2692–2694 show the finding and failing exit; the next
+artifact step successfully retained the report. Replaying that downloaded report
+through the real CLI also exited 1. The log shows full-analysis mode at init and
+analyze, with no 300-file fallback warning. The Actions analysis also completed
+cleanly: job 123748805525 log line 1699 reports one clean SARIF report; it likewise
+has no diff-limit fallback warning. All six same-revision workflows finished and
+their logs were collected before the follow-up batch. Workflows, links, example-app
+(including all desktop platforms), and the JavaScript-first/Rust workflow passed.
+Security failed only on the real JavaScript finding; Checks and release failed
+only on the Windows tar-listing test across Node, Bun and Deno. The owned 301-file
+fixture was removed after this evidence was collected; its generator remains.
+
+Follow-up regressions failed before their fixes and pass afterward: preserving
+packaged file symlinks, requiring the link report even when optional diagnostics
+exist, and rejecting deceptive hostname placements in both executable formatter
+copies. The historical formatter now shares the strict badge predicate; queries
+and findings policy remain unchanged. The link artifact retains the whole lychee
+directory while explicitly requiring nonempty `out.md`. The SDK lock is included
+in reviewed-deprecation coverage as well as the audit matrix.
+
+Windows Node, Bun and Deno jobs exposed the same test
+harness error: GNU tar interpreted the archive's `C:` drive as a remote hostname
+when listing it (full run 40959660488 log lines 13101–13120, 13513–13528,
+and 7775–7792 respectively). Packaging already
+uses `--force-local`; the test's listing now does too, preserving its assertions.
+
+Additional malformed-report regressions demonstrated that a parseable recovered
+URL could bypass report validation in either fallback. Both CLIs now share a
+strict summary check. Official lychee v0.24.2 source confirms the current Summary
+heading and separate timeout section, both covered alongside older captured
+reports. Existing successful-recovery, refusal and Wayback retry assertions remain.

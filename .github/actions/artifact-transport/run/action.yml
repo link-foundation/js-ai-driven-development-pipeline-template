@@ -6,6 +6,8 @@ inputs:
   path:
     description: Evidence glob or download destination
     required: true
+  required-file:
+    description: Optional nonempty required evidence file
   pages:
     description: Package a Pages site
   retention-days:

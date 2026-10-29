@@ -1,4 +1,4 @@
-import { lstat, mkdtemp, rm } from 'node:fs/promises';
+import { stat, open, mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,11 +17,22 @@ export function gnuTar() {
   return 'tar';
 }
 
-/** Directories and symlinks alone are not evidence. Preserve glob path layout. */
-export async function collectArtifactFiles(search, input) {
+/** Require regular file contents, including file symlinks. Preserve glob layout. */
+export async function collectArtifactFiles(search, input, requiredFile = '') {
+  if (requiredFile) {
+    const handle = await open(requiredFile, 'r');
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size === 0) {
+        throw new Error(`Required artifact file is empty: ${requiredFile}`);
+      }
+    } finally {
+      await handle.close();
+    }
+  }
   const files = [];
   for (const file of await search.glob()) {
-    if ((await lstat(file)).isFile()) {
+    if ((await stat(file)).isFile()) {
       files.push(file);
     }
   }

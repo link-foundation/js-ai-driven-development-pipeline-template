@@ -32,6 +32,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { validateLycheeReport } from './lychee-report.mjs';
 
 const WAYBACK_API = 'https://archive.org/wayback/available?url=';
 
@@ -57,15 +58,16 @@ function setOutput(name, value) {
  * lychee versions, hand-written fixtures) are parsed in full.
  *
  * @param {string} content - The markdown content from lychee
+ * @param {string} kind - Failure section name; defaults to Errors
  * @returns {string} The errors section, or the whole document when there is none
  */
-export function extractErrorsSection(content) {
+export function extractErrorsSection(content, kind = 'Errors') {
   const lines = content.split('\n');
-  const start = lines.findIndex((line) =>
-    /^#+\s+Errors per input\s*$/.test(line)
+  const start = lines.findIndex(
+    (line) => /^#+\s+(Errors|Timeouts) per input\s*$/.exec(line)?.[1] === kind
   );
   if (start === -1) {
-    return content;
+    return kind === 'Errors' ? content : '';
   }
   const heading = /^(#+)\s/.exec(lines[start])[1].length;
   const section = [];
@@ -90,7 +92,10 @@ export function extractErrorsSection(content) {
  *   unresolvable root-relative links, ...)
  */
 export function extractBrokenLinks(content) {
-  const section = extractErrorsSection(content);
+  const section = [
+    extractErrorsSection(content),
+    extractErrorsSection(content, 'Timeouts'),
+  ].join('\n');
   const urls = [];
   const others = [];
 
@@ -416,14 +421,7 @@ function readRequiredReport(lycheeOutput) {
     process.env.LYCHEE_EXIT_CODE !== undefined &&
     process.env.LYCHEE_EXIT_CODE !== '0';
   const hasFailures = extractedUrls.length + unarchivableLinks.length > 0;
-  const cleanReport =
-    /^# Link Checker Report\s*$/m.test(content) &&
-    /\|[^|]*Errors\s*\|\s*0\s*\|/m.test(content);
-  if (!content.trim() || (!hasFailures && (checkerFailed || !cleanReport))) {
-    throw new Error(
-      'Lychee report is empty, malformed, or contains no evidence for the failed checker'
-    );
-  }
+  validateLycheeReport(content, hasFailures, checkerFailed);
 
   return { extractedUrls, unarchivableLinks };
 }

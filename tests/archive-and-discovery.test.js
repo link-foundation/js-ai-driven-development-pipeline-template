@@ -20,6 +20,8 @@ describe('archive and test discovery boundaries', () => {
     '',
     'not a lychee report',
     '# Link Checker Report\n\n| Errors | broken |',
+    'malformed report\n- [404] https://broken.example/recovered\n',
+    '# Link Checker Report\n\n| Errors | 0 |\n- [404] https://broken.example/recovered\n',
     'unreadable-directory',
   ]) {
     itUnless(sandboxed)(
@@ -29,6 +31,8 @@ describe('archive and test discovery boundaries', () => {
         try {
           const report = join(cwd, 'report.md');
           const output = join(cwd, 'outputs');
+          const recovered = join(cwd, 'recovered.txt');
+          writeFileSync(recovered, 'https://broken.example/recovered\n');
           if (content === 'unreadable-directory') {
             mkdirSync(report);
           } else if (content !== null) {
@@ -43,6 +47,7 @@ describe('archive and test discovery boundaries', () => {
                 ...process.env,
                 LYCHEE_OUTPUT: report,
                 LYCHEE_EXIT_CODE: '2',
+                RECOVERED_URLS: recovered,
                 GITHUB_OUTPUT: output,
               },
             }

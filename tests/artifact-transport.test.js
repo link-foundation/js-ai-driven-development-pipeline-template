@@ -205,6 +205,23 @@ describe('artifact evidence and downloads', () => {
 });
 
 describe('artifact transport integration requirement', () => {
+  it('keeps symlink discovery and required link reports wired through the action', () => {
+    const entry = readFileSync(
+      '.github/actions/artifact-transport/index.mjs',
+      'utf8'
+    );
+    assert.match(entry, /followSymbolicLinks: true/);
+    assert.match(entry, /omitBrokenSymbolicLinks: true/);
+    assert.match(entry, /core\.getInput\('required-file'\)/);
+    assert.match(
+      readFileSync('.github/actions/artifact-transport/action.yml', 'utf8'),
+      /required-file: \$\{\{ inputs\.required-file \}\}/
+    );
+    assert.match(
+      readFileSync('.github/workflows/links.yml', 'utf8'),
+      /path: lychee\/\s+required-file: lychee\/out\.md\s+if-no-files-found: error/
+    );
+  });
   it('retries every maintained upload and Pages packaging without ignoring failure', () => {
     for (const file of [
       'example-app',

@@ -10,6 +10,10 @@ import { describe, expect, it } from 'test-anywhere';
  */
 const KNOWN = {
   'package-lock.json': {},
+  '.github/actions/artifact-transport/package-lock.json': {
+    'glob@10.5.0':
+      '@actions/artifact 6.3.1 -> archiver 7.0.1 -> archiver-utils 5.0.2; the official SDK still requires this dependency, with no npm audit advisories',
+  },
   'examples/universal-app/package-lock.json': {
     'temp/node_modules/rimraf@2.6.3':
       'electron-builder-squirrel-windows -> electron-winstaller 5.4.4 -> temp 0.9.4, the latest temp; temp calls rimraf(path, options, callback), which rimraf 4 removed',
