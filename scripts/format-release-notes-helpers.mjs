@@ -1,5 +1,6 @@
 import { URL } from 'node:url';
 import { normalizeReleaseVersion } from './release-naming.mjs';
+import { markdownLines } from './markdown-lines.mjs';
 
 export function normalizeReleaseVersionForBadge(releaseVersion) {
   return normalizeReleaseVersion(releaseVersion);
@@ -19,7 +20,11 @@ export function buildNpmVersionBadge(packageName, releaseVersion) {
 
 /** Recognize a generated npm badge image, not an arbitrary hostname mention. */
 export function hasGeneratedNpmBadge(body) {
-  const destinations = body.matchAll(
+  const prose = markdownLines(body)
+    .filter((line) => !line.code)
+    .map((line) => line.raw)
+    .join('');
+  const destinations = prose.matchAll(
     /!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g
   );
   for (const match of destinations) {
@@ -42,8 +47,8 @@ export function hasGeneratedNpmBadge(body) {
   return false;
 }
 
-const CHANGE_SECTION = /^### (Major|Minor|Patch) Changes[ \t]*$/gm;
-const ENTRY_HASH = /^[ \t]*[-*][ \t]+([a-f0-9]{7,40}):/gm;
+const CHANGE_SECTION = /^ {0,3}### (Major|Minor|Patch) Changes[ \t]*$/;
+const ENTRY_HASH = /^ {0,3}[-*][ \t]+([a-f0-9]{7,40}):/;
 
 /**
  * Remove trailing whitespace and extra blank lines and keep everything else,
@@ -53,13 +58,23 @@ const ENTRY_HASH = /^[ \t]*[-*][ \t]+([a-f0-9]{7,40}):/gm;
  * @returns {string}
  */
 function normalizeMarkdown(text) {
-  return text
-    .split('\n')
-    .map((line) => line.replace(/[ \t]+$/, ''))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
+  let blank = false;
+  return markdownLines(text)
+    .map((line) => {
+      if (line.code) {
+        blank = false;
+        return line.raw;
+      }
+      const value = line.text.replace(/[ \t]+$/, '');
+      if (!value && blank) {
+        return '';
+      }
+      blank = !value;
+      return value + (line.raw.endsWith('\n') ? '\n' : '');
+    })
+    .join('')
     .replace(/^\n+/, '')
-    .replace(/\s+$/, '');
+    .replace(/\n+$/, '');
 }
 
 /**
@@ -72,19 +87,19 @@ function normalizeMarkdown(text) {
  *   null when the body has no `### Major|Minor|Patch Changes` section
  */
 export function buildReleaseDescription(body) {
-  const text = String(body || '').replace(/\r\n?/g, '\n');
-  const headings = [...text.matchAll(CHANGE_SECTION)];
+  const text = String(body || '');
+  const lines = markdownLines(text);
+  const headings = lines.filter(
+    (line) => !line.code && CHANGE_SECTION.test(line.text)
+  );
   if (headings.length === 0) {
     return null;
   }
   const sections = headings
     .map((match, index) => ({
-      type: match[1],
+      type: match.text.match(CHANGE_SECTION)[1],
       content: normalizeMarkdown(
-        text.slice(
-          match.index + match[0].length,
-          headings[index + 1]?.index ?? text.length
-        )
+        text.slice(match.end, headings[index + 1]?.start ?? text.length)
       ),
     }))
     .filter((section) => section.content);
@@ -95,7 +110,11 @@ export function buildReleaseDescription(body) {
           .map(({ type, content }) => `### ${type} Changes\n\n${content}`)
           .join('\n\n');
   const commitHashes = [
-    ...new Set([...text.matchAll(ENTRY_HASH)].map((match) => match[1])),
+    ...new Set(
+      lines
+        .filter((line) => !line.code)
+        .flatMap((line) => line.text.match(ENTRY_HASH)?.[1] ?? [])
+    ),
   ];
   return { description, commitHashes };
 }

@@ -30,6 +30,7 @@ import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 import { printUntrusted } from './github-actions-log.mjs';
 import { checkStagedFormatting } from './check-staged-formatting.mjs';
 import { runStrict } from './run-command.mjs';
+import { captureVersionTree, syncVersionLock } from './version-lock.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when installed helpers are unavailable,
@@ -226,6 +227,7 @@ async function main() {
     // Get current version before bump
     const oldVersion = await getVersion();
     console.log(`Current version: ${oldVersion}`);
+    const validatedVersionTree = captureVersionTree(jsRoot);
 
     if (mode === 'instant') {
       console.log('Running instant version bump...');
@@ -250,6 +252,7 @@ async function main() {
     }
 
     // Get new version after bump
+    syncVersionLock(jsRoot, validatedVersionTree);
     const newVersion = await getVersion();
     console.log(`New version: ${newVersion}`);
     setOutput('new_version', newVersion);

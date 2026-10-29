@@ -6,11 +6,15 @@ on:
       - 'examples/javascript-first/**'
       - '.github/workflows/javascript-first*.yml'
       - 'tests/javascript-first-gate.test.js'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-*.mjs'
   push:
     branches: [main]
     paths:
       - 'examples/javascript-first/**'
       - '.github/workflows/javascript-first*.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-*.mjs'
 
 permissions:
   contents: read
@@ -132,7 +136,7 @@ jobs:
       - name: Run publish
         run: |
           node examples/javascript-first/generate.mjs --check
-      - uses: actions/upload-artifact@v7
+      - uses: ./.github/actions/artifact-transport
         with:
           name: tested-rust-source-${{ needs.javascript-first.outputs.tested-sha }}
           path: examples/javascript-first/generated/

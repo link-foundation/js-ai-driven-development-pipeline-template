@@ -9,17 +9,17 @@ import { itUnless, sandboxed, noPosixShell } from './helpers/skip.js';
 function format(body) {
   const dir = mkdtempSync(join(tmpdir(), 'release-notes-'));
   try {
-    writeFileSync(join(dir, 'body'), JSON.stringify({ body }));
+    writeFileSync(join(dir, 'body'), JSON.stringify({ id: 1, body }));
     writeFileSync(
       join(dir, 'gh'),
       `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FIXTURE/requests"
 case "$*" in
   *PATCH*) cat > "$FIXTURE/payload" ;;
-  *commits/abcdef1/pulls*) printf '[{"title":"feature","number":41}]' ;;
-  *commits/def5678/pulls*) printf '[{"title":"fix","number":42}]' ;;
-  *commits/fallback/pulls*) printf '[{"title":"fallback","number":43}]' ;;
-  *commits/*/pulls*) printf '[{"title":"chore: version packages","number":99}]' ;;
+  *commits/abcdef1/pulls*) printf '[[{"title":"feature","number":41}]]' ;;
+  *commits/def5678/pulls*) printf '[[{"title":"fix","number":42}]]' ;;
+  *commits/fallback/pulls*) printf '[[{"title":"fallback","number":43}]]' ;;
+  *commits/*/pulls*) printf '[[{"title":"chore: version packages","number":99}]]' ;;
   *) cat "$FIXTURE/body" ;;
 esac
 `,

@@ -32,6 +32,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { validateLycheeReport } from './lychee-report.mjs';
 
 const WAYBACK_API = 'https://archive.org/wayback/available?url=';
 
@@ -57,15 +58,16 @@ function setOutput(name, value) {
  * lychee versions, hand-written fixtures) are parsed in full.
  *
  * @param {string} content - The markdown content from lychee
+ * @param {string} kind - Failure section name; defaults to Errors
  * @returns {string} The errors section, or the whole document when there is none
  */
-export function extractErrorsSection(content) {
+export function extractErrorsSection(content, kind = 'Errors') {
   const lines = content.split('\n');
-  const start = lines.findIndex((line) =>
-    /^#+\s+Errors per input\s*$/.test(line)
+  const start = lines.findIndex(
+    (line) => /^#+\s+(Errors|Timeouts) per input\s*$/.exec(line)?.[1] === kind
   );
   if (start === -1) {
-    return content;
+    return kind === 'Errors' ? content : '';
   }
   const heading = /^(#+)\s/.exec(lines[start])[1].length;
   const section = [];
@@ -90,7 +92,10 @@ export function extractErrorsSection(content) {
  *   unresolvable root-relative links, ...)
  */
 export function extractBrokenLinks(content) {
-  const section = extractErrorsSection(content);
+  const section = [
+    extractErrorsSection(content),
+    extractErrorsSection(content, 'Timeouts'),
+  ].join('\n');
   const urls = [];
   const others = [];
 
@@ -404,25 +409,28 @@ function reportLookupSummary({
   }
 }
 
-/**
- * Main function
- */
-async function main() {
-  const lycheeOutput = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
-
-  console.log('=== Web Archive Fallback Check ===\n');
-  console.log(`Reading lychee output from: ${lycheeOutput}\n`);
-
+function readRequiredReport(lycheeOutput) {
   if (!existsSync(lycheeOutput)) {
-    console.log('No lychee output file found. Skipping web archive check.');
-    setOutput('all_archived', 'true');
-    process.exit(0);
+    throw new Error(`Required lychee report is missing: ${lycheeOutput}`);
   }
 
   const content = readFileSync(lycheeOutput, 'utf-8');
   const { urls: extractedUrls, others: unarchivableLinks } =
     extractBrokenLinks(content);
+  const checkerFailed =
+    process.env.LYCHEE_EXIT_CODE !== undefined &&
+    process.env.LYCHEE_EXIT_CODE !== '0';
+  const hasFailures = extractedUrls.length + unarchivableLinks.length > 0;
+  validateLycheeReport(content, hasFailures, checkerFailed);
 
+  return { extractedUrls, unarchivableLinks };
+}
+
+async function main() {
+  const lycheeOutput = process.env.LYCHEE_OUTPUT || 'lychee/out.md';
+  console.log('=== Web Archive Fallback Check ===\n');
+  console.log(`Reading lychee output from: ${lycheeOutput}\n`);
+  const { extractedUrls, unarchivableLinks } = readRequiredReport(lycheeOutput);
   const recoveredFile = process.env.RECOVERED_URLS || 'lychee/recovered.txt';
   const recoveredText = existsSync(recoveredFile)
     ? readFileSync(recoveredFile, 'utf-8')
@@ -489,6 +497,7 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   main().catch((error) => {
+    setOutput('all_archived', 'false');
     console.error('Unexpected error:', error);
     process.exit(1);
   });

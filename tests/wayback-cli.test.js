@@ -16,7 +16,10 @@ describe('Wayback CLI retries and failure reporting', () => {
         try {
           const report = join(root, 'report.md');
           const output = join(root, 'output');
-          writeFileSync(report, '* [404] https://example.com/\n');
+          writeFileSync(
+            report,
+            '# Link Checker Report\n\n| Errors | 1 |\n\n## Errors per input\n\n* [404] https://example.com/\n'
+          );
           const result = spawnSync(
             'node',
             [

@@ -114,15 +114,27 @@ describe('test registration', () => {
 });
 
 describe('test file discovery', () => {
-  // Node runs tests/*.test.js and deno.json includes tests/, but a bare
-  // `bun test` collects every file named like a test anywhere in the tree,
-  // so a test-named file elsewhere changes only Bun's counts.
+  // Every runner uses tests/. Maintained tests belong there; immutable
+  // archives and generated output may retain their original filenames.
   const BUN_TEST_NAME = /[._](?:test|spec)\.[cm]?[jt]sx?$/;
-  const SKIPPED_DIRS = new Set(['.git', 'node_modules', 'tests']);
+  const SKIPPED_DIRS = new Set([
+    '.git',
+    'node_modules',
+    'tests',
+    'dist',
+    'out',
+    'reports',
+  ]);
 
   function testNamedFiles(dir) {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const entryPath = dir === '.' ? entry.name : `${dir}/${entry.name}`;
+      if (
+        entryPath === 'dev/log' ||
+        /^docs\/case-studies\/[^/]+\/data$/.test(entryPath)
+      ) {
+        return [];
+      }
       if (entry.isDirectory()) {
         return SKIPPED_DIRS.has(entry.name) ? [] : testNamedFiles(entryPath);
       }

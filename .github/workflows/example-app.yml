@@ -11,6 +11,9 @@ on:
       - 'scripts/update-preview-images.mjs'
       - 'scripts/check-pages.sh'
       - '.github/workflows/example-app.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
   push:
     branches:
       - main
@@ -22,6 +25,9 @@ on:
       - 'scripts/update-preview-images.mjs'
       - 'scripts/check-pages.sh'
       - '.github/workflows/example-app.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
   workflow_dispatch:
 
 permissions:
@@ -83,7 +89,7 @@ jobs:
           VITE_REPOSITORY_URL: https://github.com/${{ github.repository }}
 
       - name: Upload web build artifact
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: universal-example-web
           path: examples/universal-app/dist
@@ -91,8 +97,10 @@ jobs:
 
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v5
+        uses: ./.github/actions/artifact-transport
         with:
+          name: github-pages
+          pages: 'true'
           path: examples/universal-app/dist
 
   # Requires Settings → Pages → Source = GitHub Actions to be set once
@@ -166,7 +174,7 @@ jobs:
           VITE_REPOSITORY_URL: https://github.com/${{ github.repository }}
 
       - name: Upload desktop package
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: universal-example-desktop-${{ matrix.os }}
           path: examples/universal-app/out
@@ -211,13 +219,13 @@ jobs:
         run: npm --prefix examples/universal-app run mobile:android:build
 
       - name: Upload Android output
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: universal-example-android
           path: |
             examples/universal-app/android/app/build/outputs/**/*.apk
             examples/universal-app/android/app/build/outputs/**/*.aab
-          if-no-files-found: warn
+          if-no-files-found: error
 
   ios-build:
     name: Build iOS app
@@ -362,12 +370,12 @@ jobs:
 
       - name: Upload screenshot failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: preview-regen-failure-${{ github.run_id }}
           path: docs/screenshots/example-app/
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       # One outcome, one message: report what actually happened instead of
       # claiming a commit that a failed step never made.

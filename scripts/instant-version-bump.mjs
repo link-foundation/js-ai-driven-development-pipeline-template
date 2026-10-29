@@ -31,6 +31,8 @@ import {
 } from './js-paths.mjs';
 import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
+import { captureVersionTree, syncVersionLock } from './version-lock.mjs';
+import { markdownLines } from './markdown-lines.mjs';
 
 // Import link-foundation libraries
 // Loaded through bootstrapDependencies: when installed helpers are unavailable,
@@ -74,6 +76,7 @@ try {
   // Get JavaScript package root (auto-detect or use explicit config)
   const jsRootConfig = jsRootArg || parseJsRootConfig();
   const jsRoot = getJsRoot({ jsRoot: jsRootConfig, verbose: true });
+  const before = captureVersionTree(jsRoot);
 
   const finalDescription = description || `Manual ${bumpType} release`;
 
@@ -95,10 +98,10 @@ try {
   // Bump version using npm version (doesn't create git tag)
   // IMPORTANT: cd is a virtual command that calls process.chdir(), so we restore after
   if (needsCd({ jsRoot })) {
-    await $`cd ${jsRoot} && npm version ${bumpType} --no-git-tag-version`;
+    await $`cd ${jsRoot} && npm version ${bumpType} --no-git-tag-version --ignore-scripts`;
     process.chdir(originalCwd);
   } else {
-    await $`npm version ${bumpType} --no-git-tag-version`;
+    await $`npm version ${bumpType} --no-git-tag-version --ignore-scripts`;
   }
 
   // Get new version
@@ -123,20 +126,25 @@ try {
 
   // Insert new entry after the first heading (# Changelog or similar)
   // Look for the first ## heading and insert before it
-  const firstVersionMatch = changelog.match(/^## /m);
+  const proseLines = markdownLines(changelog).filter((line) => !line.code);
+  const firstVersionMatch = proseLines.find((line) =>
+    /^ {0,3}## /.test(line.text)
+  );
 
   if (firstVersionMatch) {
-    const insertPosition = firstVersionMatch.index;
+    const insertPosition = firstVersionMatch.start;
     changelog =
       changelog.slice(0, insertPosition) +
       newEntry +
       changelog.slice(insertPosition);
   } else {
     // If no version headings exist, append after the main heading
-    const mainHeadingMatch = changelog.match(/^# .+$/m);
+    const mainHeadingMatch = proseLines.find((line) =>
+      /^ {0,3}# .+/.test(line.text)
+    );
     if (mainHeadingMatch) {
       const insertPosition =
-        mainHeadingMatch.index + mainHeadingMatch[0].length;
+        mainHeadingMatch.start + mainHeadingMatch.text.length;
       changelog = `${changelog.slice(0, insertPosition)}\n\n${newEntry}${changelog.slice(insertPosition)}`;
     } else {
       // If no headings at all, prepend
@@ -150,16 +158,7 @@ try {
   // Synchronize package-lock.json
   console.log('\nSynchronizing package-lock.json...');
 
-  // Use --legacy-peer-deps to handle peer dependency conflicts
-  // --legacy-peer-deps keeps a peer-dependency conflict from failing the
-  // lockfile refresh with npm ERESOLVE.
-  // IMPORTANT: cd is a virtual command that calls process.chdir(), so we restore after
-  if (needsCd({ jsRoot })) {
-    await $`cd ${jsRoot} && npm install --package-lock-only --legacy-peer-deps`;
-    process.chdir(originalCwd);
-  } else {
-    await $`npm install --package-lock-only --legacy-peer-deps`;
-  }
+  syncVersionLock(jsRoot, before);
 
   console.log('\n✅ Instant version bump complete');
   console.log(`Version: ${oldVersion} → ${newVersion}`);

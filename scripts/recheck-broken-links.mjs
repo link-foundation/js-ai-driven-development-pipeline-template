@@ -40,6 +40,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { validateLycheeReport } from './lychee-report.mjs';
 
 // Environment-derived settings are read inside main(), not here: the Deno
 // test leg imports this module under `--allow-read` only, and any
@@ -317,6 +318,7 @@ async function main() {
   const options = extractLycheeRequestOptions(workflowText);
   const content = readFileSync(lycheeOutput, 'utf8');
   const failures = parseLycheeFailures(content);
+  validateLycheeReport(content, failures.length > 0);
 
   const finalFailures = failures.filter(
     (failure) => !failure.retryable || !/^https?:\/\//i.test(failure.url)
