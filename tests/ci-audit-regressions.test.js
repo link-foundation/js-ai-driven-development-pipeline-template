@@ -65,6 +65,30 @@ describe('CI audit regressions', () => {
     assert.doesNotMatch(config, /^\s*-\s*examples\//m);
   });
 
+  it('keeps Pages deployment permissions and preconditions with the adapter', () => {
+    const workflow = readFileSync('.github/workflows/example-app.yml', 'utf8');
+    const job = workflow
+      .split('\n  pages-deploy:')[1]
+      .split('\n  desktop-package:')[0];
+    assert.match(
+      job,
+      /if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/
+    );
+    assert.match(job, /needs: \[web-build\]/);
+    assert.match(
+      job,
+      /permissions:\n(?:\s+#[^\n]*\n)*\s+contents: read\n\s+pages: write\n\s+id-token: write\n\s+environment:/
+    );
+    assert.match(job, /name: github-pages/);
+    assert.match(job, /uses: actions\/deploy-pages@v5/);
+    assert.match(job, /artifact-transport\/punycode\.mjs/);
+    assert.match(job, /--throw-deprecation/);
+    assert.doesNotMatch(
+      job,
+      /--disable-warning|--no-warnings|NODE_NO_WARNINGS/
+    );
+  });
+
   it('installs artifact dependencies without deprecated packages', () => {
     const lock = JSON.parse(
       readFileSync(
