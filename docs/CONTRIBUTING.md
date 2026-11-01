@@ -238,3 +238,31 @@ scanner and its preset resolve from the same npm execution tree.
 Shell scripts and Git hooks use LF on every platform through `.gitattributes`.
 The prepare script calls Husky's installed API and verifies `core.hooksPath`.
 Set `CI_SCRIPTS_DEBUG=1` for optional dependency and hook installation tracing.
+
+### Dependency install scripts and syntax coverage
+
+Every dependency with an install script needs an explicit `allowScripts`
+decision in its owning package manifest. Approvals pin the exact locked version
+(`"esbuild@0.25.12": true`); denials name the package (`"node-pty": false`).
+Vite's esbuild binary, macOS fsevents and the Electron installer are approved.
+The optional node-pty adapter is denied because the pipeline scripts only use
+command-stream's ordinary process API; this keeps the default behavior without
+silently enabling a native compilation. Review new versions before approving
+them. `tests/ci-audit-regressions.test.js` checks all three npm lockfiles,
+including optional platform-specific packages.
+
+Deno reads its own install-script policy from `deno.json`; npm's decision does
+not apply to it. Its version-pinned denial keeps the unused PTY build off.
+Every CI runtime leg pins Node 24 and installs the root and
+`.github/actions/artifact-transport` locks with `npm ci`. The Deno leg also
+prepares its frozen module graph with `deno test -A --parallel --no-run --frozen`
+before the timed suite, which still runs every test within its existing budget.
+
+`bash scripts/check-mjs-syntax.sh` checks all tracked `.js`, `.mjs` and `.cjs`
+files recursively, including shipped examples and local actions. Historical
+case studies and development logs are data outside this gate. An empty
+inventory or a failed file check is an error. CodeQL also scans the shipped
+examples. Deprecated dependencies are not allowlisted: replace or override
+them. Artifact and Pages compatibility decisions and their probes are
+documented in the [artifact action](../.github/actions/artifact-transport/README.md);
+desktop ones in [universal-app/compat](../examples/universal-app/compat/README.md).
