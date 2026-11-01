@@ -104,7 +104,13 @@ export async function downloadArtifactsWithRetry(
   }
   for (const artifact of selected) {
     await retryArtifact(
-      () => client.downloadArtifact(artifact.id, { path: directory }),
+      () =>
+        client.downloadArtifact(artifact.id, {
+          path: directory,
+          // The SDK verifies the downloaded archive only when given the
+          // digest recorded at upload time.
+          ...(artifact.digest ? { expectedHash: artifact.digest } : {}),
+        }),
       retryOptions
     );
   }

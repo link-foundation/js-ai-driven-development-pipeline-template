@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'test-anywhere';
+import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
@@ -68,13 +69,16 @@ describe('complete pipeline requirements', () => {
       }
     }
   });
-  it('suppresses only the known deploy-pages warning at the deployment step', () => {
+  it('replaces the deprecated Pages dependency without hiding warnings', () => {
     const source = read('.github/workflows/example-app.yml');
     const step = source
       .split('uses: actions/deploy-pages@v5')[1]
       .split('\n  desktop-package:')[0];
-    expect(step).toContain('NODE_OPTIONS: --disable-warning=DEP0040');
-    expect(source).not.toMatch(/--no-warnings|NODE_NO_WARNINGS/);
+    expect(step).toContain('artifact-transport/punycode.mjs');
+    expect(step).toContain('--throw-deprecation');
+    expect(source).not.toMatch(
+      /--disable-warning|--no-warnings|NODE_NO_WARNINGS/
+    );
   });
   itUnless(sandboxed)(
     'preserves other Node warnings with the deploy setting',
@@ -82,15 +86,18 @@ describe('complete pipeline requirements', () => {
       const result = spawnSync(
         'node',
         [
+          '--import',
+          './.github/actions/artifact-transport/punycode.mjs',
+          '--throw-deprecation',
           '-e',
           "require('punycode'); process.emitWarning('visible', {code:'TEST_WARNING'});",
         ],
         {
           encoding: 'utf8',
-          env: { ...process.env, NODE_OPTIONS: '--disable-warning=DEP0040' },
+          env: { ...process.env, NODE_OPTIONS: '' },
         }
       );
-      expect(result.status).toBe(0);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
       expect(result.stderr).not.toContain('DEP0040');
       expect(result.stderr).toContain('TEST_WARNING');
     }

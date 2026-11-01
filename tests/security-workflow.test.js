@@ -132,10 +132,10 @@ describe('security workflow', () => {
   });
 });
 
-it('excludes experiments and examples through an explicit CodeQL configuration', () => {
+it('excludes historical experiments while scanning shipped examples', () => {
   expect(workflow).toContain('config-file: ./.github/codeql/codeql-config.yml');
   const config = readFileSync('.github/codeql/codeql-config.yml', 'utf8');
   expect(config).toContain('paths-ignore:');
   expect(config).toMatch(/- experiments\b/);
-  expect(config).toMatch(/- examples\b/);
+  expect(config).not.toMatch(/- examples\b/);
 });

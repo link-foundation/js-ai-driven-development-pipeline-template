@@ -11,6 +11,10 @@ on:
       - 'scripts/check-ci-workflows.mjs'
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
+      - 'scripts/check-artifact-archive.mjs'
+      - 'scripts/check-pages-punycode.mjs'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -20,6 +24,10 @@ on:
       - 'scripts/check-ci-workflows.mjs'
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
+      - 'scripts/check-artifact-archive.mjs'
+      - 'scripts/check-pages-punycode.mjs'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
   workflow_dispatch:
 
 # Least-privilege default; these jobs only need to read the checked-out tree.
@@ -159,6 +167,88 @@ jobs:
             --persona pedantic --min-severity high --min-confidence high \
             .
 
+  artifact-roundtrip:
+    name: Artifact Transport Regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-artifacts
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      - name: Install pinned artifact dependencies
+        run: npm ci --prefix .github/actions/artifact-transport --ignore-scripts --no-audit --no-fund
+
+      - name: Exercise actual SDK archive dependencies
+        run: node --pending-deprecation --throw-deprecation scripts/check-artifact-archive.mjs
+
+      - name: Check out pinned Pages bundle fixture
+        uses: actions/checkout@v7
+        with:
+          repository: actions/deploy-pages
+          ref: 368f82528645a54fb793d4d04e342629a3f51346 # v5
+          path: .cache/deploy-pages-fixture
+          persist-credentials: false
+
+      - name: Verify Pages dependency without deployment credentials
+        run: node --throw-deprecation scripts/check-pages-punycode.mjs .cache/deploy-pages-fixture/dist/index.js
+
+      - name: Prepare roundtrip evidence
+        run: |
+          mkdir -p "$RUNNER_TEMP/artifact-evidence/nested" "$RUNNER_TEMP/pages-evidence"
+          printf '\000\377\102' > "$RUNNER_TEMP/artifact-evidence/nested/bytes.bin"
+          touch "$RUNNER_TEMP/artifact-evidence/empty"
+          printf '<html>artifact transport regression</html>' > "$RUNNER_TEMP/pages-evidence/index.html"
+
+      - name: Upload roundtrip evidence
+        uses: ./.github/actions/artifact-transport
+        with:
+          name: transport-roundtrip
+          path: ${{ runner.temp }}/artifact-evidence
+          retention-days: 1
+
+      - name: Download with deprecations treated as errors
+        uses: ./.github/actions/artifact-transport
+        env:
+          NODE_OPTIONS: --pending-deprecation --throw-deprecation
+        with:
+          mode: download
+          pattern: transport-roundtrip
+          path: ${{ runner.temp }}/artifact-downloaded
+
+      - name: Verify every downloaded byte
+        run: diff -r "$RUNNER_TEMP/artifact-evidence" "$RUNNER_TEMP/artifact-downloaded"
+
+      - name: Upload Pages roundtrip evidence
+        uses: ./.github/actions/artifact-transport
+        with:
+          name: pages-roundtrip
+          pages: true
+          path: ${{ runner.temp }}/pages-evidence
+          retention-days: 1
+
+      - name: Download Pages archive
+        uses: ./.github/actions/artifact-transport
+        env:
+          NODE_OPTIONS: --pending-deprecation --throw-deprecation
+        with:
+          mode: download
+          pattern: pages-round*
+          path: ${{ runner.temp }}/pages-downloaded
+
+      - name: Verify Pages tar content
+        run: |
+          mkdir -p "$RUNNER_TEMP/pages-unpacked"
+          tar -xf "$RUNNER_TEMP/pages-downloaded/artifact.tar" -C "$RUNNER_TEMP/pages-unpacked"
+          diff -r "$RUNNER_TEMP/pages-evidence" "$RUNNER_TEMP/pages-unpacked"
+
   # Terminal status gate: runs even when the jobs above fail or are
   # cancelled, and turns a `timeout-minutes` kill (reported as cancelled)
   # into a red run. needs is derived and checked by the
@@ -180,6 +270,7 @@ jobs:
       - status-gate-coverage
       - zizmor
       - shellcheck
+      - artifact-roundtrip
     steps:
       - uses: actions/checkout@v7
         with:

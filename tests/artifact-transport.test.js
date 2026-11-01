@@ -202,6 +202,25 @@ describe('artifact evidence and downloads', () => {
       /not found/
     );
   });
+  it('passes the recorded upload digest so the SDK verifies downloads', async () => {
+    const seen = [];
+    const client = {
+      listArtifacts: async () => ({
+        artifacts: [
+          { id: 3, name: 'hashed', digest: 'sha256:abc' },
+          { id: 4, name: 'hashed-legacy' },
+        ],
+      }),
+      downloadArtifact: async (id, options) => {
+        seen.push([id, options]);
+      },
+    };
+    await downloadArtifactsWithRetry(client, 'hashed*', 'out', fast);
+    assert.deepEqual(seen, [
+      [3, { path: 'out', expectedHash: 'sha256:abc' }],
+      [4, { path: 'out' }],
+    ]);
+  });
 });
 
 describe('artifact transport integration requirement', () => {

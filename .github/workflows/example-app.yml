@@ -10,6 +10,7 @@ on:
       - 'package-lock.json'
       - 'scripts/update-preview-images.mjs'
       - 'scripts/check-pages.sh'
+      - 'scripts/check-desktop-compat.mjs'
       - '.github/workflows/example-app.yml'
       - '.github/actions/artifact-transport/**'
       - 'scripts/artifact-transport.mjs'
@@ -24,6 +25,7 @@ on:
       - 'package-lock.json'
       - 'scripts/update-preview-images.mjs'
       - 'scripts/check-pages.sh'
+      - 'scripts/check-desktop-compat.mjs'
       - '.github/workflows/example-app.yml'
       - '.github/actions/artifact-transport/**'
       - 'scripts/artifact-transport.mjs'
@@ -117,17 +119,33 @@ jobs:
       cancel-in-progress: false
       queue: max
     permissions:
+      # Read the pinned Pages compatibility adapter; deployment itself still
+      # needs only pages and OIDC.
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      - name: Install pinned Pages compatibility dependency
+        run: npm ci --prefix .github/actions/artifact-transport --ignore-scripts --no-audit --no-fund
+
       - name: Deploy Pages artifact
         id: deployment
         uses: actions/deploy-pages@v5
         env:
-          NODE_OPTIONS: --disable-warning=DEP0040
+          NODE_OPTIONS: >-
+            --import="${{ github.workspace }}/.github/actions/artifact-transport/punycode.mjs"
+            --throw-deprecation
 
   desktop-package:
     name: Package desktop app (${{ matrix.os }})
@@ -154,6 +172,9 @@ jobs:
 
       - name: Install app dependencies
         run: npm ci --prefix examples/universal-app --no-audit --no-fund
+
+      - name: Verify desktop compatibility APIs
+        run: node --pending-deprecation --throw-deprecation scripts/check-desktop-compat.mjs
 
       - name: Package Electron app
         shell: bash

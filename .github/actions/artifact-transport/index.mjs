@@ -3,6 +3,7 @@ import * as glob from '@actions/glob';
 import { DefaultArtifactClient } from '@actions/artifact';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
+import { downloadArtifactArchive } from './extract.mjs';
 import {
   uploadArtifactWithRetry,
   downloadArtifactsWithRetry,
@@ -17,7 +18,11 @@ async function main() {
   const input = core.getInput('path', { required: true });
   if (core.getInput('mode') === 'download') {
     await downloadArtifactsWithRetry(
-      client,
+      {
+        listArtifacts: (options) => client.listArtifacts(options),
+        downloadArtifact: (id, options) =>
+          downloadArtifactArchive(client, id, options),
+      },
       core.getInput('pattern', { required: true }),
       path.resolve(input)
     );

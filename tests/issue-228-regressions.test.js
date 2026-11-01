@@ -88,15 +88,18 @@ describe('Deno lock and npm install script policies', () => {
     const lock = JSON.parse(read(`${root}package-lock.json`));
     const scripts = Object.entries(lock.packages)
       .filter(([, info]) => info.hasInstallScript)
-      .map(([entry, info]) => info.name ?? entry.split('node_modules/').at(-1));
+      .map(
+        ([entry, info]) =>
+          `${info.name ?? entry.split('node_modules/').at(-1)}@${info.version}`
+      );
     expect(scripts.length).toBeGreaterThan(0);
     for (const name of scripts) {
       expect(typeof pkg.allowScripts?.[name]).toBe('boolean');
     }
     expect(pkg.allowScripts).toEqual({
-      'electron-winstaller': true,
-      esbuild: true,
-      fsevents: true,
+      'electron-winstaller@5.4.0': true,
+      'esbuild@0.25.12': true,
+      'fsevents@2.3.3': true,
     });
   });
 });

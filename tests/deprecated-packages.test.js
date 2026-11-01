@@ -1,42 +1,48 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'test-anywhere';
 
 /**
- * Deprecated packages that `npm ci` still warns about, each with the
- * upstream change that removes it. Anything else deprecated in a lockfile
- * fails this test, and so does an entry here that no longer appears.
+ * Every committed lockfile must install without deprecated packages. There
+ * is deliberately no allowlist: replace or override a deprecated dependency
+ * (see docs/CONTRIBUTING.md).
  * npm records `deprecated` when it writes a lockfile, so a package that is
- * deprecated later (eslint 9 was) shows up after the next lockfile update.
+ * deprecated later shows up after the next lockfile update.
  */
-const KNOWN = {
-  'package-lock.json': {},
-  '.github/actions/artifact-transport/package-lock.json': {
-    'glob@10.5.0':
-      '@actions/artifact 6.3.1 -> archiver 7.0.1 -> archiver-utils 5.0.2; the official SDK still requires this dependency, with no npm audit advisories',
-  },
-  'examples/universal-app/package-lock.json': {
-    'temp/node_modules/rimraf@2.6.3':
-      'electron-builder-squirrel-windows -> electron-winstaller 5.4.4 -> temp 0.9.4, the latest temp; temp calls rimraf(path, options, callback), which rimraf 4 removed',
-    'glob@7.2.3':
-      'app-builder-lib 26 pins @electron/asar 3.4.1, which uses the glob 7 callback API; electron-builder 27 moves to @electron/asar 4',
-    'inflight@1.0.6': 'glob 7.2.3 above',
-  },
-};
+const LOCKFILES = [
+  'package-lock.json',
+  '.github/actions/artifact-transport/package-lock.json',
+  'examples/universal-app/package-lock.json',
+];
 
 function deprecatedPackages(lockfile) {
   const { packages } = JSON.parse(readFileSync(lockfile, 'utf8'));
   return Object.entries(packages)
     .filter(([, info]) => info.deprecated)
     .map(
-      ([path, info]) => `${path.replace(/^node_modules\//, '')}@${info.version}`
+      ([path, info]) =>
+        `${path.replace(/^node_modules\//, '')}@${info.version}: ${info.deprecated}`
     )
     .sort();
 }
 
 describe('deprecated packages', () => {
-  for (const [lockfile, known] of Object.entries(KNOWN)) {
-    it(`${lockfile} has only reviewed deprecated packages`, () => {
-      expect(deprecatedPackages(lockfile)).toEqual(Object.keys(known).sort());
+  for (const lockfile of LOCKFILES) {
+    it(`${lockfile} has no deprecated packages`, () => {
+      expect(deprecatedPackages(lockfile)).toEqual([]);
     });
   }
+
+  it('covers every committed npm lockfile', () => {
+    const tracked = execFileSync(
+      'git',
+      ['ls-files', '--', '*package-lock.json'],
+      {
+        encoding: 'utf8',
+      }
+    )
+      .split('\n')
+      .filter(Boolean);
+    expect(tracked.sort()).toEqual([...LOCKFILES].sort());
+  });
 });
