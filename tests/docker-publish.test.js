@@ -140,7 +140,7 @@ describe('optional Docker Hub publishing workflow', () => {
     expect(releaseWorkflow).not.toContain('docker/setup-qemu-action');
   });
 
-  it('suppresses only DEP0005 warnings from artifact downloads', () => {
+  it('checks artifact downloads without suppressing dependency deprecations', () => {
     const downloadSteps = getActionSteps(
       releaseWorkflow,
       './.github/actions/artifact-transport'
@@ -148,7 +148,9 @@ describe('optional Docker Hub publishing workflow', () => {
 
     expect(downloadSteps.length).toBeGreaterThan(0);
     for (const step of downloadSteps) {
-      expect(step).toContain('NODE_OPTIONS: --disable-warning=DEP0005');
+      expect(step).toContain(
+        'NODE_OPTIONS: --pending-deprecation --throw-deprecation'
+      );
     }
   });
 });
