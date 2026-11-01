@@ -12,6 +12,9 @@ import { dirname, join, resolve } from 'node:path';
 import { describe, it } from 'test-anywhere';
 import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
+// Windows checkouts may convert tracked text to CRLF.
+const readText = (path) => readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
+
 const roots = [
   '.',
   'examples/universal-app',
@@ -60,13 +63,13 @@ describe('CI audit regressions', () => {
   });
 
   it('includes shipped applications in CodeQL analysis', () => {
-    const config = readFileSync('.github/codeql/codeql-config.yml', 'utf8');
+    const config = readText('.github/codeql/codeql-config.yml');
     assert.doesNotMatch(config, /^\s*-\s*examples\s*$/m);
     assert.doesNotMatch(config, /^\s*-\s*examples\//m);
   });
 
   it('keeps Pages deployment permissions and preconditions with the adapter', () => {
-    const workflow = readFileSync('.github/workflows/example-app.yml', 'utf8');
+    const workflow = readText('.github/workflows/example-app.yml');
     const job = workflow
       .split('\n  pages-deploy:')[1]
       .split('\n  desktop-package:')[0];
