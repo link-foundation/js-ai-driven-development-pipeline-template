@@ -87,7 +87,7 @@ jobs:
   # === FAST CHECKS - run before slow tests for fastest feedback ===
   # See: hive-mind CI/CD best practices principle #5 (fast-fail job ordering)
 
-  # Syntax check all .mjs files with node --check (~7s)
+  # Syntax check every tracked JavaScript file recursively with node --check.
   test-compilation:
     name: Test Compilation
     runs-on: ubuntu-24.04
@@ -104,7 +104,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check .mjs syntax
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      - name: Check tracked JavaScript syntax
         run: bash scripts/check-mjs-syntax.sh
 
   # Enforce 1500-line limit on .mjs files and release.yml
