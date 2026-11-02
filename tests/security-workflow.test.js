@@ -127,8 +127,21 @@ describe('security workflow', () => {
     expect(audit).toContain('node-version: 24');
     expect(audit).toContain('working-directory: ${{ matrix.directory }}');
     expect(audit).toContain(
-      'run: npm audit --package-lock-only --audit-level=high'
+      'run: node "$GITHUB_WORKSPACE/scripts/npm-audit-report.mjs"'
     );
+    expect(audit).toContain('AUDIT_DIR: ${{ matrix.directory }}');
+    expect(audit).toContain('AUDIT_LEVEL: high');
+  });
+
+  // `--audit-level=high` alone exits 0 on a moderate advisory and
+  // says nothing, so the scheduled run was green while four were open.
+  it('reports advisories below the gate and fails fixable ones weekly', () => {
+    const audit = getJobBlock('npm-audit');
+    expect(audit).not.toContain('--audit-level=high');
+    expect(audit).toContain(
+      "AUDIT_FIXABLE_LEVEL: ${{ github.event_name == 'schedule' && 'moderate' || '' }}"
+    );
+    expect(workflow).toMatch(/^ {2}schedule:\n {4}- cron: '0 6 \* \* 1'$/m);
   });
 });
 

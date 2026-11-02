@@ -200,6 +200,28 @@ protected by their step budget and the matrix job backstop.
 
 See [BEST-PRACTICES.md](docs/BEST-PRACTICES.md) for detailed explanations of each practice.
 
+#### Hosted Runner Capacity
+
+GitHub sometimes cannot hand out a hosted runner, most often macOS arm64. It
+then gives up with "The job was not acquired by Runner of type hosted even
+after multiple attempts", and the job ends cancelled or failed with no runner
+and no steps. No code ran, so the template treats it as infrastructure:
+
+- Every `Pipeline Status` gate stays red, because nothing was tested, and adds
+  a `Hosted runner not acquired` annotation naming those jobs. The gates get
+  `actions: read` to list the run's jobs.
+- `.github/workflows/rerun-unacquired.yml` (`scripts/rerun-unacquired.mjs`)
+  reruns the failed jobs of such a run, and with them the gates and the
+  release, at most twice. It never reruns a run in which a job failed after
+  running steps, a run someone already reran, or a run a newer run of the same
+  branch supersedes. `workflow_run` only fires for this file on the default
+  branch.
+
+The macOS legs stay required: a release is only published when every runtime
+on every OS passed. If a fork does not need macOS to release, it can mark the
+leg `continue-on-error`, at the cost of `needs.test.result` reporting success
+when that leg fails.
+
 #### Robust Changeset Handling
 
 The CI/CD pipeline is designed to handle concurrent PRs gracefully:
@@ -219,9 +241,9 @@ Pages on every push to `main`. Before the first run on `main` in a new
 repository created from this template, open **Settings → Pages** and set
 **Source = GitHub Actions**. This is a one-time manual step and cannot be
 configured from a workflow because the Pages source defaults to
-_Deploy from a branch_. Without it, the `pages-deploy` job fails on
-`actions/deploy-pages` with `Get Pages site failed` /
-`Failed to create deployment`. After flipping the source, the workflow
+_Deploy from a branch_. Without it, the `pages-deploy` job fails with
+`Get Pages site failed` or a permanent `Creating the Pages deployment failed`
+error. After flipping the source, the workflow
 provisions the Pages site on its first run.
 
 ### Auto-regenerated preview screenshots

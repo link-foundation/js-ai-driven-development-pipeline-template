@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'test-anywhere';
-import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { itUnless, noPosixShell, sandboxed } from './helpers/skip.js';
 
@@ -69,39 +68,21 @@ describe('complete pipeline requirements', () => {
       }
     }
   });
-  it('replaces the deprecated Pages dependency without hiding warnings', () => {
+  it('deploys Pages without npm dependencies or hidden warnings', () => {
     const source = read('.github/workflows/example-app.yml');
-    const step = source
-      .split('uses: actions/deploy-pages@v5')[1]
+    const job = source
+      .split('\n  pages-deploy:')[1]
       .split('\n  desktop-package:')[0];
-    expect(step).toContain('artifact-transport/punycode.mjs');
-    expect(step).toContain('--throw-deprecation');
+    expect(job).toContain(
+      'run: node --throw-deprecation scripts/deploy-pages.mjs'
+    );
+    expect(job).not.toContain('uses: actions/deploy-pages');
+    expect(job).not.toContain('npm ci');
+    expect(job).not.toContain('NODE_OPTIONS');
     expect(source).not.toMatch(
       /--disable-warning|--no-warnings|NODE_NO_WARNINGS/
     );
   });
-  itUnless(sandboxed)(
-    'preserves other Node warnings with the deploy setting',
-    () => {
-      const result = spawnSync(
-        'node',
-        [
-          '--import',
-          './.github/actions/artifact-transport/punycode.mjs',
-          '--throw-deprecation',
-          '-e',
-          "require('punycode'); process.emitWarning('visible', {code:'TEST_WARNING'});",
-        ],
-        {
-          encoding: 'utf8',
-          env: { ...process.env, NODE_OPTIONS: '' },
-        }
-      );
-      assert.equal(result.status, 0, result.stdout + result.stderr);
-      expect(result.stderr).not.toContain('DEP0040');
-      expect(result.stderr).toContain('TEST_WARNING');
-    }
-  );
   it('covers standalone scripts and hooks with pinned ShellCheck', () => {
     const source = read('.github/workflows/workflows.yml');
     expect(source).toContain("'**.sh'");

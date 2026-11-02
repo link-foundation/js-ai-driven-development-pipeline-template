@@ -11,8 +11,9 @@ on:
       - 'scripts/check-ci-workflows.mjs'
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
+      - 'scripts/rerun-unacquired.mjs'
+      - 'scripts/github-api.mjs'
       - 'scripts/check-artifact-archive.mjs'
-      - 'scripts/check-pages-punycode.mjs'
       - 'scripts/artifact-transport.mjs'
       - 'scripts/artifact-files.mjs'
   pull_request:
@@ -24,8 +25,9 @@ on:
       - 'scripts/check-ci-workflows.mjs'
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
+      - 'scripts/rerun-unacquired.mjs'
+      - 'scripts/github-api.mjs'
       - 'scripts/check-artifact-archive.mjs'
-      - 'scripts/check-pages-punycode.mjs'
       - 'scripts/artifact-transport.mjs'
       - 'scripts/artifact-files.mjs'
   workflow_dispatch:
@@ -189,17 +191,6 @@ jobs:
       - name: Exercise actual SDK archive dependencies
         run: node --pending-deprecation --throw-deprecation scripts/check-artifact-archive.mjs
 
-      - name: Check out pinned Pages bundle fixture
-        uses: actions/checkout@v7
-        with:
-          repository: actions/deploy-pages
-          ref: 368f82528645a54fb793d4d04e342629a3f51346 # v5
-          path: .cache/deploy-pages-fixture
-          persist-credentials: false
-
-      - name: Verify Pages dependency without deployment credentials
-        run: node --throw-deprecation scripts/check-pages-punycode.mjs .cache/deploy-pages-fixture/dist/index.js
-
       - name: Prepare roundtrip evidence
         run: |
           mkdir -p "$RUNNER_TEMP/artifact-evidence/nested" "$RUNNER_TEMP/pages-evidence"
@@ -271,6 +262,11 @@ jobs:
       - zizmor
       - shellcheck
       - artifact-roundtrip
+    # actions: read lets the gate list this run's jobs and name the ones
+    # GitHub never acquired a runner for.
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -284,6 +280,7 @@ jobs:
       - name: Fail the run when a required job was cancelled or failed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh

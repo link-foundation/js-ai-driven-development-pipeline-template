@@ -239,6 +239,18 @@ Shell scripts and Git hooks use LF on every platform through `.gitattributes`.
 The prepare script calls Husky's installed API and verifies `core.hooksPath`.
 Set `CI_SCRIPTS_DEBUG=1` for optional dependency and hook installation tracing.
 
+### Dependency advisories
+
+The Security workflow audits every committed npm lock with
+`scripts/npm-audit-report.mjs`. Every advisory, at any severity, becomes an
+annotation and a row in the step summary, so a green run states what it
+accepted. Pull requests and pushes fail at `high`, the same level as
+`dependency-review`: a moderate advisory with no patched release would
+otherwise block every contributor. The weekly scheduled run also fails on a
+moderate advisory that `npm audit fix` resolves without `--force`. Fix it with
+`npm update <package>` or an `overrides` entry. When only a breaking upgrade
+would remove an advisory, the run stays green and keeps reporting it.
+
 ### Dependency install scripts and syntax coverage
 
 Every dependency with an install script needs an explicit `allowScripts`
@@ -263,6 +275,6 @@ files recursively, including shipped examples and local actions. Historical
 case studies and development logs are data outside this gate. An empty
 inventory or a failed file check is an error. CodeQL also scans the shipped
 examples. Deprecated dependencies are not allowlisted: replace or override
-them. Artifact and Pages compatibility decisions and their probes are
+them. Artifact compatibility decisions and their probes are
 documented in the [artifact action](../.github/actions/artifact-transport/README.md);
 desktop ones in [universal-app/compat](../examples/universal-app/compat/README.md).
