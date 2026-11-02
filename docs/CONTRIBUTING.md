@@ -275,6 +275,6 @@ files recursively, including shipped examples and local actions. Historical
 case studies and development logs are data outside this gate. An empty
 inventory or a failed file check is an error. CodeQL also scans the shipped
 examples. Deprecated dependencies are not allowlisted: replace or override
-them. Artifact and Pages compatibility decisions and their probes are
+them. Artifact compatibility decisions and their probes are
 documented in the [artifact action](../.github/actions/artifact-transport/README.md);
 desktop ones in [universal-app/compat](../examples/universal-app/compat/README.md).

@@ -219,9 +219,9 @@ Pages on every push to `main`. Before the first run on `main` in a new
 repository created from this template, open **Settings → Pages** and set
 **Source = GitHub Actions**. This is a one-time manual step and cannot be
 configured from a workflow because the Pages source defaults to
-_Deploy from a branch_. Without it, the `pages-deploy` job fails on
-`actions/deploy-pages` with `Get Pages site failed` /
-`Failed to create deployment`. After flipping the source, the workflow
+_Deploy from a branch_. Without it, the `pages-deploy` job fails with
+`Get Pages site failed` or a permanent `Creating the Pages deployment failed`
+error. After flipping the source, the workflow
 provisions the Pages site on its first run.
 
 ### Auto-regenerated preview screenshots

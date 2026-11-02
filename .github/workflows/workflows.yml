@@ -12,7 +12,6 @@ on:
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
       - 'scripts/check-artifact-archive.mjs'
-      - 'scripts/check-pages-punycode.mjs'
       - 'scripts/artifact-transport.mjs'
       - 'scripts/artifact-files.mjs'
   pull_request:
@@ -25,7 +24,6 @@ on:
       - 'scripts/check-status-gate-covers-all-jobs.mjs'
       - 'scripts/check-pipeline-status.sh'
       - 'scripts/check-artifact-archive.mjs'
-      - 'scripts/check-pages-punycode.mjs'
       - 'scripts/artifact-transport.mjs'
       - 'scripts/artifact-files.mjs'
   workflow_dispatch:
@@ -188,17 +186,6 @@ jobs:
 
       - name: Exercise actual SDK archive dependencies
         run: node --pending-deprecation --throw-deprecation scripts/check-artifact-archive.mjs
-
-      - name: Check out pinned Pages bundle fixture
-        uses: actions/checkout@v7
-        with:
-          repository: actions/deploy-pages
-          ref: 368f82528645a54fb793d4d04e342629a3f51346 # v5
-          path: .cache/deploy-pages-fixture
-          persist-credentials: false
-
-      - name: Verify Pages dependency without deployment credentials
-        run: node --throw-deprecation scripts/check-pages-punycode.mjs .cache/deploy-pages-fixture/dist/index.js
 
       - name: Prepare roundtrip evidence
         run: |

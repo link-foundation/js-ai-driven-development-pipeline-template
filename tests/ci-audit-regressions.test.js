@@ -68,7 +68,7 @@ describe('CI audit regressions', () => {
     assert.doesNotMatch(config, /^\s*-\s*examples\//m);
   });
 
-  it('keeps Pages deployment permissions and preconditions with the adapter', () => {
+  it('keeps Pages deployment permissions and preconditions', () => {
     const workflow = readText('.github/workflows/example-app.yml');
     const job = workflow
       .split('\n  pages-deploy:')[1]
@@ -83,9 +83,20 @@ describe('CI audit regressions', () => {
       /permissions:\n(?:\s+#[^\n]*\n)*\s+contents: read\n\s+pages: write\n\s+id-token: write\n\s+environment:/
     );
     assert.match(job, /name: github-pages/);
-    assert.match(job, /uses: actions\/deploy-pages@v5/);
-    assert.match(job, /artifact-transport\/punycode\.mjs/);
-    assert.match(job, /--throw-deprecation/);
+    assert.match(
+      job,
+      /run: node --throw-deprecation scripts\/deploy-pages\.mjs/
+    );
+    assert.match(job, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+    assert.match(
+      job,
+      /ARTIFACT_ID: \$\{\{ needs\.web-build\.outputs\.pages-artifact-id \}\}/
+    );
+    assert.match(
+      workflow,
+      /pages-artifact-id: \$\{\{ steps\.pages-artifact\.outputs\.artifact-id \}\}/
+    );
+    assert.match(workflow, /id: pages-artifact\n/);
     assert.doesNotMatch(
       job,
       /--disable-warning|--no-warnings|NODE_NO_WARNINGS/
