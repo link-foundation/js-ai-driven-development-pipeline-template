@@ -3,7 +3,7 @@
 This action keeps the official `@actions/artifact` client for authentication,
 immutable artifact IDs, digests and transport. Scoped npm overrides pin the
 SDK's original `unzip-stream` 0.3.4 and replace `archiver-utils`' deprecated
-glob 10.5.0 with glob 13.0.6, which preserves the only API it uses,
+glob 10.5.0 with glob 14.0.3, which preserves the only API it uses,
 `glob.sync`.
 
 Downloads use the SDK's documented `skipDecompress` option and pass the digest
