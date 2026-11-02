@@ -34,6 +34,10 @@ on:
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
       - 'tests/recheck-broken-links.test.js'
+  # External URLs rot without any commit here; recheck them weekly so a dead
+  # link is reported by this run instead of by the next unrelated docs PR.
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 # Least-privilege default; jobs escalate individually when needed.
@@ -64,12 +68,19 @@ jobs:
         with:
           persist-credentials: false
 
+      # lychee keeps results for --max-cache-age 1d. Scoping the cache to the
+      # UTC day restores only a cache saved today, so lychee never has to
+      # discard a restored cache as "too old".
+      - name: Name today's link cache
+        id: link-cache
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Restore link cache
         uses: actions/cache@v5
         with:
           path: .lycheecache
-          key: cache-lychee-${{ runner.os }}-${{ github.sha }}
-          restore-keys: cache-lychee-
+          key: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-${{ github.sha }}
+          restore-keys: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-
 
       - name: Check links with lychee
         id: lychee
