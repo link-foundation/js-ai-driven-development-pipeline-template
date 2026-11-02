@@ -130,6 +130,25 @@ classify_cancellations() {
   done <<<"${names}"
 }
 
+# Jobs GitHub never started (no runner, no steps) are infrastructure, not
+# code. The gate stays red, because nothing was tested, but names the cause.
+# Reading the jobs needs GH_TOKEN with actions: read; JOBS_JSON replaces the
+# request in tests.
+report_unacquired_jobs() {
+  local names
+  if [ -z "${JOBS_JSON:-}" ] && { [ -z "${GH_TOKEN:-}" ] || [ -z "${GITHUB_RUN_ID:-}" ]; }; then
+    trace "no GH_TOKEN or GITHUB_RUN_ID; not checking for unacquired runners"
+    return 0
+  fi
+  if ! names="$(node "${script_dir}/rerun-unacquired.mjs" report 2>&1)"; then
+    echo "::warning title=Runner acquisition unknown::Could not list the jobs of this run: ${names}"
+    return 0
+  fi
+  names="$(join_names "${names}")"
+  [ -z "${names}" ] && return 0
+  echo "::error title=Hosted runner not acquired::${names}. GitHub could not provide a runner, so no code ran. rerun-unacquired.yml reruns them automatically (at most twice); otherwise use Re-run failed jobs."
+}
+
 failed_lines="$(select_by_result not-success)"
 cancelled_lines="$(select_by_result cancelled)"
 failed="$(join_names "${failed_lines}")"
@@ -169,6 +188,10 @@ if [ -n "${cancelled}" ]; then
     echo "::error title=Pipeline has cancelled jobs::${overrun_jobs}. No supersede accounts for these cancellations; timeout-minutes would otherwise leave the run grey."
     status=1
   fi
+fi
+
+if [ -n "${failed}${cancelled}" ]; then
+  report_unacquired_jobs
 fi
 
 if [ "${status}" -eq 0 ]; then

@@ -78,16 +78,47 @@ function listNeededJobs(jobBlock) {
   return neededJobs;
 }
 
+// The gate lists the run's jobs when it has a token and a run ID, which the
+// test environment may have on a hosted runner; the tests never call the API.
+const API_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_RUN_ID', 'JOBS_JSON'];
+
 function runGate(needs, extraEnv = {}) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !API_ENV.includes(name))
+  );
   return spawnSync('bash', [scriptPath], {
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...env,
       NEEDS_JSON: JSON.stringify(needs),
       ...extraEnv,
     },
   });
 }
+
+const unacquiredJobs = JSON.stringify({
+  total_count: 3,
+  jobs: [
+    {
+      name: 'lint',
+      conclusion: 'success',
+      runner_name: 'GitHub Actions 2',
+      steps: [{}],
+    },
+    {
+      name: 'test (macos-15, node)',
+      conclusion: 'cancelled',
+      runner_name: '',
+      steps: [],
+    },
+    {
+      name: 'test (macos-15, bun)',
+      conclusion: 'failure',
+      runner_name: null,
+      steps: [],
+    },
+  ],
+});
 
 describe('pipeline status gate', () => {
   itUnless(sandboxed, noPosixShell)(
@@ -218,6 +249,90 @@ describe('pipeline status gate', () => {
   );
 });
 
+describe('pipeline status gate and runner acquisition', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'names jobs GitHub never acquired a runner for and stays red',
+    () => {
+      const result = runGate(
+        { test: { result: 'cancelled' } },
+        { JOBS_JSON: unacquiredJobs }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        '::error title=Hosted runner not acquired::test (macos-15, node), test (macos-15, bun). GitHub could not provide a runner, so no code ran.'
+      );
+      expect(result.stdout).toContain('rerun-unacquired.yml');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'adds nothing when every failed job ran on a runner',
+    () => {
+      const result = runGate(
+        { lint: { result: 'failure' } },
+        {
+          JOBS_JSON: JSON.stringify({
+            jobs: [
+              {
+                name: 'lint',
+                conclusion: 'failure',
+                runner_name: 'r',
+                steps: [{}],
+              },
+            ],
+          }),
+        }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).not.toContain('Hosted runner not acquired');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'does not list jobs when every required job succeeded',
+    () => {
+      const result = runGate(
+        { lint: { result: 'success' } },
+        { JOBS_JSON: 'not json' }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('Runner acquisition unknown');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'warns, without hiding the failure, when the jobs cannot be listed',
+    () => {
+      const result = runGate(
+        { lint: { result: 'failure' } },
+        { JOBS_JSON: 'not json' }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        '::warning title=Runner acquisition unknown::'
+      );
+      expect(result.stdout).toContain('Failing jobs: lint');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'skips the job listing without a token',
+    () => {
+      const result = runGate(
+        { lint: { result: 'failure' } },
+        { GITHUB_RUN_ID: '1' }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).not.toContain('Runner acquisition unknown');
+    }
+  );
+});
+
 describe('pipeline status gate in every workflow', () => {
   it('gates every workflow and observes every other job', () => {
     const problems = [];
@@ -254,6 +369,18 @@ describe('pipeline status gate in every workflow', () => {
         )
       ) {
         problems.push(`${name}: gate does not pass HEAD_REF`);
+      }
+
+      if (!gate.includes('GH_TOKEN: ${{ github.token }}')) {
+        problems.push(`${name}: gate cannot list the run's jobs (GH_TOKEN)`);
+      }
+
+      if (
+        !gate.includes(
+          '    permissions:\n      actions: read\n      contents: read\n'
+        )
+      ) {
+        problems.push(`${name}: gate lacks actions: read`);
       }
 
       if (!gate.includes('run: bash scripts/check-pipeline-status.sh')) {

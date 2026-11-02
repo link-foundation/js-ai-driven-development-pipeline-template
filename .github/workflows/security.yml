@@ -175,6 +175,11 @@ jobs:
       - dependency-review
       - dependency-graph
       - npm-audit
+    # actions: read lets the gate list this run's jobs and name the ones
+    # GitHub never acquired a runner for.
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -188,6 +193,7 @@ jobs:
       - name: Fail the run when a required job was cancelled or failed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh
