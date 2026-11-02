@@ -115,6 +115,8 @@ jobs:
       - name: Review dependency changes
         uses: actions/dependency-review-action@v5
         with:
+          # Same level as the npm-audit gate; npm-audit annotates the lower
+          # severities this accepts.
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
@@ -139,9 +141,18 @@ jobs:
         with:
           node-version: 24
 
+      # Every advisory is annotated and listed in the step summary; only
+      # `high` and above fail pull requests, so a moderate advisory with no
+      # patched release cannot block every contributor. The weekly run also
+      # fails on a moderate advisory that `npm audit fix` resolves without
+      # --force, which is the signal that someone has work to do.
       - name: Audit current lock
         working-directory: ${{ matrix.directory }}
-        run: npm audit --package-lock-only --audit-level=high
+        env:
+          AUDIT_DIR: ${{ matrix.directory }}
+          AUDIT_LEVEL: high
+          AUDIT_FIXABLE_LEVEL: ${{ github.event_name == 'schedule' && 'moderate' || '' }}
+        run: node "$GITHUB_WORKSPACE/scripts/npm-audit-report.mjs"
 
   # Terminal status gate: runs even when the jobs above fail or are
   # cancelled, and turns a `timeout-minutes` kill (reported as cancelled)

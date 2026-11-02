@@ -97,18 +97,18 @@ describe('broken link workflow', () => {
     }
   });
 
-  // Issue #278: without a schedule a link that dies after the last Markdown
+  // Without a schedule a link that dies after the last Markdown
   // edit stays undetected until an unrelated docs change trips over it.
   it('rechecks links weekly in addition to its change triggers', () => {
     const on = workflow.split('\n# ')[0];
 
-    expect(on).toMatch(/^  schedule:\n {4}- cron: '0 6 \* \* 1'$/m);
+    expect(on).toMatch(/^ {2}schedule:\n {4}- cron: '0 6 \* \* 1'$/m);
     for (const trigger of ['push', 'pull_request', 'workflow_dispatch']) {
       expect(on).toMatch(new RegExp(`^  ${trigger}:`, 'm'));
     }
   });
 
-  // Issue #278: a per-commit key with a bare `cache-lychee-` restore prefix
+  // A per-commit key with a bare `cache-lychee-` restore prefix
   // restored caches days old, which lychee (--max-cache-age 1d) discarded
   // with "[WARN] Cache is too old" on almost every run.
   it('restores only a link cache saved on the same UTC day', () => {
@@ -127,8 +127,6 @@ describe('broken link workflow', () => {
     );
     expect(cacheStep).not.toMatch(/restore-keys: cache-lychee-$/m);
     expect(lycheeStep).toContain('--max-cache-age 1d');
-    expect(workflow.indexOf(dayStep)).toBeLessThan(
-      workflow.indexOf(cacheStep)
-    );
+    expect(workflow.indexOf(dayStep)).toBeLessThan(workflow.indexOf(cacheStep));
   });
 });
