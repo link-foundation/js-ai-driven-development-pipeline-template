@@ -208,12 +208,18 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   main().catch((error) => {
-    console.log(
-      `::error title=Rerun of unacquired jobs failed::${describe(error)
-        .replaceAll('%', '%25')
-        .replaceAll('\r', '%0D')
-        .replaceAll('\n', '%0A')}`
-    );
+    const message = describe(error);
+    // The status gate wraps a report failure in its own warning.
+    if (process.argv[2] === 'report') {
+      console.error(message);
+    } else {
+      console.log(
+        `::error title=Rerun of unacquired jobs failed::${message
+          .replaceAll('%', '%25')
+          .replaceAll('\r', '%0D')
+          .replaceAll('\n', '%0A')}`
+      );
+    }
     process.exitCode = 1;
   });
 }

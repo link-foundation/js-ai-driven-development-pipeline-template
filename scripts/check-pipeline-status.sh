@@ -135,15 +135,18 @@ classify_cancellations() {
 # Reading the jobs needs GH_TOKEN with actions: read; JOBS_JSON replaces the
 # request in tests.
 report_unacquired_jobs() {
-  local names
+  local names errors
   if [ -z "${JOBS_JSON:-}" ] && { [ -z "${GH_TOKEN:-}" ] || [ -z "${GITHUB_RUN_ID:-}" ]; }; then
     trace "no GH_TOKEN or GITHUB_RUN_ID; not checking for unacquired runners"
     return 0
   fi
-  if ! names="$(node "${script_dir}/rerun-unacquired.mjs" report 2>&1)"; then
-    echo "::warning title=Runner acquisition unknown::Could not list the jobs of this run: ${names}"
+  errors="$(mktemp)"
+  if ! names="$(node "${script_dir}/rerun-unacquired.mjs" report 2>"${errors}")"; then
+    echo "::warning title=Runner acquisition unknown::Could not list the jobs of this run: $(tr '\n' ' ' <"${errors}")"
+    rm -f "${errors}"
     return 0
   fi
+  rm -f "${errors}"
   names="$(join_names "${names}")"
   [ -z "${names}" ] && return 0
   echo "::error title=Hosted runner not acquired::${names}. GitHub could not provide a runner, so no code ran. rerun-unacquired.yml reruns them automatically (at most twice); otherwise use Re-run failed jobs."
