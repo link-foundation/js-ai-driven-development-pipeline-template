@@ -1,5 +1,11 @@
 # JavaScript first and the single push gate
 
+Apply this opt-in Rust prerequisite only in conjunction with the
+[Rust CI/CD template](https://github.com/link-foundation/rust-ai-driven-development-pipeline-template).
+Install the template and wire its Rust jobs to the gate in the same change.
+For an existing Rust template installation, update all those jobs in the change
+that adds the gate. Standalone JavaScript projects retain their existing CI.
+
 For mixed Rust/JavaScript projects, implement and debug complete behavior in native
 JavaScript before compiling Rust. A browser UI, WASM wrapper, source envelope,
 matching filename set or equal test count does not establish behavioral parity.
@@ -25,6 +31,44 @@ consume its `tested-sha` output as the checkout ref. A skipped gate is not succe
 For projects whose JavaScript port is unfinished, keep the readiness gate red and
 report the blockers rather than representing the rollout as complete. Adoption of
 this opt-in workflow does not by itself migrate existing Rust applications.
+
+The callable workflow requires the boolean input `rust-template-applied`. Set it
+to `true` only when the Rust template and dependencies described above are applied
+together. There is no default: callers must make this integration decision
+explicitly. Passing `false` skips the prerequisite, emits no `tested-sha`, and
+leaves dependent Rust jobs skipped. This declaration records the caller contract;
+it does not automatically install or inspect an external template.
+
+When updating an existing caller, add this input alongside its complete Rust job
+wiring. The reference integration uses real commands and the same tested revision
+for all six Rust paths:
+
+```yaml
+jobs:
+  javascript-first:
+    uses: ./.github/workflows/javascript-first-gate.yml
+    with:
+      rust-template-applied: true
+      source-sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      javascript-command: node --test examples/javascript-first/native-check.mjs
+      parity-command: node examples/javascript-first/check-parity.mjs --strict
+      translation-command: node examples/javascript-first/generate.mjs --check
+  rust-check:
+    needs: [javascript-first]
+    if: needs.javascript-first.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.javascript-first.outputs.tested-sha }}
+          persist-credentials: false
+      - run: rustc --crate-type lib --emit metadata examples/javascript-first/generated/lib.rs -o /tmp/example.rmeta
+```
+
+Replace the example commands with the adopting project's actual native checks,
+strict inventory and deterministic translator. Copy the dependency, success
+condition and checkout ref to every Rust check/build/test/package/container/publish
+job, including release jobs that validate a generated candidate source revision.
 
 Run untrusted candidates through `pull_request` so runner caches stay in the PR
 scope. A manual or release caller must establish that its selected candidate is

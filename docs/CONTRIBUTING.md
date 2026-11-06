@@ -218,6 +218,10 @@ If you have questions about contributing, feel free to open an issue for discuss
 ## JavaScript-first mixed-language projects
 
 Follow [the JavaScript-first gate and single push workflow](javascript-first.md) before enabling production Rust jobs for a mixed-language project.
+Apply that opt-in prerequisite only together with the
+[Rust CI/CD template](https://github.com/link-foundation/rust-ai-driven-development-pipeline-template),
+wiring every Rust job to it in the same change. Standalone JavaScript projects
+keep their existing CI; they do not need the Rust prerequisite.
 
 Standalone shell scripts and Husky hooks are checked with ShellCheck 0.11.0.
 Install [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html) for the staged-file hook;

@@ -1,5 +1,12 @@
 # A working JavaScript-first caller
 
+Use the JavaScript-first prerequisite only together with the Rust CI/CD template.
+This reference integration installs the gate and all six downstream Rust paths
+together; its caller explicitly passes `rust-template-applied: true`. An adopting
+project must apply or update the Rust template and wire every Rust job in the
+same change. Passing `false` skips the gate and dependent Rust jobs; standalone
+JavaScript CI does not call this prerequisite.
+
 This small mixed-language example implements one complete API: integer parity.
 It has no CLI, persistence or deployment behavior. Native JavaScript tests check
 observations, refusal cases and signed integer boundaries before any Rust work.
