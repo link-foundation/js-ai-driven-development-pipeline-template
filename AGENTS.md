@@ -2,6 +2,10 @@
 
 Read docs/CONTRIBUTING.md and docs/javascript-first.md before changing behavior or CI.
 
+Apply the JavaScript-first Rust prerequisite only together with the Rust CI/CD
+template. Wire all Rust jobs in that same batch; standalone JavaScript CI does
+not require this opt-in gate.
+
 Draft and validate native JavaScript behavior first. Record every incomplete port,
 unsupported translation and native adapter; a strict readiness gate must reject
 missing or carried behavior before Rust CI starts. Preserve acceptance assertions.
