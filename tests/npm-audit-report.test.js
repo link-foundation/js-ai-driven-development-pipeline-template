@@ -120,11 +120,11 @@ describe('npm audit report', () => {
     const log = console.log;
     console.log = (line) => lines.push(line);
     try {
-      expect(main({}, () => ({ stdout: '' }))).toBe(1);
+      expect(main({}, () => ({ status: 0, stdout: '' }))).toBe(1);
       expect(
-        main({ AUDIT_LEVEL: 'severe' }, () => ({ stdout: moderate }))
+        main({ AUDIT_LEVEL: 'severe' }, () => ({ status: 1, stdout: moderate }))
       ).toBe(1);
-      expect(main({}, () => ({ stdout: moderate }))).toBe(0);
+      expect(main({}, () => ({ status: 1, stdout: moderate }))).toBe(0);
     } finally {
       console.log = log;
     }
@@ -134,10 +134,78 @@ describe('npm audit report', () => {
     expect(lines[1]).toContain('Unknown severity: severe');
   });
 
+  it('rejects execution failures even when stdout contains a clean report', () => {
+    const stdout = JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {},
+    });
+    const log = console.log;
+    const lines = [];
+    console.log = (line) => lines.push(line);
+    try {
+      for (const execution of [
+        { status: 2 },
+        { status: null, signal: 'SIGTERM' },
+        { status: 1 },
+      ]) {
+        expect(main({}, () => ({ stdout, ...execution }))).toBe(1);
+      }
+      expect(main({}, () => ({ status: 0, stdout }))).toBe(0);
+    } finally {
+      console.log = log;
+    }
+    expect(lines.slice(0, 3).every((line) => line.startsWith('::error'))).toBe(
+      true
+    );
+  });
+
+  it('rejects malformed vulnerability maps and unresolved advisory references', () => {
+    for (const vulnerabilities of [
+      [],
+      { vulnerable: null },
+      { vulnerable: { name: 'vulnerable', severity: 'high' } },
+      { vulnerable: { severity: 'high', via: [] } },
+      { vulnerable: { severity: 'high', via: ['missing-package'] } },
+      { vulnerable: { severity: 'high', via: ['vulnerable'] } },
+    ]) {
+      expect(() => report(JSON.stringify({ vulnerabilities }))).toThrow();
+    }
+  });
+
   it('keeps workflow command data on one line', () => {
     const multiline = JSON.parse(withoutHigh);
     multiline.vulnerabilities.fixable.via[0].title = 'a\nb 100%';
     const [line] = report(JSON.stringify(multiline)).annotations;
     expect(line).toContain('a%0Ab 100%25');
   });
+});
+
+describe('independent npm audit evidence chains', () => {
+  it('rejects a reference-only cycle even beside an unrelated valid advisory', () => {
+    const data = JSON.parse(withoutHigh);
+    data.vulnerabilities.a = { severity: 'high', via: ['b'] };
+    data.vulnerabilities.b = { severity: 'high', via: ['a'] };
+    expect(() => report(JSON.stringify(data))).toThrow('reference-only cycle');
+  });
+  for (const via of [
+    {},
+    { severity: 'high' },
+    {
+      severity: 'high',
+      title: '',
+      name: 'x',
+      range: '*',
+      url: 'https://example.com/advisory',
+    },
+  ]) {
+    it(`rejects incomplete advisory evidence ${JSON.stringify(via)}`, () => {
+      expect(() =>
+        report(
+          JSON.stringify({
+            vulnerabilities: { x: { severity: 'high', via: [via] } },
+          })
+        )
+      ).toThrow();
+    });
+  }
 });

@@ -22,3 +22,25 @@ export function validateLycheeReport(
     );
   }
 }
+
+export function extractErrorsSection(content, kind = 'Errors') {
+  const lines = content.split('\n');
+  const start = lines.findIndex(
+    (line) => /^#+\s+(Errors|Timeouts) per input\s*$/.exec(line)?.[1] === kind
+  );
+  if (start === -1) {
+    return kind === 'Errors' && !/^#+\s+[^\r\n]+ per input\s*$/m.test(content)
+      ? content
+      : '';
+  }
+  const heading = /^(#+)\s/.exec(lines[start])[1].length;
+  const section = [];
+  for (const line of lines.slice(start + 1)) {
+    const next = /^(#+)\s/.exec(line);
+    if (next && next[1].length <= heading) {
+      break; // a sibling or parent heading ends the errors section
+    }
+    section.push(line);
+  }
+  return section.join('\n');
+}

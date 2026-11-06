@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import {
   existsSync,
@@ -487,5 +488,43 @@ describe('web archive fallback honouring the re-check', () => {
 
     expect(fromMissing.remaining).toEqual(urls);
     expect(fromNull.remaining).toEqual(urls);
+  });
+});
+
+describe('adjacent lychee records', () => {
+  it('preserves every no-description error without consuming the next line', () => {
+    for (const newline of ['\n', '\r\n']) {
+      const failures = parseLycheeFailures(
+        [
+          '## Errors per input',
+          '* [404] https://example.com/missing',
+          '* [ERROR] https://example.com/reset',
+          '* [ERROR] <https://example.com/description> | connection reset',
+          '## Redirects per input',
+          '* [ERROR] https://example.com/ignore',
+        ].join(newline)
+      );
+      expect(failures.map(({ url }) => url)).toEqual([
+        'https://example.com/missing',
+        'https://example.com/reset',
+        'https://example.com/description',
+      ]);
+      expect(failures.map(({ detail }) => detail)).toEqual([
+        '',
+        '',
+        'connection reset',
+      ]);
+    }
+  });
+});
+
+describe('section-only report', () => {
+  it('does not interpret redirects as failures when Errors is absent', () => {
+    assert.deepEqual(
+      parseLycheeFailures(
+        '## Redirects per input\n* [404] https://example.com/redirect\n'
+      ),
+      []
+    );
   });
 });

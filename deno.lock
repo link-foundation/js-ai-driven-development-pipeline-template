@@ -12,7 +12,8 @@
     "npm:lino-arguments@0.4.0": "0.4.0",
     "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:prettier@^3.6.2": "3.8.4",
-    "npm:test-anywhere@~0.8.48": "0.8.50"
+    "npm:test-anywhere@~0.8.48": "0.8.50",
+    "npm:yaml@2.9.1": "2.9.1"
   },
   "npm": {
     "@cacheable/memory@2.2.0": {
@@ -1202,8 +1203,13 @@
         "npm:lino-arguments@0.4.0",
         "npm:lint-staged@^16.4.0",
         "npm:prettier@^3.6.2",
-        "npm:test-anywhere@~0.8.48"
-      ]
+        "npm:test-anywhere@~0.8.48",
+        "npm:yaml@2.9.1"
+      ],
+      "overrides": {
+        "minimatch@>=7 <11": "^11.0.4",
+        "glob@>=9 <=14.0.1": "^14.0.2"
+      }
     }
   }
 }

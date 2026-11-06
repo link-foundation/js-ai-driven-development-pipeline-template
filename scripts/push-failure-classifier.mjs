@@ -84,9 +84,25 @@ export function isBlockedByRepositoryRule(result) {
  * @returns {boolean}
  */
 export function isNonFastForward(result) {
-  if (isBlockedByRepositoryRule(result)) {
+  if (isBlockedByRepositoryRule(result) || isAuthenticationFailure(result)) {
     return false;
   }
   const output = combinedOutput(result, false);
   return NON_FAST_FORWARD_PATTERNS.some((pattern) => output.includes(pattern));
+}
+
+function isAuthenticationFailure(result) {
+  return /authentication failed|permission denied|could not read username|(?:http|requested url returned error)[ :]+40[13]\b/i.test(
+    combinedOutput(result)
+  );
+}
+
+/** Internal GitHub failures can reject an otherwise valid, unchanged push. */
+export function isTransientPushFailure(result) {
+  if (isBlockedByRepositoryRule(result) || isAuthenticationFailure(result)) {
+    return false;
+  }
+  return /fatal error in commit_refs_rules|(?:requested url returned error|http)[ :]+(?:429|5[0-9]{2})\b|remote: internal server error/i.test(
+    combinedOutput(result)
+  );
 }

@@ -3,7 +3,7 @@
 /**
  * Publish to npm using OIDC trusted publishing
  * Usage: node scripts/publish-to-npm.mjs [--should-pull] [--js-root <path>]
- *   should_pull: Optional flag to pull latest changes before publishing (for release job)
+ *   should_pull: Verify the validated release commit landed on main before publishing
  *
  * Configuration:
  * - CLI: --js-root <path> to explicitly set JavaScript root
@@ -23,6 +23,7 @@ import { appendFileSync } from 'fs';
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
 import { isPackageVersionPublished } from './npm-registry.mjs';
 import { readPackageInfo } from './package-info.mjs';
+import { prepareReleasePublication } from './release-publication.mjs';
 import {
   buildAuthFailureGuidance,
   isNonRetryableFailure,
@@ -51,7 +52,7 @@ const config = makeConfig({
       .option('should-pull', {
         type: 'boolean',
         default: getenv('SHOULD_PULL', false),
-        describe: 'Pull latest changes before publishing',
+        describe: 'Verify the validated release commit landed on main',
       })
       .option('js-root', {
         type: 'string',
@@ -226,9 +227,8 @@ async function runPublishCommand(shell, jsRoot, originalCwd) {
 
 async function main() {
   try {
-    if (shouldPull) {
-      // Pull the latest changes we just pushed
-      await $`git pull origin main`;
+    if (process.env.GITHUB_SHA || shouldPull) {
+      await prepareReleasePublication({ verifyRemote: shouldPull, jsRoot });
     }
 
     // Get current version

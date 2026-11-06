@@ -9,7 +9,7 @@ describe('version-and-commit.mjs formats the release commit', () => {
   it('checks staged files with prettier between staging and committing', () => {
     // The formatting logic lives in checkStagedFormatting(), which is defined
     // above main(); the ordering that matters is at the call site.
-    const staged = script.indexOf('await $`git add -A`');
+    const staged = script.indexOf('await stageReleaseMetadata();');
     const checkCall = script.indexOf('await checkStagedFormatting();');
     const prettier = formatting.indexOf("'prettier', '--check'");
     const commit = script.indexOf("await runStrict('git', ['commit'");
