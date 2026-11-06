@@ -9,7 +9,22 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/update-preview-images.mjs'
+      - 'scripts/setup-preview-gh.sh'
+      - 'scripts/check-preview-tools.sh'
+      - 'scripts/push-main-with-rebase-retry.mjs'
+      - 'scripts/push-failure-classifier.mjs'
+      - 'scripts/land-via-pull-request.mjs'
+      - 'scripts/run-command.mjs'
+      - 'scripts/release-metadata.mjs'
+      - 'scripts/github-actions-log.mjs'
+      - 'scripts/check-pages.sh'
+      - 'scripts/check-desktop-compat.mjs'
+      - 'scripts/deploy-pages.mjs'
+      - 'scripts/github-api.mjs'
       - '.github/workflows/example-app.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
   push:
     branches:
       - main
@@ -19,7 +34,22 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/update-preview-images.mjs'
+      - 'scripts/setup-preview-gh.sh'
+      - 'scripts/check-preview-tools.sh'
+      - 'scripts/push-main-with-rebase-retry.mjs'
+      - 'scripts/push-failure-classifier.mjs'
+      - 'scripts/land-via-pull-request.mjs'
+      - 'scripts/run-command.mjs'
+      - 'scripts/release-metadata.mjs'
+      - 'scripts/github-actions-log.mjs'
+      - 'scripts/check-pages.sh'
+      - 'scripts/check-desktop-compat.mjs'
+      - 'scripts/deploy-pages.mjs'
+      - 'scripts/github-api.mjs'
       - '.github/workflows/example-app.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
   workflow_dispatch:
 
 permissions:
@@ -40,17 +70,35 @@ jobs:
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-web-build
       cancel-in-progress: true
+    # check-pages.sh and configure-pages read the Pages API, which answers
+    # a request it does not authorise with the same 404 as a disabled site,
+    # so the read is granted explicitly.
+    permissions:
+      contents: read
+      pages: read
+    # The deploy job publishes exactly the artifact this run uploaded.
+    outputs:
+      pages-artifact-id: ${{ steps.pages-artifact.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: examples/universal-app/package-lock.json
+
+      # Pull requests never deploy, so they only warn; main fails with the
+      # setting a maintainer has to change.
+      - name: Check GitHub Pages source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PAGES_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'require' || 'warn' }}
+        run: bash scripts/check-pages.sh
 
       - name: Configure GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -66,16 +114,19 @@ jobs:
           VITE_REPOSITORY_URL: https://github.com/${{ github.repository }}
 
       - name: Upload web build artifact
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: universal-example-web
           path: examples/universal-app/dist
           if-no-files-found: error
 
       - name: Upload GitHub Pages artifact
+        id: pages-artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v5
+        uses: ./.github/actions/artifact-transport
         with:
+          name: github-pages
+          pages: 'true'
           path: examples/universal-app/dist
 
   # Requires Settings → Pages → Source = GitHub Actions to be set once
@@ -90,16 +141,36 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     permissions:
+      # Read the deployment script; deployment itself needs only pages and
+      # OIDC.
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      # The REST protocol of actions/deploy-pages@v5, which sends one
+      # creation request and fails the job on a single transient HTTP 500.
+      # The script retries 429/5xx/network failures of that request, adopts a
+      # deployment whose response was lost so one commit is never deployed
+      # twice, fails permanent 4xx at once and cancels what it abandons.
       - name: Deploy Pages artifact
         id: deployment
-        uses: actions/deploy-pages@v5
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.web-build.outputs.pages-artifact-id }}
+        run: node --throw-deprecation scripts/deploy-pages.mjs
 
   desktop-package:
     name: Package desktop app (${{ matrix.os }})
@@ -113,12 +184,12 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           cache: npm
@@ -126,6 +197,9 @@ jobs:
 
       - name: Install app dependencies
         run: npm ci --prefix examples/universal-app --no-audit --no-fund
+
+      - name: Verify desktop compatibility APIs
+        run: node --pending-deprecation --throw-deprecation scripts/check-desktop-compat.mjs
 
       - name: Package Electron app
         shell: bash
@@ -146,7 +220,7 @@ jobs:
           VITE_REPOSITORY_URL: https://github.com/${{ github.repository }}
 
       - name: Upload desktop package
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: universal-example-desktop-${{ matrix.os }}
           path: examples/universal-app/out
@@ -161,19 +235,19 @@ jobs:
       group: check-${{ github.workflow }}-${{ github.ref }}-android-build
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: examples/universal-app/package-lock.json
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -191,13 +265,13 @@ jobs:
         run: npm --prefix examples/universal-app run mobile:android:build
 
       - name: Upload Android output
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: universal-example-android
           path: |
             examples/universal-app/android/app/build/outputs/**/*.apk
             examples/universal-app/android/app/build/outputs/**/*.aab
-          if-no-files-found: warn
+          if-no-files-found: error
 
   ios-build:
     name: Build iOS app
@@ -208,12 +282,12 @@ jobs:
       group: check-${{ github.workflow }}-${{ github.ref }}-ios-build
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
           cache: npm
@@ -231,7 +305,33 @@ jobs:
   # Regenerate example-app preview screenshots (docs/screenshots/example-app/*)
   # using browser-commander + Playwright so README/site images always reflect
   # the current UI. Issue: #62. Implementation: scripts/update-preview-images.mjs.
+  preview-tools:
+    name: Preview container tools
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53 # v1.59.1-noble
+    timeout-minutes: 5
+    concurrency:
+      group: check-${{ github.workflow }}-${{ github.ref }}-preview-tools
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install pinned GitHub CLI
+        run: bash scripts/setup-preview-gh.sh
+      - name: Check preview container tools
+        run: bash scripts/check-preview-tools.sh
+
   preview-regen:
+    needs: [preview-tools]
     name: Regenerate Preview Images
     runs-on: ubuntu-24.04
     container:
@@ -244,6 +344,7 @@ jobs:
     concurrency:
       group: main-writer-${{ github.repository }}-main
       cancel-in-progress: false
+      queue: max
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
@@ -251,8 +352,12 @@ jobs:
       contents: write
     env:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    # Container jobs run `run:` blocks with sh, which has no [[ ]].
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Regenerate against main HEAD so the bot commit lands on a
           # fast-forward parent regardless of which trigger started the job.
@@ -260,6 +365,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           persist-credentials: false
+
+      # The container user (root) does not own the runner's workspace, so git
+      # refuses the checkout as dubious ownership until it is trusted.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install pinned GitHub CLI
+        run: bash scripts/setup-preview-gh.sh
+
+      - name: Check preview container tools
+        run: bash scripts/check-preview-tools.sh
 
       - name: Install example app dependencies
         run: npm ci --prefix examples/universal-app --no-audit --no-fund
@@ -272,39 +388,44 @@ jobs:
         run: npm install --no-save --package-lock=false --no-audit --no-fund browser-commander@0.8.1 playwright@1.59.1 # zizmor: ignore[adhoc-packages]
 
       - name: Regenerate preview images
+        id: regenerate
         run: node scripts/update-preview-images.mjs
 
       - name: Detect drift
         id: drift
         run: |
-          if [[ -n "$(git status --porcelain)" ]]; then
+          # The assignment fails the step when git fails; a test on $(...)
+          # would read the failure as no drift.
+          changes="$(git status --porcelain)"
+          if [[ -n "$changes" ]]; then
             echo "drift=true" >> "$GITHUB_OUTPUT"
             echo "Preview images drifted:"
-            git status --porcelain
+            printf '%s\n' "$changes"
           else
             echo "drift=false" >> "$GITHUB_OUTPUT"
             echo "Preview images already current."
           fi
 
       - name: Commit drift back to main
+        id: commit
         if: steps.drift.outputs.drift == 'true'
         env:
           # The dedicated actor lets required pull_request checks run when a
-          # ruleset sends this generated commit through the fallback PR.
-          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          # ruleset sends this generated commit through the fallback PR. A
+          # main without such a ruleset takes a direct push with the job's own
+          # token, so the secret is optional until a ruleset is added.
           RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          BUILT_IN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECRETS_URL: ${{ github.server_url }}/${{ github.repository }}/settings/secrets/actions
         run: |
-          if [[ -z "$RELEASE_PR_TOKEN" ]]; then
-            echo "::error::RELEASE_PR_TOKEN is required to push generated preview images."
-            exit 1
-          fi
+          export GH_TOKEN="${RELEASE_PR_TOKEN:-$BUILT_IN_TOKEN}"
           # Configure gh as a step-scoped Git credential helper. The checkout
           # remains credential-free during dependency installation.
           gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Stage only generated artifacts so unrelated changes can't leak in.
-          git add docs/screenshots/example-app/*.png || true
+          git add -- docs/screenshots/example-app/
           if git diff --cached --quiet; then
             echo "::notice::No tracked preview-image changes to commit (drift was outside expected paths)."
             git status --porcelain
@@ -313,29 +434,48 @@ jobs:
           # Screenshot-only pushes do not match this workflow's path filter.
           # Do not add [skip ci]: a fallback PR needs its required checks.
           git commit -m "chore(preview): regenerate example-app preview images"
-          node scripts/push-main-with-rebase-retry.mjs origin main --label preview-images
+          if [[ -n "$RELEASE_PR_TOKEN" ]]; then
+            node scripts/push-main-with-rebase-retry.mjs origin main --label preview-images
+            echo "landed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "RELEASE_PR_TOKEN is not set: pushing with the built-in GITHUB_TOKEN."
+          if ! node scripts/push-main-with-rebase-retry.mjs origin main --label preview-images; then
+            echo "::error title=Preview images need RELEASE_PR_TOKEN::The preview images changed, but main refused a push with the built-in GITHUB_TOKEN (a ruleset requires a pull request, and pull requests opened by that token do not run checks). Add a fine-grained token with Contents and Pull requests read/write access as the RELEASE_PR_TOKEN secret at $SECRETS_URL and re-run this job, or run 'npm run example:web:preview-images' locally and commit docs/screenshots/example-app/*.png."
+            exit 1
+          fi
+          echo "landed=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload screenshot failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: ./.github/actions/artifact-transport
         with:
           name: preview-regen-failure-${{ github.run_id }}
-          path: |
-            docs/screenshots/
-            web/test-results/
-            web/playwright-report/
+          path: docs/screenshots/example-app/
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: error
 
+      # One outcome, one message: report what actually happened instead of
+      # claiming a commit that a failed step never made.
       - name: Summarize regeneration result
         if: always()
         env:
+          REGENERATE: ${{ steps.regenerate.outcome }}
           DRIFT: ${{ steps.drift.outputs.drift }}
+          DRIFT_OUTCOME: ${{ steps.drift.outcome }}
+          COMMIT: ${{ steps.commit.outcome }}
+          LANDED: ${{ steps.commit.outputs.landed }}
         run: |
-          if [[ "$DRIFT" == "true" ]]; then
-            echo "::notice::Preview images regenerated and (if applicable) committed to main."
-          else
+          if [[ "$REGENERATE" != "success" ]]; then
+            echo "Preview images were not regenerated (step outcome: ${REGENERATE:-not run})."
+          elif [[ "$DRIFT_OUTCOME" != "success" ]]; then
+            echo "Preview drift could not be checked (step outcome: ${DRIFT_OUTCOME:-not run})."
+          elif [[ "$DRIFT" == "false" ]]; then
             echo "::notice::Preview images are already up to date."
+          elif [[ "$COMMIT" == "success" && "$LANDED" == "true" ]]; then
+            echo "::notice::Regenerated preview images were committed to main."
+          else
+            echo "Regenerated preview images differ but were not committed (commit outcome: ${COMMIT:-not run})."
           fi
 
   # Terminal status gate: runs even when the jobs above fail or are
@@ -361,19 +501,26 @@ jobs:
       - android-build
       - ios-build
       - preview-regen
+      - preview-tools
+    # actions: read lets the gate list this run's jobs and name the ones
+    # GitHub never acquired a runner for.
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
       - name: Fail the run when a required job was cancelled or failed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh

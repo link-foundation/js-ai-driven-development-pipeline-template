@@ -40,6 +40,10 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import {
+  extractErrorsSection,
+  validateLycheeReport,
+} from './lychee-report.mjs';
 
 // Environment-derived settings are read inside main(), not here: the Deno
 // test leg imports this module under `--allow-read` only, and any
@@ -65,10 +69,14 @@ const ACCEPT_DEFAULT = '100..=103,200..=299';
 export function parseLycheeFailures(content) {
   const failures = [];
   const entryPattern =
-    /^\s*(?:\*|-)\s+\[([^\]]+)\]\s+<?([^\s>|)]+)>?(?:\s+\(at [^)]*\))?\s*\|?\s*(.*)$/gim;
+    /^[ \t]*(?:\*|-)[ \t]+\[([^\]]+)\][ \t]+<?([^\s>|)]+)>?(?:[ \t]+\(at [^)]*\))?[ \t]*\|?[ \t]*([^\r\n]*)$/gim;
+  const section = [
+    extractErrorsSection(content),
+    extractErrorsSection(content, 'Timeouts'),
+  ].join('\n');
 
   let match;
-  while ((match = entryPattern.exec(content)) !== null) {
+  while ((match = entryPattern.exec(section)) !== null) {
     const marker = match[1].trim();
     const url = match[2].trim().replace(/[.,;!?]+$/, '');
     const detail = match[3].trim();
@@ -317,6 +325,7 @@ async function main() {
   const options = extractLycheeRequestOptions(workflowText);
   const content = readFileSync(lycheeOutput, 'utf8');
   const failures = parseLycheeFailures(content);
+  validateLycheeReport(content, failures.length > 0);
 
   const finalFailures = failures.filter(
     (failure) => !failure.retryable || !/^https?:\/\//i.test(failure.url)

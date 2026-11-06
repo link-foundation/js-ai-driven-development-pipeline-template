@@ -9,6 +9,7 @@ import {
 } from '../scripts/publish-retry.mjs';
 import { parseArgs, waitForNpmVersion } from '../scripts/wait-for-npm.mjs';
 import { itUnless, sandboxed } from './helpers/skip.js';
+import { HANG_GUARD_MS } from './helpers/bounded-run.js';
 
 const read = (file) => readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
 const workflow = read('.github/workflows/workflows.yml');
@@ -51,6 +52,7 @@ describe('link checker input selection', () => {
     expect(args.trim().endsWith('\n            .')).toBe(true);
     for (const file of [
       'docs/case-studies',
+      'dev/log',
       'examples/universal-app/index.html',
       'tests/fixtures',
     ]) {
@@ -86,15 +88,18 @@ describe('Deno lock and npm install script policies', () => {
     const lock = JSON.parse(read(`${root}package-lock.json`));
     const scripts = Object.entries(lock.packages)
       .filter(([, info]) => info.hasInstallScript)
-      .map(([entry, info]) => info.name ?? entry.split('node_modules/').at(-1));
+      .map(
+        ([entry, info]) =>
+          `${info.name ?? entry.split('node_modules/').at(-1)}@${info.version}`
+      );
     expect(scripts.length).toBeGreaterThan(0);
     for (const name of scripts) {
       expect(typeof pkg.allowScripts?.[name]).toBe('boolean');
     }
     expect(pkg.allowScripts).toEqual({
-      'electron-winstaller': true,
-      esbuild: true,
-      fsevents: true,
+      'electron-winstaller@5.4.0': true,
+      'esbuild@0.25.12': true,
+      'fsevents@2.3.3': true,
     });
   });
 });
@@ -184,7 +189,7 @@ describe('quiet, effective tooling configuration', () => {
             '100',
             fixture,
           ],
-          { encoding: 'utf8', timeout: 15000 }
+          { encoding: 'utf8', timeout: HANG_GUARD_MS }
         );
         expect(`${result.stdout}${result.stderr}`).not.toMatch(
           /unknown field/i

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { getJsRoot } from './js-paths.mjs';
 import { readPackageInfo } from './package-info.mjs';
+import { markdownLines } from './markdown-lines.mjs';
 import {
   buildReleaseTag,
   buildReleaseTitle,
@@ -86,24 +87,28 @@ function readOptionValue(argv, index, optionName) {
   return value;
 }
 
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export function extractReleaseNotes(changelog, version) {
-  // Read from CHANGELOG.md between this version header and the next version header.
-  const versionHeaderRegex = new RegExp(
-    `## ${escapeRegex(version)}(?=\\s|$)[\\s\\S]*?(?=## \\d|$)`
+  const headings = markdownLines(changelog).filter(
+    (line) => !line.code && /^ {0,3}##[ \t]+/.test(line.text)
   );
-  const match = changelog.match(versionHeaderRegex);
-
-  if (!match) {
-    return `Release ${version}`;
+  const index = headings.findIndex(
+    (line) =>
+      line.text
+        .replace(/^ {0,3}##[ \t]+/, '')
+        .replace(/[ \t]+#+[ \t]*$/, '')
+        .trim() === version
+  );
+  if (index < 0) {
+    throw new Error(`Required changelog entry not found: ${version}`);
   }
-
-  const releaseNotes = match[0].replace(`## ${version}`, '').trim();
-
-  return releaseNotes || `Release ${version}`;
+  const notes = changelog
+    .slice(headings[index].end, headings[index + 1]?.start ?? changelog.length)
+    .replace(/^(?:[ \t]*\r?\n)+/, '')
+    .replace(/(?:\r?\n[ \t]*)+$/, '');
+  if (!notes.trim()) {
+    throw new Error(`Required changelog entry is empty: ${version}`);
+  }
+  return notes;
 }
 
 function getUtf8ByteLength(value) {

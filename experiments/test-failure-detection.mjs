@@ -2,7 +2,6 @@
 
 /**
  * Test script to verify the failure detection logic works correctly
- * Reference: link-assistant/agent PR #116
  *
  * This script simulates the output that changeset publish produces
  * when packages fail to publish, and verifies that our detection
@@ -36,7 +35,7 @@ function detectPublishFailure(output) {
   return null;
 }
 
-// Test cases based on real CI failure output from link-assistant/agent issue #115
+// Test cases based on real changeset publish failure output
 const testCases = [
   {
     name: 'Real changeset failure output (E404)',

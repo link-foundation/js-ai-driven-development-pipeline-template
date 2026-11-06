@@ -27,6 +27,10 @@ import {
 
 /** Directory scanning is an explicit local mode, never a CI fallback. */
 function getAddedChangesetFiles(changesetDir, jsRoot) {
+  if (process.env.PR_AUTHOR === 'dependabot[bot]') {
+    console.log('Skipping changeset validation for dependabot[bot]');
+    return null;
+  }
   if (process.env.ALLOW_LOCAL_CHANGESET_SCAN === 'true') {
     if (
       process.env.CI ||

@@ -96,4 +96,37 @@ describe('broken link workflow', () => {
       }
     }
   });
+
+  // Without a schedule a link that dies after the last Markdown
+  // edit stays undetected until an unrelated docs change trips over it.
+  it('rechecks links weekly in addition to its change triggers', () => {
+    const on = workflow.split('\n# ')[0];
+
+    expect(on).toMatch(/^ {2}schedule:\n {4}- cron: '0 6 \* \* 1'$/m);
+    for (const trigger of ['push', 'pull_request', 'workflow_dispatch']) {
+      expect(on).toMatch(new RegExp(`^  ${trigger}:`, 'm'));
+    }
+  });
+
+  // A per-commit key with a bare `cache-lychee-` restore prefix
+  // restored caches days old, which lychee (--max-cache-age 1d) discarded
+  // with "[WARN] Cache is too old" on almost every run.
+  it('restores only a link cache saved on the same UTC day', () => {
+    const dayStep = getStepBlock("Name today's link cache");
+    const cacheStep = getStepBlock('Restore link cache');
+    const lycheeStep = getStepBlock('Check links with lychee');
+    const day = '${{ steps.link-cache.outputs.day }}';
+
+    expect(dayStep).toContain('id: link-cache');
+    expect(dayStep).toContain('echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"');
+    expect(cacheStep).toContain(
+      `key: cache-lychee-\${{ runner.os }}-${day}-\${{ github.sha }}`
+    );
+    expect(cacheStep).toContain(
+      `restore-keys: cache-lychee-\${{ runner.os }}-${day}-\n`
+    );
+    expect(cacheStep).not.toMatch(/restore-keys: cache-lychee-$/m);
+    expect(lycheeStep).toContain('--max-cache-age 1d');
+    expect(workflow.indexOf(dayStep)).toBeLessThan(workflow.indexOf(cacheStep));
+  });
 });

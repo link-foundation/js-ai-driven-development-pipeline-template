@@ -5,7 +5,7 @@
  * Usage: node scripts/create-manual-changeset.mjs --bump-type <major|minor|patch> [--description <description>] [--js-root <path>]
  *
  * Uses link-foundation libraries:
- * - use-m: Dynamic package loading without package.json dependencies
+ * - Lockfile-installed command-stream and lino-arguments helpers
  * - command-stream: Modern shell command execution with streaming support
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
  */
@@ -21,7 +21,7 @@ import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 import { printUntrusted } from './github-actions-log.mjs';
 
 // Import link-foundation libraries
-// Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
+// Loaded through bootstrapDependencies: when installed helpers are unavailable,
 // this script reports the failure and writes its outputs, and the process
 // does not die inside module initialisation.
 const [{ $ }, { makeConfig }] = await bootstrapDependencies([

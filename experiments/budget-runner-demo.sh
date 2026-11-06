@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manual demonstration of scripts/run-with-budget-warning.sh (issue #137).
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 echo "--- success passthrough ---"
 bash scripts/run-with-budget-warning.sh 5 "quick step" bash -c 'echo hello; exit 0'

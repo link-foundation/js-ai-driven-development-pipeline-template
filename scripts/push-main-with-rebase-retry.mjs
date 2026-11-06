@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Push HEAD to a branch, recovering from BOTH ways the push can be rejected.
+ * Push HEAD to a branch with bounded recovery for server errors and races.
  *
- *   1. Lost race — another main writer pushed first. Rebase onto the new remote
+ *   1. Transient GitHub errors — retry the unchanged ref update three times.
+ *   2. Lost race — another main writer pushed first. Rebase onto the new remote
  *      head and push again.
- *   2. Repository rule violation (GH013 / GH006) — the branch refuses direct
+ *   3. Repository rule violation (GH013 / GH006) — the branch refuses direct
  *      pushes. Rebasing can never satisfy a rule, so the same commit is landed
- *      through a pull request instead (see land-via-pull-request.mjs).
+ *      through a pull request for preview updates. Releases fail with explicit
+ *      rule configuration guidance (see land-via-pull-request.mjs).
  *
  * Before the GH013 report in link-foundation/js-ai-driven-development-pipeline-template#143 every failure was treated as case 1: under a `pull_request`
  * ruleset both attempts failed, the release job died after the version bump had
@@ -32,7 +34,9 @@ import { landViaPullRequest } from './land-via-pull-request.mjs';
 import {
   isBlockedByRepositoryRule,
   isNonFastForward,
+  isTransientPushFailure,
 } from './push-failure-classifier.mjs';
+import { assertReleaseMetadataOnly } from './release-metadata.mjs';
 import { CommandFailedError, runCommand, runStrict } from './run-command.mjs';
 
 /**
@@ -95,10 +99,48 @@ export async function pushWithRecovery({
   mergeDelayMs,
   sleepFn,
   logger = console,
+  releaseParent,
 }) {
   const pushArgs = ['push', remote, `HEAD:${branch}`];
+  const sleep =
+    sleepFn || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  // Retrying the same ref update is idempotent, including a lost response.
+  // Revalidate release metadata before every attempt and after any rebase.
+  const push = async () => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (releaseParent) {
+        await assertReleaseMetadataOnly({
+          runner,
+          parentSha: releaseParent,
+          logger,
+        });
+      }
+      const result = await runner('git', pushArgs, { logger });
+      if (process.env.CI_SCRIPTS_DEBUG === '1') {
+        logger.log(
+          `[push] attempt=${attempt} exit=${result.code} rules=${isBlockedByRepositoryRule(result)} transient=${isTransientPushFailure(result)} race=${isNonFastForward(result)}`
+        );
+      }
+      if (
+        result.code === 0 ||
+        !isTransientPushFailure(result) ||
+        attempt === 3
+      ) {
+        return result;
+      }
+      logger.log(
+        `::notice::GitHub temporarily rejected the push; retrying the same commit (${attempt}/3).`
+      );
+      await sleep(attempt * 1000);
+    }
+  };
 
   const fallback = async (via) => {
+    if (releaseParent) {
+      throw new Error(
+        'Repository rules rejected the release push. Configure the rule to permit github-actions; automated release pull requests are disabled.'
+      );
+    }
     await landViaPullRequest({
       runner,
       label: label || defaultLabel(),
@@ -112,7 +154,7 @@ export async function pushWithRecovery({
     return { pushed: true, via };
   };
 
-  const first = await runner('git', pushArgs, { logger });
+  const first = await push();
   if (first.code === 0) {
     logger.log('Push succeeded.');
     return { pushed: true, via: 'direct' };
@@ -120,7 +162,7 @@ export async function pushWithRecovery({
 
   if (isBlockedByRepositoryRule(first)) {
     logger.log(
-      `::notice::Push to ${branch} was declined by a repository rule; landing the commit through a pull request.`
+      `::notice::Push to ${branch} was declined by a repository rule.`
     );
     return fallback('pull-request');
   }
@@ -131,6 +173,12 @@ export async function pushWithRecovery({
     throw new CommandFailedError('git', pushArgs, first);
   }
 
+  if (releaseParent) {
+    throw new Error(
+      'Remote main advanced after validation; rerun CI on current main. Release commits cannot be rebased.'
+    );
+  }
+
   logger.log(
     `::warning::Initial push failed; rebasing on ${remote}/${branch} before retry.`
   );
@@ -139,7 +187,7 @@ export async function pushWithRecovery({
     logger,
   });
 
-  const second = await runner('git', pushArgs, { logger });
+  const second = await push();
   if (second.code === 0) {
     logger.log('Push succeeded after rebase retry.');
     return { pushed: true, via: 'rebase' };
@@ -148,7 +196,7 @@ export async function pushWithRecovery({
   // A rule can also appear between the two attempts (a ruleset added mid-run).
   if (isBlockedByRepositoryRule(second)) {
     logger.log(
-      `::notice::Push to ${branch} was declined by a repository rule; landing the commit through a pull request.`
+      `::notice::Push to ${branch} was declined by a repository rule.`
     );
     return fallback('pull-request');
   }
@@ -165,6 +213,7 @@ export async function main(argv) {
   await pushWithRecovery({
     remote,
     branch,
+    releaseParent: options['release-parent'],
     label: options.label,
     mergeAttempts: options['merge-attempts']
       ? Number(options['merge-attempts'])

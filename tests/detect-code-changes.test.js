@@ -87,7 +87,11 @@ function createChangeFixture(filePath, eventName, options = {}) {
   }
 
   mkdirSync(path.dirname(path.join(root, filePath)), { recursive: true });
-  writeFileSync(path.join(root, filePath), 'export const ignored = true;\n');
+  // Bun reads bunfig.toml from its working directory, so it must parse.
+  const content = filePath.endsWith('.toml')
+    ? '# Fixture change\n'
+    : 'export const ignored = true;\n';
+  writeFileSync(path.join(root, filePath), content);
   commit(root, 'Add excluded file');
 
   if (eventName === 'pull_request') {
@@ -277,6 +281,46 @@ describe('detect-code-changes CLI', () => {
       }
     }
   );
+});
+
+describe('detect-code-changes file types', () => {
+  // The pipeline runs shell scripts, publishes type declarations and builds
+  // the Dockerfile, so a change to any of them must run the checks.
+  for (const eventName of ['pull_request', 'push']) {
+    for (const filePath of [
+      'scripts/check-pages.sh',
+      'src/index.d.ts',
+      'Dockerfile',
+      'bunfig.toml',
+      'tests/fixtures/pages-stub/gh',
+    ]) {
+      itUnless(sandboxed)(`counts ${filePath} as code on ${eventName}`, () => {
+        const root = createChangeFixture(filePath, eventName);
+
+        try {
+          const { outputs, result } = runDetectCodeChanges(root, eventName);
+
+          expect(result.status).toBe(0);
+          expect(outputs).toContain('any-code-changed=true\n');
+        } finally {
+          rmSync(root, { force: true, recursive: true });
+        }
+      });
+    }
+  }
+
+  itUnless(sandboxed)('does not count a .gitkeep placeholder as code', () => {
+    const root = createChangeFixture('assets/.gitkeep', 'push');
+
+    try {
+      const { outputs, result } = runDetectCodeChanges(root, 'push');
+
+      expect(result.status).toBe(0);
+      expect(outputs).toContain('any-code-changed=false\n');
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
 });
 
 // A pull request can carry several commits, and a superseded run may never

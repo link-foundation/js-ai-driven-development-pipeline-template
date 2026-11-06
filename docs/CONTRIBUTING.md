@@ -218,3 +218,63 @@ If you have questions about contributing, feel free to open an issue for discuss
 ## JavaScript-first mixed-language projects
 
 Follow [the JavaScript-first gate and single push workflow](javascript-first.md) before enabling production Rust jobs for a mixed-language project.
+
+Standalone shell scripts and Husky hooks are checked with ShellCheck 0.11.0.
+Install [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html) for the staged-file hook;
+it runs the same pinned `shellcheck-py==0.11.0.1` package as CI. To check all shell
+files locally, run:
+
+```sh
+git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --spec shellcheck-py==0.11.0.1 shellcheck
+```
+
+Release scripts load `command-stream` and `lino-arguments` from installed,
+lockfile-pinned development dependencies. Run `npm ci` before invoking them;
+they do not download or install helpers at runtime. Keep both `package-lock.json`
+and `deno.lock` synchronized when updating these dependencies. CI runs its pinned
+secrets scan after Node setup and before installing project dependencies, so the
+scanner and its preset resolve from the same npm execution tree.
+
+Shell scripts and Git hooks use LF on every platform through `.gitattributes`.
+The prepare script calls Husky's installed API and verifies `core.hooksPath`.
+Set `CI_SCRIPTS_DEBUG=1` for optional dependency and hook installation tracing.
+
+### Dependency advisories
+
+The Security workflow audits every committed npm lock with
+`scripts/npm-audit-report.mjs`. Every advisory, at any severity, becomes an
+annotation and a row in the step summary, so a green run states what it
+accepted. Pull requests and pushes fail at `high`, the same level as
+`dependency-review`: a moderate advisory with no patched release would
+otherwise block every contributor. The weekly scheduled run also fails on a
+moderate advisory that `npm audit fix` resolves without `--force`. Fix it with
+`npm update <package>` or an `overrides` entry. When only a breaking upgrade
+would remove an advisory, the run stays green and keeps reporting it.
+
+### Dependency install scripts and syntax coverage
+
+Every dependency with an install script needs an explicit `allowScripts`
+decision in its owning package manifest. Approvals pin the exact locked version
+(`"esbuild@0.25.12": true`); denials name the package (`"node-pty": false`).
+Vite's esbuild binary, macOS fsevents and the Electron installer are approved.
+The optional node-pty adapter is denied because the pipeline scripts only use
+command-stream's ordinary process API; this keeps the default behavior without
+silently enabling a native compilation. Review new versions before approving
+them. `tests/ci-audit-regressions.test.js` checks all three npm lockfiles,
+including optional platform-specific packages.
+
+Deno reads its own install-script policy from `deno.json`; npm's decision does
+not apply to it. Its version-pinned denial keeps the unused PTY build off.
+Every CI runtime leg pins Node 24 and installs the root and
+`.github/actions/artifact-transport` locks with `npm ci`. The Deno leg also
+prepares its frozen module graph with `deno test -A --parallel --no-run --frozen`
+before the timed suite, which still runs every test within its existing budget.
+
+`bash scripts/check-mjs-syntax.sh` checks all tracked `.js`, `.mjs` and `.cjs`
+files recursively, including shipped examples and local actions. Historical
+case studies and development logs are data outside this gate. An empty
+inventory or a failed file check is an error. CodeQL also scans the shipped
+examples. Deprecated dependencies are not allowlisted: replace or override
+them. Artifact compatibility decisions and their probes are
+documented in the [artifact action](../.github/actions/artifact-transport/README.md);
+desktop ones in [universal-app/compat](../examples/universal-app/compat/README.md).

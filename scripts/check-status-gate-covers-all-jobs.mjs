@@ -5,7 +5,7 @@
  * `needs`, i.e. when its failure cannot turn the run red.
  *
  * `pipeline-status` is the job a branch protection rule keys on: it runs
- * `if: always()`, `needs:` every other job, and turns any failure among
+ * `if: !cancelled()`, `needs:` every other job, and turns any failure among
  * them into a red run. Its `needs` list is hand-maintained, so a job left
  * out of it can fail while the gate reports success. This script derives
  * the requirement from the workflow itself, so the gate cannot drift from
@@ -75,7 +75,11 @@ function listNeededJobs(jobBlock) {
   const neededJobs = [];
 
   for (const line of lines.slice(needsStart + 1)) {
-    const item = line.match(/^ {6}- ([a-zA-Z0-9_-]+)\s*$/);
+    const content = line.replace(/\s+#.*$/, '');
+    if (!content.trim() || content.trimStart().startsWith('#')) {
+      continue;
+    }
+    const item = content.match(/^ {6}- ([a-zA-Z0-9_-]+)\s*$/);
 
     if (!item) {
       break;

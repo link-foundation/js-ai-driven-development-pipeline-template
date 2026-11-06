@@ -78,18 +78,102 @@ function listNeededJobs(jobBlock) {
   return neededJobs;
 }
 
+// The gate lists the run's jobs when it has a token and a run ID, which the
+// test environment may have on a hosted runner; the tests never call the API.
+const API_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_RUN_ID', 'JOBS_JSON'];
+
 function runGate(needs, extraEnv = {}) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !API_ENV.includes(name))
+  );
   return spawnSync('bash', [scriptPath], {
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...env,
       NEEDS_JSON: JSON.stringify(needs),
       ...extraEnv,
     },
   });
 }
 
+const unacquiredJobs = JSON.stringify({
+  total_count: 3,
+  jobs: [
+    {
+      name: 'lint',
+      conclusion: 'success',
+      runner_name: 'GitHub Actions 2',
+      steps: [{}],
+    },
+    {
+      name: 'test (macos-15, node)',
+      conclusion: 'cancelled',
+      runner_name: '',
+      steps: [],
+    },
+    {
+      name: 'test (macos-15, bun)',
+      conclusion: 'failure',
+      runner_name: null,
+      steps: [],
+    },
+  ],
+});
+
 describe('pipeline status gate', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'compares fork PR cancellations with the base repository pull head ref',
+    () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'gate-fork-'));
+      const git = (...args) =>
+        spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+      try {
+        git('init', '-q', '-b', 'main');
+        git(
+          '-c',
+          'user.name=test',
+          '-c',
+          'user.email=test@example.invalid',
+          'commit',
+          '-qm',
+          'base',
+          '--allow-empty'
+        );
+        const base = git('rev-parse', 'HEAD').stdout.trim();
+        git(
+          '-c',
+          'user.name=test',
+          '-c',
+          'user.email=test@example.invalid',
+          'commit',
+          '-qm',
+          'fork',
+          '--allow-empty'
+        );
+        const fork = git('rev-parse', 'HEAD').stdout.trim();
+        git('update-ref', 'refs/pull/7/head', fork);
+        git('update-ref', 'refs/heads/main', base);
+        const context = {
+          RUN_SHA: fork,
+          HEAD_REF: 'refs/pull/7/head',
+          BRANCH_NAME: 'main',
+          GIT_REMOTE: dir,
+          WORKFLOW_FILE: '.github/workflows/security.yml',
+          BRANCH_HEAD_SHA: '',
+        };
+        const current = runGate({ codeql: { result: 'cancelled' } }, context);
+        expect(current.status).toBe(1);
+        git('update-ref', 'refs/pull/7/head', base);
+        const superseded = runGate(
+          { codeql: { result: 'cancelled' } },
+          context
+        );
+        expect(superseded.status).toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
   it('stays compatible with the Bash 3.2 shipped by macOS runners', () => {
     const script = readFileSync(scriptPath, 'utf8');
 
@@ -101,13 +185,13 @@ describe('pipeline status gate', () => {
     const gate = getJobBlock(workflow, 'pipeline-status');
 
     expect(gate).toContain('      !cancelled()');
-    expect(gate).toContain('uses: actions/setup-node@v6');
+    expect(gate).toContain('uses: actions/setup-node@v7');
     expect(gate).toContain('NEEDS_JSON: ${{ toJSON(needs) }}');
     expect(gate).toContain(
       'RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'
     );
     expect(gate).toContain(
-      'BRANCH_NAME: ${{ github.head_ref || github.ref_name }}'
+      "HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}"
     );
     expect(listNeededJobs(gate).sort()).toEqual(
       jobs.filter((job) => job !== 'pipeline-status').sort()
@@ -165,6 +249,90 @@ describe('pipeline status gate', () => {
   );
 });
 
+describe('pipeline status gate and runner acquisition', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'names jobs GitHub never acquired a runner for and stays red',
+    () => {
+      const result = runGate(
+        { test: { result: 'cancelled' } },
+        { JOBS_JSON: unacquiredJobs }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        '::error title=Hosted runner not acquired::test (macos-15, node), test (macos-15, bun). GitHub could not provide a runner, so no code ran.'
+      );
+      expect(result.stdout).toContain('rerun-unacquired.yml');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'adds nothing when every failed job ran on a runner',
+    () => {
+      const result = runGate(
+        { lint: { result: 'failure' } },
+        {
+          JOBS_JSON: JSON.stringify({
+            jobs: [
+              {
+                name: 'lint',
+                conclusion: 'failure',
+                runner_name: 'r',
+                steps: [{}],
+              },
+            ],
+          }),
+        }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).not.toContain('Hosted runner not acquired');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'does not list jobs when every required job succeeded',
+    () => {
+      const result = runGate(
+        { lint: { result: 'success' } },
+        { JOBS_JSON: 'not json' }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('Runner acquisition unknown');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'warns, without hiding the failure, when the jobs cannot be listed',
+    () => {
+      const result = runGate(
+        { lint: { result: 'failure' } },
+        { JOBS_JSON: 'not json' }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        '::warning title=Runner acquisition unknown::'
+      );
+      expect(result.stdout).toContain('Failing jobs: lint');
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
+    'skips the job listing without a token',
+    () => {
+      const result = runGate(
+        { lint: { result: 'failure' } },
+        { GITHUB_RUN_ID: '1' }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).not.toContain('Runner acquisition unknown');
+    }
+  );
+});
+
 describe('pipeline status gate in every workflow', () => {
   it('gates every workflow and observes every other job', () => {
     const problems = [];
@@ -196,9 +364,23 @@ describe('pipeline status gate in every workflow', () => {
       }
 
       if (
-        !gate.includes('BRANCH_NAME: ${{ github.head_ref || github.ref_name }}')
+        !gate.includes(
+          "HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}"
+        )
       ) {
-        problems.push(`${name}: gate does not pass BRANCH_NAME`);
+        problems.push(`${name}: gate does not pass HEAD_REF`);
+      }
+
+      if (!gate.includes('GH_TOKEN: ${{ github.token }}')) {
+        problems.push(`${name}: gate cannot list the run's jobs (GH_TOKEN)`);
+      }
+
+      if (
+        !gate.includes(
+          '    permissions:\n      actions: read\n      contents: read\n'
+        )
+      ) {
+        problems.push(`${name}: gate lacks actions: read`);
       }
 
       if (!gate.includes('run: bash scripts/check-pipeline-status.sh')) {

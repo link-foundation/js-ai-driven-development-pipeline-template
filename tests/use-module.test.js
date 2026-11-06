@@ -1,20 +1,12 @@
 /* eslint local/no-changelog-comments: "off" */
 
-import { createServer } from 'node:http';
-
 import { describe, it, expect } from 'test-anywhere';
-import { itUnless, sandboxed } from './helpers/skip.js';
 
 import {
-  DEFAULT_ATTEMPTS,
-  DEFAULT_RETRY_DELAY_MS,
-  DEFAULT_TIMEOUT_MS,
   describeModule,
   loadCommandStream,
   loadLinoArguments,
-  loadUse,
   resolveNamedExport,
-  USE_M_URL,
 } from '../scripts/use-module.mjs';
 
 const dollar = () => {};
@@ -39,20 +31,6 @@ function nodeTwentyFourNamespace() {
   return {
     default: commandStreamExports(),
     'module.exports': commandStreamExports(),
-  };
-}
-
-function textResponse(
-  body,
-  { ok = true, status = 200, statusText = 'OK' } = {}
-) {
-  return {
-    ok,
-    status,
-    statusText,
-    async text() {
-      return body;
-    },
   };
 }
 
@@ -111,7 +89,7 @@ describe('use-module interop shim', () => {
     } catch (error) {
       message = error.message;
     }
-    expect(message.includes("use('command-stream')")).toBe(true);
+    expect(message.includes('Installed command-stream')).toBe(true);
     expect(message.includes('keys [nope]')).toBe(true);
   });
 
@@ -152,49 +130,6 @@ describe('use-module interop shim', () => {
     expect(calls).toEqual(['lino-arguments']);
     expect(typeof module.makeConfig).toBe('function');
   });
-
-  it('points at the unpinned use-m entry point', () => {
-    expect(USE_M_URL).toBe('https://unpkg.com/use-m/use.js');
-  });
-
-  it('reports the HTTP status when use.js cannot be fetched', async () => {
-    let message = '';
-    try {
-      await loadUse({
-        fetchImpl: async () =>
-          textResponse('<html>Not Found</html>', {
-            ok: false,
-            status: 404,
-            statusText: 'Not Found',
-          }),
-        attempts: 1,
-      });
-    } catch (error) {
-      message = error.message;
-    }
-    expect(message.includes('404')).toBe(true);
-    expect(message.includes('Not Found')).toBe(true);
-  });
-
-  it('reports a use.js payload that exposes no callable use()', async () => {
-    let message = '';
-    try {
-      await loadUse({
-        fetchImpl: async () => textResponse('({ nope: 1 })'),
-        attempts: 1,
-      });
-    } catch (error) {
-      message = error.message;
-    }
-    expect(message.includes('did not export a callable "use"')).toBe(true);
-  });
-
-  it('evaluates a well-formed use.js payload', async () => {
-    const use = await loadUse({
-      fetchImpl: async () => textResponse('({ use: async () => ({}) })'),
-    });
-    expect(typeof use).toBe('function');
-  });
 });
 
 describe('loadCommandStream turns on errexit', () => {
@@ -223,177 +158,5 @@ describe('loadCommandStream turns on errexit', () => {
     const module = await loadCommandStream(use);
 
     expect(typeof module.$).toBe('function');
-  });
-});
-
-describe('use-m load is bounded in time and retried', () => {
-  it('passes a deadline to every attempt', async () => {
-    const signals = [];
-    await loadUse({
-      fetchImpl: async (_url, init) => {
-        signals.push(init?.signal);
-        return textResponse('({ use: async () => ({}) })');
-      },
-      timeoutMs: 15000,
-    });
-    expect(signals.length).toBe(1);
-    expect(signals[0] instanceof AbortSignal).toBe(true);
-  });
-
-  it('retries a transient failure and returns the later success', async () => {
-    const delays = [];
-    let attempts = 0;
-    const use = await loadUse({
-      fetchImpl: async () => {
-        attempts += 1;
-        if (attempts < 3) {
-          throw new TypeError('fetch failed');
-        }
-        return textResponse('({ use: async () => ({}) })');
-      },
-      retryDelayMs: 10,
-      sleep: async (ms) => {
-        delays.push(ms);
-      },
-    });
-    expect(attempts).toBe(3);
-    expect(typeof use).toBe('function');
-    // Exponential backoff: 10ms then 20ms.
-    expect(delays).toEqual([10, 20]);
-  });
-
-  it('stops after the configured number of attempts', async () => {
-    let attempts = 0;
-    await loadUse({
-      fetchImpl: async () => {
-        attempts += 1;
-        throw new TypeError('fetch failed');
-      },
-      attempts: 2,
-      sleep: async () => {},
-    }).catch(() => {});
-    expect(attempts).toBe(2);
-  });
-
-  it('names the URL, the attempt count and the last reason', async () => {
-    let error;
-    try {
-      await loadUse({
-        fetchImpl: async () => {
-          throw new TypeError('fetch failed');
-        },
-        url: 'https://203.0.113.1/use-m/use.js',
-        attempts: 2,
-        sleep: async () => {},
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error.message.includes('https://203.0.113.1/use-m/use.js')).toBe(
-      true
-    );
-    expect(error.message.includes('after 2 attempt(s)')).toBe(true);
-    expect(error.message.includes('fetch failed')).toBe(true);
-    expect(error.message.includes('network dependency')).toBe(true);
-  });
-
-  it('preserves the original failure as the error cause', async () => {
-    const original = new TypeError('fetch failed');
-    let error;
-    try {
-      await loadUse({
-        fetchImpl: async () => {
-          throw original;
-        },
-        attempts: 1,
-        sleep: async () => {},
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error.cause).toBe(original);
-  });
-
-  it('retries a non-2xx response instead of eval-ing an error page', async () => {
-    let attempts = 0;
-    let error;
-    try {
-      await loadUse({
-        fetchImpl: async () => {
-          attempts += 1;
-          return textResponse('<html>Bad Gateway</html>', {
-            ok: false,
-            status: 502,
-            statusText: 'Bad Gateway',
-          });
-        },
-        attempts: 2,
-        sleep: async () => {},
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(attempts).toBe(2);
-    expect(error.message.includes('502')).toBe(true);
-  });
-
-  it('aborts an attempt that exceeds the deadline', async () => {
-    let error;
-    try {
-      await loadUse({
-        // Never settles on its own; only the deadline can end it.
-        fetchImpl: (_url, init) =>
-          new Promise((_resolve, reject) => {
-            init.signal.addEventListener('abort', () =>
-              reject(new Error('aborted'))
-            );
-          }),
-        url: 'https://unpkg.com/use-m/use.js',
-        attempts: 1,
-        timeoutMs: 50,
-        sleep: async () => {},
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error.message.includes('after 1 attempt(s)')).toBe(true);
-    expect(error.cause.message.includes('Timed out after 50ms')).toBe(true);
-  });
-});
-
-describe('use-m load survives a stalled connection', () => {
-  itUnless(sandboxed)(
-    'bounds a real connection that is accepted and never answered',
-    async () => {
-      // A stalled connection is bounded only by undici's 300s headersTimeout
-      // default, so without a per-attempt deadline one fetch can burn five
-      // minutes of the job's budget.
-      //
-      const server = createServer(() => {});
-      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-      const url = `http://127.0.0.1:${server.address().port}/use-m/use.js`;
-      const started = Date.now();
-      let error;
-      try {
-        await loadUse({
-          url,
-          attempts: 1,
-          timeoutMs: 300,
-          sleep: async () => {},
-        });
-      } catch (caught) {
-        error = caught;
-      } finally {
-        server.close();
-      }
-      expect(error.message.includes(url)).toBe(true);
-      expect(Date.now() - started < 10000).toBe(true);
-    }
-  );
-
-  it('exposes the defaults that keep the worst case inside a job budget', () => {
-    // 3 x 15s of attempts plus 2s + 4s of backoff = 51s.
-    expect(DEFAULT_ATTEMPTS * DEFAULT_TIMEOUT_MS).toBe(45000);
-    expect(DEFAULT_RETRY_DELAY_MS).toBe(2000);
   });
 });

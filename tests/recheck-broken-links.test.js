@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import {
   existsSync,
@@ -265,31 +266,67 @@ describe('re-check requests', () => {
   });
 });
 
-describe('re-check step end to end', () => {
-  function writeReport(dir, entries) {
-    const reportPath = path.join(dir, 'out.md');
-    writeFileSync(reportPath, `## Errors per input\n\n${entries.join('\n')}\n`);
-    return reportPath;
-  }
+function writeReport(dir, entries) {
+  const reportPath = path.join(dir, 'out.md');
+  writeFileSync(
+    reportPath,
+    `# Link Checker Report\n\n| Errors | ${entries.length} |\n\n## Errors per input\n\n${entries.join('\n')}\n`
+  );
+  return reportPath;
+}
 
-  function runRecheck(env) {
-    return new Promise((resolve) => {
-      const child = spawn('node', ['scripts/recheck-broken-links.mjs'], {
-        cwd: process.cwd(),
-        env: { ...process.env, ...env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let output = '';
-      child.stdout.on('data', (chunk) => {
-        output += chunk;
-      });
-      child.stderr.on('data', (chunk) => {
-        output += chunk;
-      });
-      child.on('close', (code) => resolve({ code, output }));
+function runRecheck(env) {
+  return new Promise((resolve) => {
+    const child = spawn('node', ['scripts/recheck-broken-links.mjs'], {
+      cwd: process.cwd(),
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-  }
+    let output = '';
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      output += chunk;
+    });
+    child.on('close', (code) => resolve({ code, output }));
+  });
+}
 
+itUnless(sandboxed)(
+  'never releases malformed evidence even when its URL would recover',
+  async () => {
+    let requests = 0;
+    const server = createServer((request, response) => {
+      requests++;
+      response.writeHead(200);
+      response.end();
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const dir = mkdtempSync(path.join(tmpdir(), 'recheck-malformed-'));
+    try {
+      const reportPath = path.join(dir, 'out.md');
+      const outputPath = path.join(dir, 'outputs');
+      writeFileSync(
+        reportPath,
+        `malformed report\n- [ERROR] <http://127.0.0.1:${server.address().port}/healthy> | Connection reset\n`
+      );
+      const { code } = await runRecheck({
+        LYCHEE_OUTPUT: reportPath,
+        RECOVERED_OUTPUT: path.join(dir, 'recovered.txt'),
+        GITHUB_OUTPUT: outputPath,
+      });
+      expect(code).toBe(0);
+      expect(existsSync(outputPath)).toBe(false);
+      expect(requests).toBe(0);
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+);
+
+describe('re-check step end to end', () => {
   itUnless(sandboxed)(
     'recovers only the URLs that answer healthy and never re-asks a 404',
     async () => {
@@ -451,5 +488,43 @@ describe('web archive fallback honouring the re-check', () => {
 
     expect(fromMissing.remaining).toEqual(urls);
     expect(fromNull.remaining).toEqual(urls);
+  });
+});
+
+describe('adjacent lychee records', () => {
+  it('preserves every no-description error without consuming the next line', () => {
+    for (const newline of ['\n', '\r\n']) {
+      const failures = parseLycheeFailures(
+        [
+          '## Errors per input',
+          '* [404] https://example.com/missing',
+          '* [ERROR] https://example.com/reset',
+          '* [ERROR] <https://example.com/description> | connection reset',
+          '## Redirects per input',
+          '* [ERROR] https://example.com/ignore',
+        ].join(newline)
+      );
+      expect(failures.map(({ url }) => url)).toEqual([
+        'https://example.com/missing',
+        'https://example.com/reset',
+        'https://example.com/description',
+      ]);
+      expect(failures.map(({ detail }) => detail)).toEqual([
+        '',
+        '',
+        'connection reset',
+      ]);
+    }
+  });
+});
+
+describe('section-only report', () => {
+  it('does not interpret redirects as failures when Errors is absent', () => {
+    assert.deepEqual(
+      parseLycheeFailures(
+        '## Redirects per input\n* [404] https://example.com/redirect\n'
+      ),
+      []
+    );
   });
 });

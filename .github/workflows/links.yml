@@ -8,8 +8,12 @@ on:
       - '**.md'
       - '**.html'
       - '.github/workflows/links.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
+      - 'scripts/lychee-report.mjs'
       - 'scripts/recheck-broken-links.mjs'
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
@@ -20,12 +24,20 @@ on:
       - '**.md'
       - '**.html'
       - '.github/workflows/links.yml'
+      - '.github/actions/artifact-transport/**'
+      - 'scripts/artifact-transport.mjs'
+      - 'scripts/artifact-files.mjs'
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
+      - 'scripts/lychee-report.mjs'
       - 'scripts/recheck-broken-links.mjs'
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
       - 'tests/recheck-broken-links.test.js'
+  # External URLs rot without any commit here; recheck them weekly so a dead
+  # link is reported by this run instead of by the next unrelated docs PR.
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 # Least-privilege default; jobs escalate individually when needed.
@@ -52,9 +64,23 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # lychee keeps results for --max-cache-age 1d. Scoping the cache to the
+      # UTC day restores only a cache saved today, so lychee never has to
+      # discard a restored cache as "too old".
+      - name: Name today's link cache
+        id: link-cache
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore link cache
+        uses: actions/cache@v5
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-${{ github.sha }}
+          restore-keys: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-
 
       - name: Check links with lychee
         id: lychee
@@ -78,6 +104,7 @@ jobs:
             --hidden
             --extensions md,html
             --exclude-path docs/case-studies
+            --exclude-path dev/log
             --exclude-path examples/universal-app/index.html
             --exclude-path tests/fixtures
             .
@@ -112,6 +139,16 @@ jobs:
         env:
           LYCHEE_OUTPUT: lychee/out.md
           RECOVERED_URLS: lychee/recovered.txt
+          LYCHEE_EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+
+      - name: Upload broken-link diagnostics
+        if: "!cancelled() && steps.lychee.outputs.exit_code != '0'"
+        uses: ./.github/actions/artifact-transport
+        with:
+          name: lychee-report
+          path: lychee/
+          required-file: lychee/out.md
+          if-no-files-found: error
 
       - name: Fail if broken links were found
         if: >-
@@ -134,7 +171,7 @@ jobs:
           echo "     b. Remove the link if the content is no longer relevant."
           echo "     c. Add the URL to .lycheeignore if it is a known false positive."
           echo ""
-          echo "Report location: lychee/out.md (available as a workflow artifact if configured)."
+          echo "Report location: lychee/out.md (download the lychee-report workflow artifact)."
           exit 1
 
   # Terminal status gate: runs even when the jobs above fail or are
@@ -155,19 +192,25 @@ jobs:
       !cancelled()
     needs:
       - link-checker
+    # actions: read lets the gate list this run's jobs and name the ones
+    # GitHub never acquired a runner for.
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24.x'
 
       - name: Fail the run when a required job was cancelled or failed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
           RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          HEAD_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.number) || github.ref }}
         run: bash scripts/check-pipeline-status.sh

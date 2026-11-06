@@ -141,6 +141,10 @@ function setupTestEnvironment() {
     rmSync(testDir, { recursive: true });
   }
   mkdirSync(testChangesetDir, { recursive: true });
+  writeFileSync(
+    join(testDir, 'package.json'),
+    JSON.stringify({ name: 'my-package', version: '1.0.0' })
+  );
 
   // Create README.md (should be ignored)
   writeFileSync(join(testChangesetDir, 'README.md'), '# Changesets\n');

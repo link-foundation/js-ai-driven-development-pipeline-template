@@ -16,12 +16,31 @@ import {
   extractErrorsSection,
 } from '../scripts/check-web-archive.mjs';
 import { itUnless, sandboxed } from './helpers/skip.js';
+import { validateLycheeReport } from '../scripts/lychee-report.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const report = readFileSync(
   join(here, 'fixtures', 'lychee-report.md'),
   'utf-8'
 );
+
+describe('lychee summary evidence', () => {
+  it('accepts the captured real failed report', () => {
+    assert.doesNotThrow(() => validateLycheeReport(report, true, true));
+  });
+  it('accepts a genuine clean report only when the checker succeeded', () => {
+    const clean =
+      '# Summary\r\n\r\n| 🚫 Errors | 0 |\r\n| ⛔ Unsupported | 2 |\r\n';
+    assert.doesNotThrow(() => validateLycheeReport(clean, false, false));
+    assert.throws(() => validateLycheeReport(clean, false, true));
+  });
+  it('counts transient categories and refuses missing failure details', () => {
+    const timeout =
+      '# Link Checker Report\n\n| 🚫 Errors | 0 |\n| ⏳ Timeouts | 1 |\n';
+    assert.doesNotThrow(() => validateLycheeReport(timeout, true, true));
+    assert.throws(() => validateLycheeReport(timeout, false, true));
+  });
+});
 
 describe('extractErrorsSection', () => {
   it('stops at the next top-level heading', () => {
@@ -40,6 +59,29 @@ describe('extractErrorsSection', () => {
 });
 
 describe('extractBrokenUrls', () => {
+  it('retains current lychee timeout sections alongside other errors', () => {
+    const current = `# Summary
+
+| Errors | 1 |
+| Timeouts | 1 |
+
+## Errors per input
+
+* [404] <https://broken.example/gone> | Not Found
+
+## Timeouts per input
+
+* [TIMEOUT] <https://broken.example/slow> | Timeout
+
+## Redirects per input
+
+* https://working.example/old --[301]--> https://working.example/new
+`;
+    assert.deepEqual(extractBrokenUrls(current), [
+      'https://broken.example/gone',
+      'https://broken.example/slow',
+    ]);
+  });
   it('ignores successful redirects outside the errors section', () => {
     const shortReport = `## Errors per input
 
@@ -126,7 +168,11 @@ describe('check-web-archive.mjs end to end', () => {
       const outputPath = join(workDir, 'github-output.txt');
       writeFileSync(
         reportPath,
-        `## Errors per input
+        `# Link Checker Report
+
+| Errors | 1 |
+
+## Errors per input
 
 ### Errors in docs/index.md
 
@@ -145,6 +191,7 @@ describe('check-web-archive.mjs end to end', () => {
       });
 
       assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout, /Some.Type.yml/);
       assert.match(readFileSync(outputPath, 'utf-8'), /all_archived=false/);
       rmSync(workDir, { recursive: true, force: true });
     }

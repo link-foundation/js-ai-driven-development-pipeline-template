@@ -81,7 +81,7 @@ function runCase({ canonicalOk, mirrorOk }) {
   }
 
   let status = 0;
-  let output = '';
+  let output;
   try {
     output = execFileSync('bash', [scriptPath], {
       encoding: 'utf8',

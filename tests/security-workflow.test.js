@@ -62,7 +62,7 @@ describe('security workflow', () => {
     );
     expect(codeql).toContain('      actions: read');
     expect(codeql).toContain('      security-events: write');
-    expect(codeql).toContain('uses: actions/checkout@v6');
+    expect(codeql).toContain('uses: actions/checkout@v7');
     expect(codeql).toContain('uses: github/codeql-action/init@v4');
     expect(codeql).toContain('languages: ${{ matrix.language }}');
     expect(codeql).toContain('uses: github/codeql-action/autobuild@v4');
@@ -74,6 +74,10 @@ describe('security workflow', () => {
 
     expect(dependencyReview).toContain(
       "    if: github.event_name == 'pull_request'"
+    );
+    expect(dependencyReview).toContain('needs: [dependency-graph]');
+    expect(dependencyReview).toContain(
+      "needs.dependency-graph.outputs.enabled == 'true'"
     );
     expect(dependencyReview).toContain('    timeout-minutes: 10');
     expect(dependencyReview).toContain(
@@ -89,9 +93,23 @@ describe('security workflow', () => {
     );
   });
 
+  it('probes the graph on every event, requiring it outside PRs', () => {
+    const graph = getJobBlock('dependency-graph');
+    expect(graph).toContain('scripts/check-dependency-graph.sh');
+    expect(graph).toContain(
+      "REQUIRE_GRAPH: ${{ github.event_name != 'pull_request' && '1' || '0' }}"
+    );
+    expect(graph).toContain(
+      'BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}'
+    );
+    expect(getJobBlock('pipeline-status')).toContain(
+      '      - dependency-graph'
+    );
+  });
+
   it('fails closed on high-severity advisories in every npm lock', () => {
     const audit = getJobBlock('npm-audit');
-    const directoryList = audit.match(/directory: \[([^\]]+)\]/)?.[1] ?? '';
+    const directoryList = audit.match(/directory:\s*\[([^\]]+)\]/)?.[1] ?? '';
     const auditedLocks = directoryList
       .split(',')
       .map((directory) => directory.trim().replace(/^['"]|['"]$/g, ''))
@@ -105,19 +123,32 @@ describe('security workflow', () => {
 
     expect(auditedLocks).toEqual(listPackageLocks());
     expect(audit).toContain('    timeout-minutes: 10');
-    expect(audit).toContain('uses: actions/setup-node@v6');
+    expect(audit).toContain('uses: actions/setup-node@v7');
     expect(audit).toContain('node-version: 24');
     expect(audit).toContain('working-directory: ${{ matrix.directory }}');
     expect(audit).toContain(
-      'run: npm audit --package-lock-only --audit-level=high'
+      'run: node "$GITHUB_WORKSPACE/scripts/npm-audit-report.mjs"'
     );
+    expect(audit).toContain('AUDIT_DIR: ${{ matrix.directory }}');
+    expect(audit).toContain('AUDIT_LEVEL: high');
+  });
+
+  // `--audit-level=high` alone exits 0 on a moderate advisory and
+  // says nothing, so the scheduled run was green while four were open.
+  it('reports advisories below the gate and fails fixable ones weekly', () => {
+    const audit = getJobBlock('npm-audit');
+    expect(audit).not.toContain('--audit-level=high');
+    expect(audit).toContain(
+      "AUDIT_FIXABLE_LEVEL: ${{ github.event_name == 'schedule' && 'moderate' || '' }}"
+    );
+    expect(workflow).toMatch(/^ {2}schedule:\n {4}- cron: '0 6 \* \* 1'$/m);
   });
 });
 
-it('excludes experiments and examples through an explicit CodeQL configuration', () => {
+it('excludes historical experiments while scanning shipped examples', () => {
   expect(workflow).toContain('config-file: ./.github/codeql/codeql-config.yml');
   const config = readFileSync('.github/codeql/codeql-config.yml', 'utf8');
   expect(config).toContain('paths-ignore:');
   expect(config).toMatch(/- experiments\b/);
-  expect(config).toMatch(/- examples\b/);
+  expect(config).not.toMatch(/- examples\b/);
 });

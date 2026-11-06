@@ -55,17 +55,17 @@ describe('release badge version normalization', () => {
 
 // Exercise the production skip predicate, including deceptive URL placements.
 describe('generated npm badge detection', () => {
-  const condition = readFileSync(
+  // Execute each formatter guard without invoking GitHub or its CDN loaders.
+  const guards = [
     'scripts/format-release-notes.mjs',
-    'utf8'
-  ).match(
-    /if \(([^\n]+)\) \{\s*console\.log\('ℹ️ Release notes already formatted'\)/
-  )[1];
-  // Execute the formatter's guard without invoking GitHub or its CDN loaders.
-  const shouldSkip = new Function(
-    'currentBody',
-    'hasGeneratedNpmBadge',
-    `return ${condition};`
+    'docs/case-studies/issue-3/original-format-release-notes.mjs',
+  ].map(
+    (file) =>
+      new Function(
+        'currentBody',
+        'hasGeneratedNpmBadge',
+        `return ${readFileSync(file, 'utf8').match(/if \(([^\n]+)\) \{\s*console\.log\('ℹ️ Release notes already formatted'\)/)[1]};`
+      )
   );
   for (const body of [
     '### Patch Changes\n- Fix img.shields.io URL handling',
@@ -80,12 +80,22 @@ describe('generated npm badge detection', () => {
     it(`does not skip ordinary notes: ${body}`, async () => {
       const helpers =
         await import('../scripts/format-release-notes-helpers.mjs');
-      expect(shouldSkip(body, helpers.hasGeneratedNpmBadge)).toBe(false);
+      for (const shouldSkip of guards) {
+        expect(shouldSkip(body, helpers.hasGeneratedNpmBadge)).toBe(false);
+      }
       expect(helpers.hasGeneratedNpmBadge(body)).toBe(false);
     });
   }
   it('recognizes the actual generated badge', async () => {
     const helpers = await import('../scripts/format-release-notes-helpers.mjs');
+    for (const shouldSkip of guards) {
+      expect(
+        shouldSkip(
+          buildNpmVersionBadge('fixture', '1.2.3'),
+          helpers.hasGeneratedNpmBadge
+        )
+      ).toBe(true);
+    }
     expect(
       helpers.hasGeneratedNpmBadge(buildNpmVersionBadge('fixture', '1.2.3'))
     ).toBe(true);

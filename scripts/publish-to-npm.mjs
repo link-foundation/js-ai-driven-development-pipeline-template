@@ -3,14 +3,14 @@
 /**
  * Publish to npm using OIDC trusted publishing
  * Usage: node scripts/publish-to-npm.mjs [--should-pull] [--js-root <path>]
- *   should_pull: Optional flag to pull latest changes before publishing (for release job)
+ *   should_pull: Verify the validated release commit landed on main before publishing
  *
  * Configuration:
  * - CLI: --js-root <path> to explicitly set JavaScript root
  * - Environment: JS_ROOT=<path>
  *
  * Uses link-foundation libraries:
- * - use-m: Dynamic package loading without package.json dependencies
+ * - Lockfile-installed command-stream and lino-arguments helpers
  * - command-stream: Modern shell command execution with streaming support
  * - lino-arguments: Unified configuration from CLI args, env vars, and .lenv files
  *
@@ -23,6 +23,7 @@ import { appendFileSync } from 'fs';
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
 import { isPackageVersionPublished } from './npm-registry.mjs';
 import { readPackageInfo } from './package-info.mjs';
+import { prepareReleasePublication } from './release-publication.mjs';
 import {
   buildAuthFailureGuidance,
   isNonRetryableFailure,
@@ -36,7 +37,7 @@ import { bootstrapDependencies } from './bootstrap-dependencies.mjs';
 import { loadCommandStream, loadLinoArguments } from './use-module.mjs';
 
 // Import link-foundation libraries
-// Loaded through bootstrapDependencies: when the use-m CDN is unreachable,
+// Loaded through bootstrapDependencies: when installed helpers are unavailable,
 // this script reports the failure and writes its outputs, and the process
 // does not die inside module initialisation.
 const [{ $ }, { makeConfig }] = await bootstrapDependencies(
@@ -51,7 +52,7 @@ const config = makeConfig({
       .option('should-pull', {
         type: 'boolean',
         default: getenv('SHOULD_PULL', false),
-        describe: 'Pull latest changes before publishing',
+        describe: 'Verify the validated release commit landed on main',
       })
       .option('js-root', {
         type: 'string',
@@ -226,9 +227,8 @@ async function runPublishCommand(shell, jsRoot, originalCwd) {
 
 async function main() {
   try {
-    if (shouldPull) {
-      // Pull the latest changes we just pushed
-      await $`git pull origin main`;
+    if (process.env.GITHUB_SHA || shouldPull) {
+      await prepareReleasePublication({ verifyRemote: shouldPull, jsRoot });
     }
 
     // Get current version

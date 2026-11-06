@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 
+// Security repair: keep this executable historical copy's badge guard strict too.
+import { hasGeneratedNpmBadge } from '../../../scripts/format-release-notes-helpers.mjs';
+
 /**
  * Script to format GitHub release notes with proper formatting:
  * - Fix special characters like \n
@@ -84,7 +87,7 @@ try {
   const currentBody = releaseData.body || '';
 
   // Skip if already formatted (has shields.io badge image)
-  if (currentBody.includes('img.shields.io')) {
+  if (hasGeneratedNpmBadge(currentBody)) {
     console.log('ℹ️ Release notes already formatted');
     process.exit(0);
   }

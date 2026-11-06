@@ -91,6 +91,8 @@ describe('workflow linting job', () => {
       '    timeout-minutes: 10',
       '    timeout-minutes: 10',
       '    timeout-minutes: 10',
+      '    timeout-minutes: 10',
+      '    timeout-minutes: 10',
       '    timeout-minutes: 5',
     ]);
   });

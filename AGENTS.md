@@ -1,6 +1,6 @@
 # Agent workflow
 
-Read CONTRIBUTING.md and docs/javascript-first.md before changing behavior or CI.
+Read docs/CONTRIBUTING.md and docs/javascript-first.md before changing behavior or CI.
 
 Draft and validate native JavaScript behavior first. Record every incomplete port,
 unsupported translation and native adapter; a strict readiness gate must reject
