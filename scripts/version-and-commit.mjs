@@ -266,7 +266,7 @@ async function main() {
       // Commit with version number as message
       await runStrict('git', ['commit', '-m', newVersion]);
 
-      // Transient server failures retry the same attested metadata commit.
+      // Push directly with bounded recovery for the attested metadata commit.
       // Source races and permanent rules fail before publication.
       try {
         await $`node scripts/push-main-with-rebase-retry.mjs origin main --label ${newVersion} --release-parent ${process.env.GITHUB_SHA}`.run(

@@ -142,6 +142,26 @@ describe('CodeQL extraction diagnostics', () => {
         }
       );
     }
+    itUnless(sandboxed)(
+      `${key} accepts CodeQL's empty success diagnostic`,
+      () => {
+        const data = report();
+        data.runs[0].invocations[0][key] = [
+          {
+            level: 'none',
+            descriptor: { id: 'js/diagnostics/successfully-extracted-files' },
+            message: { text: '' },
+            locations: [
+              {
+                physicalLocation: { artifactLocation: { uri: 'src/index.js' } },
+              },
+            ],
+          },
+        ];
+        const result = check([data]);
+        assert.equal(result.status, 0, result.stderr);
+      }
+    );
     for (const value of [
       null,
       {},
@@ -149,7 +169,7 @@ describe('CodeQL extraction diagnostics', () => {
       [null],
       [{}],
       [{ level: 'invalid', message: { text: 'bad' } }],
-      [{ level: 'none', message: { text: '' } }],
+      [{ level: 'none' }],
     ]) {
       itUnless(sandboxed)(
         `${key} rejects malformed evidence ${JSON.stringify(value)}`,

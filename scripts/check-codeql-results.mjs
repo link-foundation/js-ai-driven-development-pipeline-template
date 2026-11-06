@@ -36,7 +36,6 @@ function validNotification(notification, message, level) {
     !Array.isArray(notification) &&
     typeof notification === 'object' &&
     typeof message === 'string' &&
-    message.trim() &&
     ['error', 'warning', 'note', 'none'].includes(level)
   );
 }

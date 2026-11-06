@@ -65,6 +65,18 @@ describe('issue 287 workflow coverage', () => {
     walk('.github/actions');
     const config = read('.github/zizmor.yml');
     assert.deepEqual(checkSelfRepositoryPolicy(files, config), []);
+    const windowsFiles = Object.fromEntries(
+      Object.entries(files).map(([path, content]) => [
+        path.replaceAll('/', '\\'),
+        content,
+      ])
+    );
+    assert.deepEqual(
+      checkSelfRepositoryPolicy(windowsFiles, config.replace(/\r?\n/g, '\r\n')),
+      []
+    );
+    assert.deepEqual(checkSelfRepositoryPolicy({}, ''), []);
+    assert.ok(checkSelfRepositoryPolicy(files, '').length);
     assert.ok(
       checkSelfRepositoryPolicy(
         {
@@ -92,7 +104,12 @@ describe('issue 287 workflow coverage', () => {
           .split('.')
           .map(Number);
         if (name === 'minimatch') {
-          assert.ok(major < 7 || major >= 11, `${path}@${entry.version}`);
+          assert.ok(
+            major < 7 ||
+              major > 11 ||
+              (major === 11 && (minor > 0 || patch >= 4)),
+            `${path}@${entry.version}`
+          );
         }
         if (name === 'glob') {
           assert.ok(

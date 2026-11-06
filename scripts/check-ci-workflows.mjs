@@ -75,9 +75,11 @@ function workflowFiles(directory) {
 /** Keep actionlint's temporary self-repository exception limited to actual users. */
 export function checkSelfRepositoryPolicy(files, config) {
   const block =
-    config.match(
-      /\n {2}self-repository:\n {4}ignore:\n((?: {6}- [^\n]+\r?\n?)*)/
-    )?.[1] ?? '';
+    config
+      .replace(/\r\n/g, '\n')
+      .match(
+        /\n {2}self-repository:\n {4}ignore:\n((?: {6}- [^\n]+\r?\n?)*)/
+      )?.[1] ?? '';
   const allowed = new Set(
     Array.from(block.matchAll(/- ([^\s]+)[ \t]*$/gm), (match) => match[1])
   );
@@ -85,7 +87,7 @@ export function checkSelfRepositoryPolicy(files, config) {
   const used = new Set();
   for (const [path, text] of Object.entries(files)) {
     if (/^\s*(?:- )?uses: ['"]?\.\//m.test(text)) {
-      const name = path.split('/').at(-1);
+      const name = path.split(/[\\/]/).at(-1);
       used.add(name);
       if (!allowed.has(name)) {
         errors.push(`Unlisted self-repository action user: ${path}`);
@@ -114,9 +116,17 @@ if (
       process.exitCode = 1;
     }
   }
+  let selfRepositoryConfig = '';
+  try {
+    selfRepositoryConfig = readFileSync('.github/zizmor.yml', 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
   for (const error of checkSelfRepositoryPolicy(
     Object.fromEntries(files.map((path) => [path, readFileSync(path, 'utf8')])),
-    readFileSync('.github/zizmor.yml', 'utf8')
+    selfRepositoryConfig
   )) {
     console.error(`::error::${error}`);
     process.exitCode = 1;
