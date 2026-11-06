@@ -118,6 +118,8 @@ jobs:
           # Same level as the npm-audit gate; npm-audit annotates the lower
           # severities this accepts.
           fail-on-severity: high
+          show-openssf-scorecard: true
+          warn-on-openssf-scorecard-level: 0
           comment-summary-in-pr: on-failure
 
   npm-audit:

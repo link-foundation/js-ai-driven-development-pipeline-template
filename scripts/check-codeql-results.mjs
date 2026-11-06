@@ -14,6 +14,63 @@ function reportsIn(directory) {
   });
 }
 
+function describeNotification(notification) {
+  const descriptor =
+    notification?.descriptor?.id ??
+    notification?.associatedRule?.id ??
+    'unknown diagnostic';
+  const locations = Array.isArray(notification?.locations)
+    ? notification.locations
+        .map((location) => {
+          const physical = location?.physicalLocation;
+          return `${physical?.artifactLocation?.uri ?? 'unknown location'}:${physical?.region?.startLine ?? '?'}`;
+        })
+        .join(', ')
+    : '';
+  return `${descriptor} ${locations}`;
+}
+
+function validNotification(notification, message, level) {
+  return (
+    notification &&
+    !Array.isArray(notification) &&
+    typeof notification === 'object' &&
+    typeof message === 'string' &&
+    message.trim() &&
+    ['error', 'warning', 'note', 'none'].includes(level)
+  );
+}
+
+function invocationDiagnostics(invocation, file, runIndex) {
+  const failures = [];
+  for (const key of [
+    'toolExecutionNotifications',
+    'toolConfigurationNotifications',
+  ]) {
+    const notifications = invocation[key];
+    if (notifications === undefined) {
+      continue;
+    }
+    if (!Array.isArray(notifications)) {
+      failures.push(`${file} run ${runIndex}: malformed ${key}`);
+      continue;
+    }
+    for (const notification of notifications) {
+      const level = notification?.level ?? 'warning';
+      const message =
+        notification?.message?.text ?? notification?.message?.markdown;
+      if (!validNotification(notification, message, level)) {
+        failures.push(`${file} run ${runIndex}: malformed ${key} notification`);
+      } else if (level === 'error' || level === 'warning') {
+        failures.push(
+          `${file} run ${runIndex}: ${key} ${describeNotification(notification)} [${level}] ${message}`
+        );
+      }
+    }
+  }
+  return failures;
+}
+
 function checkRun(run, index, file) {
   if (
     typeof run?.tool?.driver?.name !== 'string' ||
@@ -29,10 +86,15 @@ function checkRun(run, index, file) {
       `Invalid results/tool or unsuccessful invocation in run ${index}`
     );
   }
-  return run.results.map(
-    (finding) =>
-      `${file} run ${index}: ${finding?.ruleId ?? 'unknown rule'} [${finding?.level ?? 'unspecified severity'}] ${finding?.message?.text ?? 'CodeQL finding'}`
-  );
+  return [
+    ...(run.invocations ?? []).flatMap((invocation) =>
+      invocationDiagnostics(invocation, file, index)
+    ),
+    ...run.results.map(
+      (finding) =>
+        `${file} run ${index}: ${finding?.ruleId ?? 'unknown rule'} [${finding?.level ?? 'unspecified severity'}] ${finding?.message?.text ?? 'CodeQL finding'}`
+    ),
+  ];
 }
 
 function checkReport(file) {

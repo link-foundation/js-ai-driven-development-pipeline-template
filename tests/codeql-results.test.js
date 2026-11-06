@@ -98,3 +98,67 @@ describe('CodeQL local result gate', () => {
     assert.match(workflow, /path: codeql-results/);
   });
 });
+
+describe('CodeQL extraction diagnostics', () => {
+  for (const key of [
+    'toolExecutionNotifications',
+    'toolConfigurationNotifications',
+  ]) {
+    for (const level of ['error', 'warning', undefined, 'note', 'none']) {
+      itUnless(sandboxed)(
+        `${key} enforces ${level ?? 'default warning'} even without findings`,
+        () => {
+          const data = report();
+          data.runs[0].invocations[0][key] = [
+            {
+              level,
+              descriptor: { id: 'extractor/failure' },
+              message: { text: 'Extraction diagnostic' },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: { uri: 'src/example.js' },
+                    region: { startLine: 42 },
+                  },
+                },
+              ],
+            },
+          ];
+          const result = check([data]);
+          assert.equal(
+            result.status,
+            ['note', 'none'].includes(level) ? 0 : 1,
+            result.stderr
+          );
+          if (result.status) {
+            for (const text of [
+              'extractor/failure',
+              'src/example.js:42',
+              'Extraction diagnostic',
+            ]) {
+              assert.ok(result.stderr.includes(text), result.stderr);
+            }
+          }
+        }
+      );
+    }
+    for (const value of [
+      null,
+      {},
+      'broken',
+      [null],
+      [{}],
+      [{ level: 'invalid', message: { text: 'bad' } }],
+      [{ level: 'none', message: { text: '' } }],
+    ]) {
+      itUnless(sandboxed)(
+        `${key} rejects malformed evidence ${JSON.stringify(value)}`,
+        () => {
+          const data = report();
+          data.runs[0].invocations[0][key] = value;
+          assert.notEqual(check([data]).status, 0);
+        }
+      );
+    }
+  }
+});

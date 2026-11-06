@@ -70,6 +70,7 @@ describe('archive and test discovery boundaries', () => {
       const cwd = mkdtempSync(join(tmpdir(), 'root-lint-staged-'));
       try {
         execFileSync('git', ['init', '-q'], { cwd });
+        execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd });
         mkdirSync(join(cwd, 'dev/log/reference'), { recursive: true });
         mkdirSync(join(cwd, 'src'));
         writeFileSync(

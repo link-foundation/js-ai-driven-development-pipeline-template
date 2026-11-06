@@ -98,7 +98,8 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: |
-      needs.detect-changes.outputs.js-changed == 'true'
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.js-changed == 'true')
     steps:
       - uses: actions/checkout@v7
         with:
@@ -123,8 +124,10 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     needs: [detect-changes]
     if: |
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' ||
       needs.detect-changes.outputs.docs-changed == 'true' ||
-      needs.detect-changes.outputs.any-code-changed == 'true'
+      needs.detect-changes.outputs.any-code-changed == 'true')
     steps:
       - uses: actions/checkout@v7
         with:

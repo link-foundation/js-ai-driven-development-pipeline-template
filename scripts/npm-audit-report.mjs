@@ -55,10 +55,71 @@ function vulnerabilitiesOf(report) {
       `npm audit failed: ${[code, summary, detail].filter(Boolean).join(': ')}`
     );
   }
-  if (!report.vulnerabilities || typeof report.vulnerabilities !== 'object') {
+  if (
+    !report.vulnerabilities ||
+    typeof report.vulnerabilities !== 'object' ||
+    Array.isArray(report.vulnerabilities)
+  ) {
     throw new Error('npm audit report has no vulnerabilities map');
   }
-  return Object.values(report.vulnerabilities);
+  const vulnerabilities = Object.values(report.vulnerabilities);
+  for (const vulnerability of vulnerabilities) {
+    validateVulnerability(vulnerability, report.vulnerabilities);
+  }
+  const reachesAdvisory = (name, seen = new Set()) => {
+    if (seen.has(name)) {
+      return false;
+    }
+    const next = new Set([...seen, name]);
+    return vulnerabilitiesMap[name].via.some(
+      (via) => typeof via === 'object' || reachesAdvisory(via, next)
+    );
+  };
+  const vulnerabilitiesMap = report.vulnerabilities;
+  for (const name of Object.keys(vulnerabilitiesMap)) {
+    if (!reachesAdvisory(name)) {
+      throw new Error(
+        `npm audit reference-only cycle has no advisory evidence: ${name}`
+      );
+    }
+  }
+  return vulnerabilities;
+}
+
+function validateAdvisory(via) {
+  rank(via.severity);
+  const complete = ['title', 'name', 'range'].every(
+    (key) => typeof via[key] === 'string' && via[key].trim()
+  );
+  const identified =
+    (typeof via.url === 'string' && /^https:\/\//.test(via.url)) ||
+    Number.isInteger(via.source);
+  if (!complete || !identified) {
+    throw new Error('npm audit advisory is missing identifying evidence');
+  }
+}
+
+function validateVulnerability(vulnerability, vulnerabilities) {
+  if (
+    !vulnerability ||
+    !Array.isArray(vulnerability.via) ||
+    vulnerability.via.length === 0
+  ) {
+    throw new Error('npm audit vulnerability has no advisory evidence');
+  }
+  rank(vulnerability.severity);
+  for (const via of vulnerability.via) {
+    if (
+      typeof via === 'string'
+        ? !Object.hasOwn(vulnerabilities, via)
+        : !via || typeof via !== 'object' || Array.isArray(via)
+    ) {
+      throw new Error('npm audit vulnerability has invalid advisory evidence');
+    }
+    if (typeof via === 'object') {
+      validateAdvisory(via);
+    }
+  }
 }
 
 /**
@@ -97,6 +158,9 @@ export function collectAdvisories(report) {
       entry.fixable &&= isNonBreakingFix(vulnerability.fixAvailable);
       advisories.set(id, entry);
     }
+  }
+  if (advisories.size === 0 && Object.keys(report.vulnerabilities).length > 0) {
+    throw new Error('npm audit vulnerabilities contain no advisories');
   }
   return [...advisories.values()].sort(
     (a, b) => rank(b.severity) - rank(a.severity) || a.id.localeCompare(b.id)
@@ -206,6 +270,26 @@ export function report(stdout, options = {}) {
   return render(classify(collectAdvisories(parsed), options), options);
 }
 
+function runAudit(run, options) {
+  const audit = run('npm', ['audit', '--package-lock-only', '--json'], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (audit.error) {
+    throw audit.error;
+  }
+  if (audit.signal || (audit.status !== 0 && audit.status !== 1)) {
+    throw new Error(
+      `npm audit execution failed (${audit.signal || `exit ${audit.status}`})`
+    );
+  }
+  const result = report(audit.stdout, options);
+  if (audit.status === 1 && result.annotations.length === 0) {
+    throw new Error('npm audit exited 1 without advisory evidence');
+  }
+  return result;
+}
+
 export function main(env = process.env, run = spawnSync) {
   const options = {
     directory: env.AUDIT_DIR || '.',
@@ -217,14 +301,7 @@ export function main(env = process.env, run = spawnSync) {
     if (options.fixableLevel) {
       rank(options.fixableLevel);
     }
-    const audit = run('npm', ['audit', '--package-lock-only', '--json'], {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    if (audit.error) {
-      throw audit.error;
-    }
-    const result = report(audit.stdout, options);
+    const result = runAudit(run, options);
     for (const line of result.annotations) {
       console.log(line);
     }
