@@ -14,6 +14,16 @@ import { itUnless, sandboxed, noPosixShell } from './helpers/skip.js';
 const read = (path) => readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
 const gatePath = '.github/workflows/javascript-first-gate.yml';
 const example = 'examples/javascript-first';
+const commands = [
+  'node --test example/native-check.mjs',
+  'node example/check-parity.mjs --strict',
+  'node example/generate.mjs --check',
+];
+const stages = [
+  'Native JavaScript checks',
+  'Strict feature parity inventory',
+  'Deterministic regeneration check',
+];
 function runStep(source, name, cwd, env) {
   const block = source.split(`- name: ${name}\n`)[1].split('\n      - ')[0];
   const script = block
@@ -54,7 +64,7 @@ describe('JavaScript-first prerequisite and real mixed-language caller', () => {
   it('requires real commands and immutable checkouts without building Rust in the gate', () => {
     const source = read(gatePath);
     expect(source).toContain('workflow_call:');
-    expect((source.match(/required: true/g) ?? []).length).toBe(4);
+    expect((source.match(/required: true/g) ?? []).length).toBe(5);
     expect(source).not.toContain('default:');
     expect(source).toContain('^[0-9a-f]{40}$');
     expect(source).not.toMatch(/\bcargo\b|\brustc\b/);
@@ -112,16 +122,6 @@ describe('JavaScript-first prerequisite and real mixed-language caller', () => {
       fixture((root, sha, git) => {
         const output = join(root, '.git', 'outputs');
         const env = { EXPECTED_SHA: sha, GITHUB_OUTPUT: output };
-        const commands = [
-          'node --test example/native-check.mjs',
-          'node example/check-parity.mjs --strict',
-          'node example/generate.mjs --check',
-        ];
-        const stages = [
-          'Native JavaScript checks',
-          'Strict feature parity inventory',
-          'Deterministic regeneration check',
-        ];
         function pipeline({ skip = false, fail = false } = {}) {
           if (skip) {
             return 'skipped';
@@ -176,9 +176,17 @@ describe('JavaScript-first prerequisite and real mixed-language caller', () => {
           inventory.replace(/\{\s*"id": "isEven"[\s\S]*?\}/, '')
         );
         expect(allowed(pipeline())).toBe(0);
+        writeFileSync(
+          inventoryPath,
+          inventory.replace('"nativeAdapter": false', '"nativeAdapter": true')
+        );
+        expect(allowed(pipeline())).toBe(0);
         writeFileSync(inventoryPath, inventory);
         writeFileSync(join(root, 'example/generated/lib.rs'), '// drift');
         expect(allowed(pipeline())).toBe(0);
+        git('add', '.');
+        expect(allowed(pipeline())).toBe(0);
+        git('restore', '--staged', '.');
         git('restore', '.');
         writeFileSync(join(root, 'untracked'), 'drift');
         expect(allowed(pipeline())).toBe(0);

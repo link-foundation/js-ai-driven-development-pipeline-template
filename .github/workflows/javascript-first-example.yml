@@ -6,6 +6,7 @@ on:
       - 'examples/javascript-first/**'
       - '.github/workflows/javascript-first*.yml'
       - 'tests/javascript-first-gate.test.js'
+      - 'tests/javascript-first-adoption.test.js'
       - '.github/actions/artifact-transport/**'
       - 'scripts/artifact-*.mjs'
   push:
@@ -23,6 +24,8 @@ jobs:
   javascript-first:
     uses: ./.github/workflows/javascript-first-gate.yml
     with:
+      # Reference integration: the Rust jobs below are installed with the gate.
+      rust-template-applied: true
       source-sha: ${{ github.event.pull_request.head.sha || github.sha }}
       javascript-command: node --test examples/javascript-first/native-check.mjs
       parity-command: node examples/javascript-first/check-parity.mjs --strict
