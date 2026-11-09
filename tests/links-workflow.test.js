@@ -23,6 +23,16 @@ function getStepBlock(stepName) {
 }
 
 describe('broken link workflow', () => {
+  it('installs a pinned release separately from the link check', () => {
+    const install = getStepBlock('Install pinned lychee with download retries');
+    expect(install).toContain('run: bash scripts/install-lychee.sh');
+    expect(install).toContain('LYCHEE_VERSION: v0.24.2');
+    expect(workflow).not.toContain('uses: lycheeverse/lychee-action');
+    expect(workflow.indexOf(install)).toBeLessThan(
+      workflow.indexOf(getStepBlock('Check links with lychee'))
+    );
+  });
+
   it('fails for every nonzero Lychee exit even when an archive exists', () => {
     const failureStep = getStepBlock('Fail if broken links were found');
 
@@ -75,6 +85,9 @@ describe('broken link workflow', () => {
     const expected = [
       '.lycheeignore',
       'scripts/check-web-archive.mjs',
+      'scripts/install-lychee.sh',
+      'tests/lychee-install.test.js',
+      'tests/lychee-step.test.js',
       'scripts/recheck-broken-links.mjs',
       'tests/fixtures/lychee-report.md',
       'tests/links-workflow.test.js',

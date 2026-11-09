@@ -62,7 +62,7 @@ jobs:
       actions: read
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-detect-changes
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     if: github.event_name != 'workflow_dispatch'
     outputs:
       js-changed: ${{ steps.changes.outputs.js-changed }}
@@ -95,7 +95,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-test-compilation
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       !cancelled() &&
@@ -121,7 +121,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-check-file-line-limits
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       !cancelled() &&
@@ -155,7 +155,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-version-check
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
@@ -181,7 +181,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-changeset-check
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     steps:
@@ -226,7 +226,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-lint
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       !cancelled() &&
@@ -299,7 +299,7 @@ jobs:
     timeout-minutes: 15
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-test-${{ matrix.runtime }}-${{ matrix.os }}
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs:
       [
         detect-changes,
@@ -411,7 +411,7 @@ jobs:
     timeout-minutes: 30
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-docker-build
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs: [detect-changes]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.any-code-changed == 'true'
     permissions:
@@ -463,7 +463,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-validate-docs
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     needs: [detect-changes]
     if: |
       needs.detect-changes.outputs.docs-changed == 'true'
@@ -1058,7 +1058,7 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: check-${{ github.workflow }}-${{ github.ref }}-pipeline-status
-      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+      cancel-in-progress: true
     if: >-
       !cancelled()
     needs:

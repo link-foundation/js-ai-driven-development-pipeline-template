@@ -14,6 +14,9 @@ on:
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
       - 'scripts/lychee-report.mjs'
+      - 'scripts/install-lychee.sh'
+      - 'tests/lychee-install.test.js'
+      - 'tests/lychee-step.test.js'
       - 'scripts/recheck-broken-links.mjs'
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
@@ -30,6 +33,9 @@ on:
       - '.lycheeignore'
       - 'scripts/check-web-archive.mjs'
       - 'scripts/lychee-report.mjs'
+      - 'scripts/install-lychee.sh'
+      - 'tests/lychee-install.test.js'
+      - 'tests/lychee-step.test.js'
       - 'scripts/recheck-broken-links.mjs'
       - 'tests/fixtures/lychee-report.md'
       - 'tests/links-workflow.test.js'
@@ -82,40 +88,45 @@ jobs:
           key: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-${{ github.sha }}
           restore-keys: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-
 
+      - name: Install pinned lychee with download retries
+        run: bash scripts/install-lychee.sh
+        env:
+          LYCHEE_VERSION: v0.24.2
+
       - name: Check links with lychee
         id: lychee
-        uses: lycheeverse/lychee-action@v2
-        with:
-          # Check all Markdown and HTML files
-          # Exclude case-studies directory - these are research documents from
-          # external repos with references to files and issues that don't exist
-          # in this repository (similar exclusion pattern as eslint.config.js)
-          # Exclude the Vite source HTML because its root-relative app asset
-          # URLs are only valid when served by Vite.
-          # Exclude tests/fixtures - the captured lychee reports there contain
-          # deliberately broken links used as parser test input.
-          args: >-
-            --verbose
-            --no-progress
-            --cache
-            --max-cache-age 1d
-            --max-retries 3
-            --timeout 30
-            --hidden
-            --extensions md,html
-            --exclude-path docs/case-studies
-            --exclude-path dev/log
-            --exclude-path examples/universal-app/index.html
-            --exclude-path tests/fixtures
-            .
-          # Don't fail the workflow immediately - we want to check web archive first
-          fail: false
-          # Output file for broken links report (used by check-web-archive.mjs)
-          output: lychee/out.md
-          # Write a job summary
-          jobSummary: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p lychee
+          # Discard a stale report so a CLI error cannot reuse its evidence.
+          rm -f lychee/out.md
+          code=0
+          # Keep research data, Vite-only asset URLs and parser fixtures out
+          # of the raw file scan, as in the previous action configuration.
+          lychee --mode task --format markdown --output lychee/out.md \
+            --verbose --no-progress --cache --max-cache-age 1d \
+            --max-retries 3 --timeout 30 --hidden --extensions md,html \
+            --exclude-path docs/case-studies --exclude-path dev/log \
+            --exclude-path examples/universal-app/index.html \
+            --exclude-path tests/fixtures . || code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ ! -s lychee/out.md ]; then
+            echo "::error title=lychee failed::lychee exited with code $code without writing a report."
+            exit 1
+          fi
+          cat lychee/out.md
+          cat lychee/out.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
+            echo "::error title=lychee failed::lychee exited with code $code."
+            exit 1
+          fi
+          if ! grep -Eq 'Total[[:space:]]*\|[[:space:]]*[1-9][0-9]*[[:space:]]*\|' lychee/out.md; then
+            echo "::error title=No links checked::Report has no positive Total count. Check the lychee arguments."
+            exit 1
+          fi
+          # Exit 2 with a report is left to the existing re-check/archive
+          # diagnostics and final failure step, just as with fail: false.
 
       - name: Re-check transient link failures
         # Retry transport errors, 429, and 5xx within a shared budget.
