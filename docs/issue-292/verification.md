@@ -35,10 +35,9 @@ errors before the follow-up:
 | checks-129237672539.log | Windows Bun lines 808–817: same regex and null TypeError.                                                 |
 | checks-129237673079.log | Windows Deno lines 2096–2106: same TypeError; 1098 passed, 1 failed, 101 ignored.                         |
 | checks-129237673122.log | macOS Node lines 2030 onward: same parser failure.                                                        |
-
-| checks-129237672999.log | macOS Deno lines 2077–2087: same TypeError; 1191 passed, 1 failed, 8 ignored. |
-| checks-129237673150.log | macOS Bun lines 1690–1700: same regex and null TypeError. |
-| checks-129241421623.log | Pipeline Status lines 259–262: Failed jobs: test; no cancelled jobs; correctly failed the run. |
+| checks-129237672999.log | macOS Deno lines 2077–2087: same TypeError; 1191 passed, 1 failed, 8 ignored.                             |
+| checks-129237673150.log | macOS Bun lines 1690–1700: same regex and null TypeError.                                                 |
+| checks-129241421623.log | Pipeline Status lines 259–262: Failed jobs: test; no cancelled jobs; correctly failed the run.            |
 
 All nine runtime legs and the terminal gate completed before the next batch.
 The complete run log is preserved as ci-logs/checks-42639733336.log. There were
