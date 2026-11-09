@@ -198,13 +198,6 @@ describe('pipeline status gate', () => {
     );
   });
 
-  it('does not cancel superseded jobs on main', () => {
-    expect(workflow).not.toContain('      cancel-in-progress: true');
-    expect(workflow).toContain(
-      "      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}"
-    );
-  });
-
   itUnless(sandboxed, noPosixShell)(
     'passes when jobs succeeded or were skipped',
     () => {
@@ -478,16 +471,50 @@ describe('pipeline status supersede detection', () => {
   );
 
   itUnless(sandboxed, noPosixShell)(
+    'accepts superseded release checks while rejecting current cancellations',
+    () => {
+      for (const [head, status] of [
+        ['bbb222', 0],
+        ['aaa111', 1],
+      ]) {
+        const result = runGate(cancelled, {
+          RUN_SHA: 'aaa111',
+          BRANCH_HEAD_SHA: head,
+          WORKFLOW_FILE: '.github/workflows/release.yml',
+        });
+        expect(result.status).toBe(status);
+        expect(result.stdout).toContain(
+          status === 0
+            ? 'Cancelled jobs in a superseded run::lint'
+            : 'Pipeline has cancelled jobs::lint'
+        );
+      }
+    }
+  );
+
+  itUnless(sandboxed, noPosixShell)(
     'fails closed when cancel-in-progress is an expression',
     () => {
-      const result = runGate(cancelled, {
-        RUN_SHA: 'aaa111',
-        BRANCH_HEAD_SHA: 'bbb222',
-        WORKFLOW_FILE: '.github/workflows/release.yml',
-      });
-
-      expect(result.status).toBe(1);
-      expect(result.stdout).toContain('expression or otherwise unreadable');
+      const root = mkdtempSync(path.join(tmpdir(), 'gate-expression-'));
+      try {
+        const file = path.join(root, 'workflow.yml');
+        writeFileSync(
+          file,
+          workflow.replaceAll(
+            'cancel-in-progress: true',
+            "cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}"
+          )
+        );
+        const result = runGate(cancelled, {
+          RUN_SHA: 'aaa111',
+          BRANCH_HEAD_SHA: 'bbb222',
+          WORKFLOW_FILE: file,
+        });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('expression or otherwise unreadable');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     }
   );
 

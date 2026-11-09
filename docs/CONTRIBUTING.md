@@ -278,3 +278,18 @@ examples. Deprecated dependencies are not allowlisted: replace or override
 them. Artifact compatibility decisions and their probes are
 documented in the [artifact action](../.github/actions/artifact-transport/README.md);
 desktop ones in [universal-app/compat](../examples/universal-app/compat/README.md).
+
+### Link checker installation
+
+The Broken Link Checker installs lychee v0.24.2 with
+`scripts/install-lychee.sh`. Archive and checksum downloads retry independently;
+the published SHA-256 must match before extraction. `LYCHEE_INSTALL_DEBUG=1`
+enables optional tracing. Exhausted downloads are installation errors, distinct
+from broken-link reports. Only a positive link count and a report permit the
+check step to proceed; exit 2 then goes through the existing transient re-check,
+archive suggestions and final failure step. Empty scans and missing reports fail.
+
+Read-only jobs cancel superseded checks on both main and PR refs. Writers retain
+the shared repository queue with cancellation disabled. The status gate accepts
+a superseded cancellation only for a job whose tested workflow explicitly allows
+it; a current-head cancellation or a cancelled writer still fails.

@@ -59,6 +59,19 @@ describe('install-git-hooks.mjs', () => {
     assert.equal(called, true);
   });
 
+  it('rejects a Husky error even when an old hooks path remains', async () => {
+    const errors = [];
+    const status = await hooks.installGitHooks({
+      env: {},
+      exists: () => true,
+      install: async () => 'installation failed',
+      readHooksPath: () => '.husky/_',
+      log: (error) => errors.push(error),
+    });
+    assert.equal(status, 1);
+    assert.match(errors[0], /installation failed/);
+  });
+
   for (const message of [".git can't be found", '']) {
     it(`fails when hooks are unset and husky reports ${message || 'nothing'}`, async () => {
       const errors = [];

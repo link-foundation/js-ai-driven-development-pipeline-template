@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'test-anywhere';
 import { readFileSync, readdirSync } from 'node:fs';
+import { parse } from 'yaml';
 
 const WORKFLOW_DIRECTORY = '.github/workflows';
 // GitHub documents `queue` although actionlint 1.7.12 does not know it yet:
@@ -143,11 +144,10 @@ function expectMainWriterConcurrency(jobBlock) {
 function expectCancellableCheckConcurrency(
   jobBlock,
   jobName,
-  matrixSuffix = '',
-  cancelInProgress = 'true'
+  matrixSuffix = ''
 ) {
   expect(jobBlock).toContain(
-    `    concurrency:\n      group: check-\${{ github.workflow }}-\${{ github.ref }}-${jobName}${matrixSuffix}\n      cancel-in-progress: ${cancelInProgress}`
+    `    concurrency:\n      group: check-\${{ github.workflow }}-\${{ github.ref }}-${jobName}${matrixSuffix}\n      cancel-in-progress: true`
   );
 }
 
@@ -186,6 +186,37 @@ function createTestJobContext({
 }
 
 describe('workflow concurrency policy', () => {
+  for (const ref of ['refs/heads/main', 'refs/pull/293/merge']) {
+    it(`cancels all read-only checks and preserves writers on ${ref}`, () => {
+      for (const file of listWorkflowPaths()) {
+        const source = parse(readWorkflow(file));
+        for (const job of Object.values(source.jobs)) {
+          const policy = job.concurrency;
+          if (!policy) {
+            continue;
+          }
+          const group = policy.group.replaceAll('${{ github.ref }}', ref);
+          if (group.startsWith('check-')) {
+            // Literal true must hold on both main and PR refs.
+            expect(policy['cancel-in-progress']).toBe(true);
+            for (const dimension of Object.keys(job.strategy?.matrix || {})) {
+              if (['include', 'exclude'].includes(dimension)) {
+                continue;
+              }
+              expect(group).toContain(`matrix.${dimension}`);
+            }
+          }
+          if (group.startsWith('main-writer-')) {
+            expect(source.concurrency).toBeUndefined();
+            expect(group).toBe('main-writer-${{ github.repository }}-main');
+            expect(policy['cancel-in-progress']).toBe(false);
+            expect(policy.queue).toBe('max');
+          }
+        }
+      }
+    });
+  }
+
   it('detects unsupported keys in a concurrency block', () => {
     const invalidWorkflow = [
       'jobs:',
@@ -274,16 +305,13 @@ describe('workflow concurrency policy', () => {
     ]) {
       expectCancellableCheckConcurrency(
         getJobBlock(releaseWorkflow, jobName),
-        jobName,
-        '',
-        "${{ github.ref != 'refs/heads/main' }}"
+        jobName
       );
     }
     expectCancellableCheckConcurrency(
       getJobBlock(releaseWorkflow, 'test'),
       'test',
-      '-${{ matrix.runtime }}-${{ matrix.os }}',
-      "${{ github.ref != 'refs/heads/main' }}"
+      '-${{ matrix.runtime }}-${{ matrix.os }}'
     );
 
     for (const jobName of ['web-build', 'android-build', 'ios-build']) {
@@ -345,7 +373,7 @@ describe('workflow reliability policy', () => {
       '--exclude-path dev/log',
       `--exclude-path ${viteSourceHtmlPath}`,
       '--exclude-path tests/fixtures',
-      '\n            .',
+      ' . || code=$?',
     ]);
   });
 

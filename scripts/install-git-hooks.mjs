@@ -35,7 +35,7 @@ export async function installGitHooks({
   } catch {
     hooksPath = '';
   }
-  if (!hooksPath) {
+  if (message || !hooksPath) {
     log(`git hooks were not installed: ${message || 'husky said nothing'}`);
     return 1;
   }

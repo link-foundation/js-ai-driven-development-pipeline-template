@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'test-anywhere';
+import { parse } from 'yaml';
 import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -45,11 +46,14 @@ describe('repository-wide workflow audit coverage', () => {
 describe('link checker input selection', () => {
   it('walks hidden Markdown and HTML while retaining ignore/exclusion rules', () => {
     const workflow = read('.github/workflows/links.yml');
-    const args = workflow.match(/^ {10}args: >-\n((?: {12}.*\n)+)/m)[1];
+    const step = parse(workflow).jobs['link-checker'].steps.find(
+      (item) => item.id === 'lychee'
+    );
+    const args = step.run.match(/^lychee ([\s\S]*?) \|\| code=\$\?/m)[1];
     expect(args).toContain('--hidden');
     expect(args).toContain('--extensions md,html');
     expect(args).not.toContain('*');
-    expect(args.trim().endsWith('\n            .')).toBe(true);
+    expect(args.trim().endsWith(' .')).toBe(true);
     for (const file of [
       'docs/case-studies',
       'dev/log',
