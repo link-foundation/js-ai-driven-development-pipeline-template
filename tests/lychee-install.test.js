@@ -19,6 +19,8 @@ const installer = resolve('scripts/install-lychee.sh');
 // Real curl and tar, tiny fixtures, loopback only: no release download/build.
 async function installFixture({
   corrupt = false,
+  replaced = false,
+  missingPin = false,
   unavailable = false,
   version = 'v9.9.9',
   missingBinary = false,
@@ -70,6 +72,16 @@ async function installFixture({
           ...process.env,
           GITHUB_PATH: githubPath,
           LYCHEE_VERSION: version,
+          LYCHEE_SHA256_X86_64: missingPin
+            ? ''
+            : replaced
+              ? '1'.repeat(64)
+              : createHash('sha256').update(bytes).digest('hex'),
+          LYCHEE_SHA256_AARCH64: missingPin
+            ? ''
+            : replaced
+              ? '1'.repeat(64)
+              : createHash('sha256').update(bytes).digest('hex'),
           LYCHEE_DOWNLOAD_BASE_URL: `http://127.0.0.1:${server.address().port}`,
           LYCHEE_DOWNLOAD_RETRIES: '1',
           LYCHEE_DOWNLOAD_RETRY_DELAY: '0',
@@ -113,6 +125,8 @@ describe('lychee release installer', () => {
     }
   );
   for (const [name, options, message] of [
+    ['replaced archive and checksum', { replaced: true }, /Checksum mismatch/],
+    ['missing pin', { missingPin: true }, /repository-pinned SHA-256/],
     ['checksum mismatch', { corrupt: true }, /Checksum mismatch/],
     ['exhausted retries', { unavailable: true }, /Could not download lychee/],
     ['unpinned release', { version: 'latest' }, /must be a pinned release/],

@@ -92,10 +92,10 @@
       "prettier --check"
     ],
     "*.sh": [
-      "pipx run --spec shellcheck-py==0.11.0.1 shellcheck"
+      "pipx run --no-path-check --spec shellcheck-py==0.11.0.1 shellcheck"
     ],
     ".husky/*": [
-      "pipx run --spec shellcheck-py==0.11.0.1 shellcheck"
+      "pipx run --no-path-check --spec shellcheck-py==0.11.0.1 shellcheck"
     ]
   },
   "allowScripts": {

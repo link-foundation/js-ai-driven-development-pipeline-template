@@ -51,7 +51,11 @@ describe('complete pipeline requirements', () => {
   });
   it('persists the link cache and uploads the report on failure', () => {
     const source = read('.github/workflows/links.yml');
-    expect(source).toContain('uses: actions/cache@v5');
+    expect(source).toContain('uses: actions/cache/restore@v5');
+    expect(source).toContain('uses: actions/cache/save@v5');
+    expect(source).toContain(
+      "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    );
     expect(source).toContain('path: .lycheecache');
     expect(source).toContain('restore-keys: cache-lychee-');
     expect(source).toContain('uses: ./.github/actions/artifact-transport');
@@ -93,7 +97,7 @@ describe('complete pipeline requirements', () => {
     const { 'lint-staged': staged } = JSON.parse(read('package.json'));
     for (const pattern of ['*.sh', '.husky/*']) {
       expect(staged[pattern]).toEqual([
-        'pipx run --spec shellcheck-py==0.11.0.1 shellcheck',
+        'pipx run --no-path-check --spec shellcheck-py==0.11.0.1 shellcheck',
       ]);
     }
   });

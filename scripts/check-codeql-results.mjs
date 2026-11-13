@@ -3,6 +3,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Quote newlines and escape modern and legacy workflow command delimiters.
+const quote = (value) =>
+  JSON.stringify(String(value))
+    .replaceAll('::', '\\u003a\\u003a')
+    .replaceAll('##[', '##\\u005b');
+
 function reportsIn(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = join(directory, entry.name);
@@ -128,7 +134,7 @@ export function checkCodeqlResults(directory, log = console.error) {
     }
   }
   for (const failure of failures) {
-    log(failure);
+    log(quote(failure));
   }
   if (failures.length) {
     throw new Error(
@@ -147,7 +153,7 @@ if (
       `CodeQL result gate: ${checkCodeqlResults(process.argv[2] || 'codeql-results')} clean report(s)`
     );
   } catch (error) {
-    console.error(error.message);
+    console.error(quote(error.message));
     process.exitCode = 1;
   }
 }

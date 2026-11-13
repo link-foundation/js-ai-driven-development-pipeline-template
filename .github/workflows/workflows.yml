@@ -84,7 +84,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Check standalone shell scripts and hooks
-        run: git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --spec shellcheck-py==0.11.0.1 shellcheck
+        run: |
+          python3 -m venv "$RUNNER_TEMP/shellcheck-venv"
+          "$RUNNER_TEMP/shellcheck-venv/bin/pip" install --quiet --disable-pip-version-check shellcheck-py==0.11.0.1
+          git ls-files -z '*.sh' '.husky/*' | xargs -0 "$RUNNER_TEMP/shellcheck-venv/bin/shellcheck"
 
   # The terminal status job of release.yml keys branch protection; its
   # needs list is hand-maintained, so a job left out of it could fail while

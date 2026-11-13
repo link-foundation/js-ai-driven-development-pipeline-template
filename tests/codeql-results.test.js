@@ -182,3 +182,36 @@ describe('CodeQL extraction diagnostics', () => {
     }
   }
 });
+
+for (const field of ['message', 'ruleId', 'level', 'diagnostic']) {
+  itUnless(sandboxed)(`quotes workflow commands from SARIF ${field}`, () => {
+    const injected =
+      'x\n::error title=spoof::forged\r::add-mask::secret\n::stop-commands::token ##[error]legacy';
+    const data = report([
+      {
+        ruleId: field === 'ruleId' ? injected : 'rule',
+        level: field === 'level' ? injected : 'error',
+        message: { text: field === 'message' ? injected : 'finding' },
+      },
+    ]);
+    if (field === 'diagnostic') {
+      data.runs[0].invocations[0].toolExecutionNotifications = [
+        {
+          level: 'warning',
+          descriptor: { id: injected },
+          message: { text: injected },
+          locations: [
+            { physicalLocation: { artifactLocation: { uri: injected } } },
+          ],
+        },
+      ];
+    }
+    const result = check([data]);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(
+      result.stderr,
+      /::(?:error|add-mask|stop-commands)|##\[error\]/
+    );
+    assert.match(result.stderr, /spoof/);
+  });
+}

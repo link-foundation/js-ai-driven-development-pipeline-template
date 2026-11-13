@@ -159,7 +159,6 @@ describe('detect-code-changes CLI', () => {
 
   for (const eventName of ['pull_request', 'push']) {
     for (const filePath of [
-      'experiments/repro.mjs',
       'dev/log/repro.js',
       'docs/case-studies/issue-113/repro.md',
     ]) {
@@ -209,9 +208,7 @@ describe('detect-code-changes CLI', () => {
   // only after the js/ prefix has been stripped.
   for (const eventName of ['pull_request', 'push']) {
     for (const filePath of [
-      'js/examples/demo.mjs',
       'js/.changeset/tidy-cats-shine.md',
-      'js/experiments/repro.mjs',
       'js/dev/log/repro.js',
       'js/docs/case-studies/issue-141/repro.md',
     ]) {
@@ -567,4 +564,37 @@ describe('detect-code-changes push ranges', () => {
       }
     }
   );
+});
+
+describe('example and experiment syntax triggers', () => {
+  for (const eventName of ['pull_request', 'push']) {
+    for (const packageRoot of ['.', 'js']) {
+      for (const file of [
+        'examples/demo.js',
+        'examples/demo.mjs',
+        'examples/nested/demo.cjs',
+        'experiments/repro.mjs',
+      ]) {
+        itUnless(sandboxed)(
+          `syntax checks ${file} on ${eventName} in ${packageRoot}`,
+          () => {
+            const filePath =
+              packageRoot === '.' ? file : `${packageRoot}/${file}`;
+            const root = createChangeFixture(filePath, eventName, {
+              packageRoot,
+            });
+            try {
+              const { outputs, result } = runDetectCodeChanges(root, eventName);
+              expect(result.status).toBe(0);
+              expect(outputs).toContain('js-changed=true\n');
+              expect(outputs).toContain('docs-changed=false\n');
+              expect(outputs).toContain('any-code-changed=false\n');
+            } finally {
+              rmSync(root, { force: true, recursive: true });
+            }
+          }
+        );
+      }
+    }
+  }
 });

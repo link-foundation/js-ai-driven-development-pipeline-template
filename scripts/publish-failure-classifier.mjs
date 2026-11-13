@@ -12,10 +12,31 @@
  * - link-foundation/js-ai-driven-development-pipeline-template#77
  */
 
-// Failures caused by authentication / registry configuration. Retrying these is
+// Permanent payload, authentication and registry refusals. Retrying these is
 // pointless and only hides the real cause behind a generic
 // "Failed to publish after N attempts" message.
+export const PAYLOAD_TOO_LARGE_PATTERNS = [
+  'e413',
+  'npm error 413',
+  'payload too large',
+];
+
+export function isPayloadTooLargeFailure(output) {
+  return PAYLOAD_TOO_LARGE_PATTERNS.some((pattern) =>
+    String(output || '')
+      .toLowerCase()
+      .includes(pattern)
+  );
+}
+
+export function buildPublishFailureGuidance(packageName, output) {
+  return isPayloadTooLargeFailure(output)
+    ? `npm refused ${JSON.stringify(packageName)} with E413 Payload Too Large. The compressed package tarball grew beyond the registry upload limit; retrying the same bytes cannot help. Run node scripts/check-npm-tarball-size.mjs, inspect its largest files, narrow package.json files, or move platform binaries into version-pinned optionalDependencies.`
+    : buildAuthFailureGuidance(packageName);
+}
+
 export const NON_RETRYABLE_PATTERNS = [
+  ...PAYLOAD_TOO_LARGE_PATTERNS,
   'npm error 404',
   'npm error 401',
   'npm error 403',
@@ -29,8 +50,7 @@ export const NON_RETRYABLE_PATTERNS = [
 ];
 
 /**
- * Determine whether a detected failure is caused by authentication / registry
- * configuration (and therefore should not be retried).
+ * Determine whether a detected failure is permanent and should not be retried.
  * @param {string} output - Combined stdout and stderr (and/or error message)
  * @returns {boolean}
  */
