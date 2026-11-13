@@ -82,7 +82,8 @@ jobs:
         run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Restore link cache
-        uses: actions/cache@v5
+        id: restore-link-cache
+        uses: actions/cache/restore@v5
         with:
           path: .lycheecache
           key: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-${{ github.sha }}
@@ -92,6 +93,8 @@ jobs:
         run: bash scripts/install-lychee.sh
         env:
           LYCHEE_VERSION: v0.24.2
+          LYCHEE_SHA256_X86_64: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
+          LYCHEE_SHA256_AARCH64: 91a7bd65685da41b90ccb9bc867a3d649a7818042dae04ff405e55a25bddee4c
 
       - name: Check links with lychee
         id: lychee
@@ -127,6 +130,13 @@ jobs:
           fi
           # Exit 2 with a report is left to the existing re-check/archive
           # diagnostics and final failure step, just as with fail: false.
+
+      - name: Save main link cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.restore-link-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .lycheecache
+          key: ${{ steps.restore-link-cache.outputs.cache-primary-key }}
 
       - name: Re-check transient link failures
         # Retry transport errors, 429, and 5xx within a shared budget.

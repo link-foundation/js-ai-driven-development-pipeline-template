@@ -19,13 +19,18 @@
  */
 
 import { appendFileSync } from 'fs';
+import {
+  checkNpmTarballSize,
+  reportNpmTarballSizeError,
+} from './check-npm-tarball-size.mjs';
 
 import { getJsRoot, needsCd, parseJsRootConfig } from './js-paths.mjs';
 import { isPackageVersionPublished } from './npm-registry.mjs';
 import { readPackageInfo } from './package-info.mjs';
 import { prepareReleasePublication } from './release-publication.mjs';
 import {
-  buildAuthFailureGuidance,
+  buildPublishFailureGuidance,
+  isPayloadTooLargeFailure,
   isNonRetryableFailure,
 } from './publish-failure-classifier.mjs';
 import {
@@ -78,6 +83,9 @@ const originalCwd = process.cwd();
 // Patterns that indicate publish failure in changeset output
 // Guards against false positives in CI/CD output parsing.
 const FAILURE_PATTERNS = [
+  'e413',
+  'npm error 413',
+  'payload too large',
   'packages failed to publish',
   'error occurred while publishing',
   'npm error code E',
@@ -210,14 +218,20 @@ async function runPublishCommand(shell, jsRoot, originalCwd) {
     analysisError?.message || '',
     result?.stdout || '',
     result?.stderr || '',
+    error?.stdout || '',
+    error?.stderr || '',
   ].join('\n');
 
   if (analysisError) {
-    // Mark authentication / registry-configuration failures as non-retryable so
+    // Mark permanent payload, authentication and registry failures so
     // the retry loop can fail fast with actionable guidance without burning
     // through MAX_RETRIES.
-    if (!isAlreadyPublishedError(output) && isNonRetryableFailure(output)) {
+    if (
+      isPayloadTooLargeFailure(output) ||
+      (!isAlreadyPublishedError(output) && isNonRetryableFailure(output))
+    ) {
       analysisError.nonRetryable = true;
+      analysisError.publishOutput = output;
     }
     return { success: false, error: analysisError, output };
   }
@@ -260,6 +274,13 @@ async function main() {
       `Version ${currentVersion} not found on npm, proceeding with publish...`
     );
 
+    try {
+      checkNpmTarballSize({ cwd: jsRoot || '.' });
+    } catch (error) {
+      reportNpmTarballSizeError(error);
+      throw error;
+    }
+
     // Publish to npm using OIDC trusted publishing with retry logic
     // Multi-layer failure detection guards against a publish command that
     // reports success without actually publishing.
@@ -284,10 +305,14 @@ async function main() {
     }
 
     console.error(`\u274C Publish failed: ${error.message}`);
-    // Authentication / registry-configuration errors will not be fixed by
-    // retrying, so print actionable guidance for the operator.
+    // Permanent refusals need guidance specific to their cause.
     if (error?.nonRetryable && !error?.verificationFailed) {
-      console.error(buildAuthFailureGuidance(packageName));
+      console.error(
+        buildPublishFailureGuidance(
+          packageName,
+          error.publishOutput || error.message
+        )
+      );
     }
     process.exit(1);
   } catch (error) {

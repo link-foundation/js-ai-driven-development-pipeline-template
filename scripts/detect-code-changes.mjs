@@ -20,7 +20,7 @@
 // (package.json in js/) the js/ prefix is stripped first and files belonging
 // to other languages are ignored, so the lists below match in both layouts.
 //
-// Ignored for every change-gating output:
+// Ignored for code/changeset gating (syntax still checks examples/experiments):
 // - .changeset/ folder (changeset metadata)
 // - docs/case-studies/ folder (research documents)
 // - dev/log/ folder (development logs)
@@ -346,8 +346,10 @@ async function detectChanges() {
     (file) => !ignoredPathPrefixes.some((prefix) => file.startsWith(prefix))
   );
 
-  const jsChanged = relevantChangedFiles.some((file) =>
-    /\.(mjs|cjs|js)$/.test(file)
+  const jsChanged = packageChangedFiles.some(
+    (file) =>
+      !/^(?:docs\/case-studies|dev\/log)\//.test(file) &&
+      /\.(mjs|cjs|js)$/.test(file)
   );
   setOutput('js-changed', jsChanged ? 'true' : 'false');
 

@@ -229,7 +229,7 @@ it runs the same pinned `shellcheck-py==0.11.0.1` package as CI. To check all sh
 files locally, run:
 
 ```sh
-git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --spec shellcheck-py==0.11.0.1 shellcheck
+git ls-files -z '*.sh' '.husky/*' | xargs -0 pipx run --no-path-check --spec shellcheck-py==0.11.0.1 shellcheck
 ```
 
 Release scripts load `command-stream` and `lino-arguments` from installed,
@@ -297,3 +297,45 @@ Read-only jobs cancel superseded checks on both main and PR refs. Writers retain
 the shared repository queue with cancellation disabled. The status gate accepts
 a superseded cancellation only for a job whose tested workflow explicitly allows
 it; a current-head cancellation or a cancelled writer still fails.
+
+### npm package size and platform binaries
+
+The lint job runs `node scripts/check-npm-tarball-size.mjs` on pull requests,
+including changes to `package.json`'s `files` list. Both release paths run the
+same gate inside `publish-to-npm.mjs`, immediately before publishing the prepared
+package. It uses `npm pack --dry-run --json`, including package lifecycle scripts,
+and checks compressed `size` against a conservative 157 MiB (164,626,432 byte)
+project budget. This is not a promised npm registry limit: upload encoding and
+registry configuration can impose a different limit. Failure lists the ten
+largest unpacked file entries to help find what grew. Invalid or empty pack
+reports fail. No tarball is left on disk by the check.
+
+Keep the main package small with a narrow `files` list. Ship large native binaries
+as separate packages for each supported `os`, `cpu` and, when needed, `libc`.
+Reference exact versions through `optionalDependencies`, for example
+`"@your-scope/tool-linux-x64": "1.2.3"`. Each platform package declares its
+supported platform and ships only that binary. The JavaScript launcher selects
+the matching installed package and reports an actionable error when optional
+dependencies were omitted. Validate each platform tarball separately against the
+same budget and test the installed launcher. Avoid bundling all platforms into
+the main tarball; see [npm's package metadata](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)
+and the [Codex packaging example](https://github.com/openai/codex/blob/main/codex-cli/package.json).
+
+E413 and “Payload Too Large” are permanent refusals: publishing stops after one
+attempt and gives size guidance. Authentication refusals keep their separate
+setup guidance; transient failures still use the existing bounded retry policy.
+
+The secrets gate uses Git's tracked-file inventory, including force-added files
+and compressed evidence. It scans gzip content and regular members of `.tar.gz`
+and `.tgz` archives without extracting paths. It also scans tar metadata and
+bounded nested gzip members. Corrupt, unsupported or oversized archives fail
+closed. The inflated budget is 128 MiB per tracked archive, shared by its nested
+members, with at most three nested levels and fewer than 10,000 tar entries.
+Set `CI_SCRIPTS_DEBUG=1` to trace compressed archive paths. Review or split evidence that exceeds
+these bounds rather than skipping the scan.
+
+When updating lychee, update the version and both repository-pinned Linux GNU
+SHA-256 digests in `links.yml`. Cross-check release checksum files against the
+GitHub asset digests before committing; the installer requires agreement among
+the committed pin, downloaded archive and published checksum. The optional
+`LYCHEE_DOWNLOAD_BASE_URL` mirror does not bypass the committed digest.

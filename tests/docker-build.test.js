@@ -38,9 +38,7 @@ describe('pull-request Docker build check', () => {
     expect(dockerBuildJob).toContain('push: false');
     expect(dockerBuildJob).toContain('load: true');
     expect(dockerBuildJob).toContain('cache-from: type=gha,scope=docker-image');
-    expect(dockerBuildJob).toContain(
-      'cache-to: type=gha,mode=max,scope=docker-image'
-    );
+    expect(dockerBuildJob).not.toContain('cache-to:');
     expect(dockerBuildJob).not.toContain('DOCKERHUB_TOKEN');
   });
 

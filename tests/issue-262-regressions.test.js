@@ -17,7 +17,7 @@ describe('issue 262 repository regressions', () => {
   it('runs the pinned secrets scan after Node setup and before installation', () => {
     const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
     const lint = workflow.split('\n  lint:')[1].split('\n  test:')[0];
-    const scan = lint.indexOf('secretlint "**/*"');
+    const scan = lint.indexOf('node scripts/check-secrets.mjs');
     assert.ok(scan > lint.indexOf('uses: actions/setup-node@'));
     assert.ok(scan < lint.indexOf('- name: Install dependencies'));
   });
