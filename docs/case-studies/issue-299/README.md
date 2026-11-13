@@ -61,3 +61,10 @@ Final revision checks and CI evidence are recorded in PR #300. Full runtime,
 platform, CodeQL, Docker and Rust example builds are delegated to existing CI to
 respect the local memory budget. No production publish, deployment or merge is
 part of this change's validation.
+
+The first candidate, `e48623e`, passed all five code/workflow suites, including
+the nine runtime/OS combinations. The link checker alone failed: run
+43334537809, log lines 225 and 245, reported HTTP 404 for the existing
+`.changeset/README.md` link to `docs/common-questions.md`. The upstream contents
+API confirms the replacement is `docs/faq.md`; the final batch updates that link
+and retains the strict live-link assertion.
