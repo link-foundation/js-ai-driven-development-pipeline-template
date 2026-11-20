@@ -294,6 +294,8 @@ SECONDS=0
 warned=false
 
 while command_is_running; do
+  relay_output
+
   if [ "${warned}" = false ] && [ "${SECONDS}" -ge "${warn_seconds}" ]; then
     warned=true
     say "::warning title=${label} is approaching its execution budget::${label} has run for ${SECONDS}s of its ${budget_seconds}s budget."
@@ -303,7 +305,6 @@ while command_is_running; do
     terminate_over_budget
   fi
 
-  relay_output
   sleep "${poll_seconds}"
 done
 

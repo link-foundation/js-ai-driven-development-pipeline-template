@@ -213,7 +213,8 @@ describe('run-with-budget-warning.sh annotation boundaries', () => {
         env
       );
       expect(completed.status).toBe(0);
-      expect(completed.output).toContain('src.js\0\n::warning title=open line');
+      expect(completed.output).toContain('M\0src.js\0');
+      expect(completed.output).toContain('\n::warning title=open line');
       expect(completed.output).toContain('final\nopen line finished in');
 
       const expired = runBudget(
