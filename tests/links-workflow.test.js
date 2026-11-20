@@ -25,7 +25,9 @@ function getStepBlock(stepName) {
 describe('broken link workflow', () => {
   it('installs a pinned release separately from the link check', () => {
     const install = getStepBlock('Install pinned lychee with download retries');
-    expect(install).toContain('run: bash scripts/install-lychee.sh');
+    expect(install).toMatch(
+      /run-with-budget-warning\.sh .* bash scripts\/install-lychee\.sh/
+    );
     expect(install).toContain('LYCHEE_VERSION: v0.24.2');
     expect(workflow).not.toContain('uses: lycheeverse/lychee-action');
     expect(workflow.indexOf(install)).toBeLessThan(

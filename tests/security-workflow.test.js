@@ -127,10 +127,22 @@ describe('security workflow', () => {
     expect(audit).toContain('node-version: 24');
     expect(audit).toContain('working-directory: ${{ matrix.directory }}');
     expect(audit).toContain(
-      'run: node "$GITHUB_WORKSPACE/scripts/npm-audit-report.mjs"'
+      'node "$GITHUB_WORKSPACE/scripts/npm-audit-report.mjs"'
     );
     expect(audit).toContain('AUDIT_DIR: ${{ matrix.directory }}');
     expect(audit).toContain('AUDIT_LEVEL: high');
+  });
+
+  it('uses the audit matrix for live registry checks and rejects deprecations on schedule', () => {
+    const audit = getJobBlock('npm-audit');
+    const live = audit.split('- name: Check live npm deprecations')[1];
+    expect(live).toContain('working-directory: ${{ matrix.directory }}');
+    expect(live).toContain(
+      "DEPRECATED_FAIL: ${{ github.event_name == 'schedule' && 'true' || 'false' }}"
+    );
+    expect(live).toContain(
+      'node "$GITHUB_WORKSPACE/scripts/check-deprecated-packages.mjs" package-lock.json'
+    );
   });
 
   // `--audit-level=high` alone exits 0 on a moderate advisory and

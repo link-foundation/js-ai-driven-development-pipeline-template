@@ -33,7 +33,7 @@ runs:
       shell: bash
       env:
         ACTION_DIRECTORY: ${{ github.action_path }}
-      run: npm ci --prefix "$ACTION_DIRECTORY" --ignore-scripts --no-audit --no-fund
+      run: bash "$GITHUB_WORKSPACE/scripts/run-with-budget-warning.sh" 60 "Artifact SDK install" npm ci --prefix "$ACTION_DIRECTORY" --ignore-scripts --no-audit --no-fund
     # Runner artifact credentials are supplied only to the JavaScript action.
     - name: Transfer artifact
       id: transport

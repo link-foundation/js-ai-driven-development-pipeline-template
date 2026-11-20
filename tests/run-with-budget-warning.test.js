@@ -197,6 +197,43 @@ describe('run-with-budget-warning.sh', () => {
   );
 });
 
+describe('run-with-budget-warning.sh annotation boundaries', () => {
+  itUnless(sandboxed, noPosixShell)(
+    'starts warning, timeout and completion lines after unterminated output',
+    () => {
+      const env = { BUDGET_WARN_PERCENT: '25', BUDGET_POLL_SECONDS: '0.05' };
+      const completed = runBudget(
+        [
+          '4',
+          'open line',
+          'bash',
+          '-c',
+          "printf 'M\\0src.js\\0'; sleep 2; printf 'final'",
+        ],
+        env
+      );
+      expect(completed.status).toBe(0);
+      expect(completed.output).toContain('M\0src.js\0');
+      expect(completed.output).toContain('\n::warning title=open line');
+      expect(completed.output).toContain('final\nopen line finished in');
+
+      const expired = runBudget(
+        [
+          '1',
+          'timeout line',
+          'bash',
+          '-c',
+          "printf 'stderr without newline' >&2; sleep 5",
+        ],
+        { ...env, BUDGET_WARN_PERCENT: '100', BUDGET_GRACE_SECONDS: '1' }
+      );
+      expect(expired.status).toBe(124);
+      expect(expired.output).toContain('\n::error title=timeout line');
+      expect(expired.output).toContain('stderr without newline\n');
+    }
+  );
+});
+
 describe('run-with-budget-warning.sh argument validation', () => {
   itUnless(sandboxed, noPosixShell)(
     'rejects a missing or non-numeric budget',

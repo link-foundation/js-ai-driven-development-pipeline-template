@@ -84,7 +84,8 @@ job's backstop fires.
   runners it can use passwordless `sudo` to reach privileged descendants and
   reports any process it still could not terminate.
 - Captures and relays stdout and stderr separately, so a surviving descendant
-  cannot inherit the CI step's pipe and hold the step open.
+  cannot inherit the CI step's pipe and hold the step open. The wrapper
+  closes an unterminated line before printing an annotation or status.
 - Keeps wrapper-owned state under `RUNNER_TEMP`, independently of a wrapped
   command that clears its own `TMPDIR`.
 - Exits **124** on termination, matching `timeout(1)`. Otherwise it passes the
@@ -101,13 +102,17 @@ back to signalling the direct child.
 
 ## The invariant
 
-`tests/ci-timeouts.test.js` asserts, for every job that declares budgets, that
+`tests/ci-timeouts.test.js` reads every workflow and local action manifest.
+Run steps that install from the network must use the wrapper, including those
+inside composite actions. A quoted wrapper path is valid, which lets steps
+resolve it from a different working directory.
 
-- each individual budget is at most **70%** (`MAX_BUDGET_SHARE_PERCENT`) of the
-  job's `timeout-minutes`, and
-- the budgets in a job sum to at most 70% of that cap, leaving headroom for the
-  unbudgeted setup — checkout, `npm ci`, the Bun install — that runs on the same
-  job clock.
+Each job's declared budgets must total at most **70%**
+(`MAX_BUDGET_SHARE_PERCENT`) of its `timeout-minutes`. Each call to a local
+composite action charges its nested budgets to the caller. Explicitly
+different values of the same matrix axis are mutually exclusive. Other
+conditions are counted together when they may overlap. This leaves headroom
+for checkout, action setup, and other steps on the same job clock.
 
 This invariant is what finds the _next_ occurrence rather than the one that
 already failed. In the reference incident the same sweep immediately surfaced a
@@ -116,14 +121,13 @@ neither of which was involved in the original failure.
 
 ## Current budgets
 
-| Job                     | Backstop | Step budgets                                     |
-| ----------------------- | -------- | ------------------------------------------------ |
-| `test`                  | 15 min   | Node.js 300s, Bun 200s, Deno 100s                |
-| `docker-build`          | 30 min   | image build 20 min                               |
-| `docker-publish-config` | 45 min   | npm availability wait 1800s                      |
-| `docker-publish-build`  | 30 min   | image build and push 20 min                      |
-| `release`               | 65 min   | install 240s, npm publish 1800s, smoke test 600s |
-| `instant-release`       | 65 min   | npm publish 1800s, smoke test 600s               |
+| Release workflow job         | Backstop    | Step budgets                                                                                                                 |
+| ---------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `test`                       | 15 min      | Shared project install 210s and artifact SDK install 100s. Node.js 300s, Bun 200s, or Deno preparation 180s plus suite 100s. |
+| `docker-build`               | 30 min      | Image build 20 min.                                                                                                          |
+| `docker-publish-config`      | 45 min      | npm availability wait 1800s.                                                                                                 |
+| `docker-publish-build`       | 30 min      | Image build and push 20 min, artifact SDK install 60s.                                                                       |
+| `release`, `instant-release` | 65 min each | Install 240s, npm setup 80s, npm publish 1800s, smoke test 600s.                                                             |
 
 ## Reference
 

@@ -15,6 +15,7 @@ on:
       - 'scripts/check-web-archive.mjs'
       - 'scripts/lychee-report.mjs'
       - 'scripts/install-lychee.sh'
+      - 'scripts/run-with-budget-warning.sh'
       - 'tests/lychee-install.test.js'
       - 'tests/lychee-step.test.js'
       - 'scripts/recheck-broken-links.mjs'
@@ -34,6 +35,7 @@ on:
       - 'scripts/check-web-archive.mjs'
       - 'scripts/lychee-report.mjs'
       - 'scripts/install-lychee.sh'
+      - 'scripts/run-with-budget-warning.sh'
       - 'tests/lychee-install.test.js'
       - 'tests/lychee-step.test.js'
       - 'scripts/recheck-broken-links.mjs'
@@ -90,7 +92,7 @@ jobs:
           restore-keys: cache-lychee-${{ runner.os }}-${{ steps.link-cache.outputs.day }}-
 
       - name: Install pinned lychee with download retries
-        run: bash scripts/install-lychee.sh
+        run: bash scripts/run-with-budget-warning.sh 180 "Lychee install" bash scripts/install-lychee.sh
         env:
           LYCHEE_VERSION: v0.24.2
           LYCHEE_SHA256_X86_64: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a

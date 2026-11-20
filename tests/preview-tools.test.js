@@ -31,12 +31,15 @@ describe('preview container environment', () => {
     expect(workflow.jobs['pipeline-status'].needs).toContain('preview-tools');
     for (const job of [tools, writer]) {
       const commands = job.steps.map((step) => step.run);
-      expect(
-        commands.indexOf('bash scripts/setup-preview-gh.sh')
-      ).toBeGreaterThan(-1);
+      const install = commands.findIndex((run) =>
+        /^bash scripts\/run-with-budget-warning\.sh \d+ "[^"]+" bash scripts\/setup-preview-gh\.sh$/.test(
+          run ?? ''
+        )
+      );
+      expect(install).toBeGreaterThan(-1);
       expect(
         commands.indexOf('bash scripts/check-preview-tools.sh')
-      ).toBeGreaterThan(commands.indexOf('bash scripts/setup-preview-gh.sh'));
+      ).toBeGreaterThan(install);
     }
     expect(
       tools.steps.some((step) =>

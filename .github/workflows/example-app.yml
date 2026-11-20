@@ -10,6 +10,7 @@ on:
       - 'package-lock.json'
       - 'scripts/update-preview-images.mjs'
       - 'scripts/setup-preview-gh.sh'
+      - 'scripts/run-with-budget-warning.sh'
       - 'scripts/check-preview-tools.sh'
       - 'scripts/push-main-with-rebase-retry.mjs'
       - 'scripts/push-failure-classifier.mjs'
@@ -35,6 +36,7 @@ on:
       - 'package-lock.json'
       - 'scripts/update-preview-images.mjs'
       - 'scripts/setup-preview-gh.sh'
+      - 'scripts/run-with-budget-warning.sh'
       - 'scripts/check-preview-tools.sh'
       - 'scripts/push-main-with-rebase-retry.mjs'
       - 'scripts/push-failure-classifier.mjs'
@@ -105,7 +107,7 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: Install app dependencies
-        run: npm ci --prefix examples/universal-app --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 240 "Example app dependency install" npm ci --prefix examples/universal-app --no-audit --no-fund
 
       - name: Build app
         run: npm run example:web:build
@@ -196,7 +198,7 @@ jobs:
           cache-dependency-path: examples/universal-app/package-lock.json
 
       - name: Install app dependencies
-        run: npm ci --prefix examples/universal-app --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 240 "Example app dependency install" npm ci --prefix examples/universal-app --no-audit --no-fund
 
       - name: Verify desktop compatibility APIs
         run: node --pending-deprecation --throw-deprecation scripts/check-desktop-compat.mjs
@@ -256,7 +258,7 @@ jobs:
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
 
       - name: Install app dependencies
-        run: npm ci --prefix examples/universal-app --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 240 "Example app dependency install" npm ci --prefix examples/universal-app --no-audit --no-fund
 
       - name: Add Android project
         run: npm --prefix examples/universal-app run mobile:android:add
@@ -294,7 +296,7 @@ jobs:
           cache-dependency-path: examples/universal-app/package-lock.json
 
       - name: Install app dependencies
-        run: npm ci --prefix examples/universal-app --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 240 "Example app dependency install" npm ci --prefix examples/universal-app --no-audit --no-fund
 
       - name: Add iOS project
         run: npm --prefix examples/universal-app run mobile:ios:add
@@ -326,7 +328,7 @@ jobs:
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install pinned GitHub CLI
-        run: bash scripts/setup-preview-gh.sh
+        run: bash scripts/run-with-budget-warning.sh 120 "Pinned GitHub CLI setup" bash scripts/setup-preview-gh.sh
       - name: Check preview container tools
         run: bash scripts/check-preview-tools.sh
 
@@ -372,20 +374,20 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install pinned GitHub CLI
-        run: bash scripts/setup-preview-gh.sh
+        run: bash scripts/run-with-budget-warning.sh 120 "Pinned GitHub CLI setup" bash scripts/setup-preview-gh.sh
 
       - name: Check preview container tools
         run: bash scripts/check-preview-tools.sh
 
       - name: Install example app dependencies
-        run: npm ci --prefix examples/universal-app --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 240 "Example app dependency install" npm ci --prefix examples/universal-app --no-audit --no-fund
 
       # Deliberately installed outside the lockfile: these tools are only used
       # by this preview-image job and both versions are pinned exactly.
       - name: Install browser automation dependencies
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-        run: npm install --no-save --package-lock=false --no-audit --no-fund browser-commander@0.8.1 playwright@1.59.1 # zizmor: ignore[adhoc-packages]
+        run: bash scripts/run-with-budget-warning.sh 150 "Browser automation dependency install" npm install --no-save --package-lock=false --no-audit --no-fund browser-commander@0.8.1 playwright@1.59.1 # zizmor: ignore[adhoc-packages]
 
       - name: Regenerate preview images
         id: regenerate
