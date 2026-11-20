@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'test-anywhere';
 import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+import {
+  getConcurrentBudgetSeconds,
+  getJobBudgets,
+  readActions,
+  readWorkflows,
+} from './helpers/ci-workflow-budgets.js';
 import { waitForVersionOnRegistry } from '../scripts/publish-retry.mjs';
 import { parseArgs as parseWaitArgs } from '../scripts/wait-for-npm.mjs';
 
@@ -16,35 +23,11 @@ function normalizeNewlines(text) {
 }
 
 function listWorkflowJobs(workflow) {
-  const normalizedWorkflow = normalizeNewlines(workflow);
-  const jobsStart = normalizedWorkflow.indexOf('\njobs:\n');
-  const jobsBody = jobsStart === -1 ? '' : normalizedWorkflow.slice(jobsStart);
-  const matches = jobsBody.matchAll(/^[ ]{2}([a-zA-Z0-9_-]+):\s*$/gm);
-
-  return Array.from(matches, (match) => match[1]);
-}
-
-function getJobBlock(workflow, jobName) {
-  const lines = normalizeNewlines(workflow).split('\n');
-  const jobHeader = `  ${jobName}:`;
-  const start = lines.findIndex((line) => line === jobHeader);
-
-  if (start === -1) {
-    return '';
-  }
-
-  const end = lines.findIndex(
-    (line, index) => index > start && /^[ ]{2}[a-zA-Z0-9_-]+:\s*$/.test(line)
-  );
-
-  return lines.slice(start, end === -1 ? lines.length : end).join('\n');
+  return Object.keys(parse(workflow).jobs);
 }
 
 function getTimeoutMinutes(workflow, jobName) {
-  const block = getJobBlock(workflow, jobName);
-  const timeout = block.match(/^[ ]{4}timeout-minutes:\s*(\d+)\s*$/m);
-
-  return timeout ? Number(timeout[1]) : undefined;
+  return parse(workflow).jobs[jobName]?.['timeout-minutes'];
 }
 
 function getStepBlock(workflow, stepName) {
@@ -64,207 +47,14 @@ function getStepBlock(workflow, stepName) {
   return lines.slice(start, end === -1 ? lines.length : end).join('\n');
 }
 
-// A step declares its deadline either by wrapping a command in
-// run-with-budget-warning.sh or, for `uses:` steps that cannot be wrapped,
-// with a step-level timeout-minutes. Every budget keeps the `if:` condition
-// of the step it belongs to: mutually exclusive conditions (a matrix leg,
-// say) never share a job clock, so summing them as a sequence would
-// manufacture violations no job can incur.
-function splitStepBlocks(jobBlock) {
-  const lines = jobBlock.split('\n');
-  const steps = [];
-  let current = null;
-
-  for (const line of lines) {
-    if (/^ {6}- /.test(line)) {
-      if (current) {
-        steps.push(current.join('\n'));
-      }
-      current = [line];
-    } else if (current && /^ {8}/.test(line)) {
-      current.push(line);
-    } else if (current && line.trim() === '') {
-      current.push(line);
-    } else if (current) {
-      steps.push(current.join('\n'));
-      current = null;
-    }
-  }
-
-  if (current) {
-    steps.push(current.join('\n'));
-  }
-
-  return steps;
-}
-
-function getStepCondition(stepBlock) {
-  const lines = stepBlock.split('\n');
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const inline = lines[index].match(/^ {8}if:\s*(.+)$/);
-
-    if (!inline) {
-      continue;
-    }
-
-    const value = inline[1].trim();
-
-    if (['|', '>', '|-', '>-', '|+', '+'].includes(value)) {
-      const continuation = [];
-
-      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-        const line = lines[cursor];
-
-        if (line.trim() === '') {
-          continue;
-        }
-        if (!/^ {10}/.test(line)) {
-          break;
-        }
-
-        continuation.push(line.trim());
-      }
-
-      return continuation.join(' ');
-    }
-
-    return value;
-  }
-
-  return '';
-}
-
-function parseEnvBlock(lines, envHeaderRegex, keyRegex) {
-  const env = {};
-  let inside = false;
-
-  for (const line of lines) {
-    if (!inside) {
-      inside = envHeaderRegex.test(line);
-      continue;
-    }
-    if (line.trim() === '') {
-      continue;
-    }
-
-    const key = line.match(keyRegex);
-
-    if (!key) {
-      break;
-    }
-
-    env[key[1]] = key[2].trim().replace(/^['"]|['"]$/g, '');
-  }
-
-  return env;
-}
-
-function getStepEnv(stepBlock) {
-  return parseEnvBlock(
-    stepBlock.split('\n').slice(1),
-    /^ {8}env:\s*$/,
-    /^ {10}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/
-  );
-}
-
-function getJobEnv(jobBlock) {
-  const lines = jobBlock.split('\n');
-  const stepsIndex = lines.findIndex((line) => line.trim() === 'steps:');
-
-  return parseEnvBlock(
-    stepsIndex === -1 ? lines : lines.slice(0, stepsIndex),
-    /^ {4}env:\s*$/,
-    /^ {6}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/
-  );
-}
-
-function getWorkflowEnv(workflow) {
-  const lines = normalizeNewlines(workflow).split('\n');
-  const jobsIndex = lines.findIndex((line) => line === 'jobs:');
-
-  return parseEnvBlock(
-    jobsIndex === -1 ? lines : lines.slice(0, jobsIndex),
-    /^env:\s*$/,
-    /^ {2}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/
-  );
-}
-
-function getStepBudgetSeconds(workflow, jobName) {
-  const block = getJobBlock(workflow, jobName);
-  const jobEnv = getJobEnv(block);
-  const workflowEnv = getWorkflowEnv(workflow);
-  const budgets = [];
-
-  for (const stepBlock of splitStepBlocks(block)) {
-    const condition = getStepCondition(stepBlock);
-    const stepEnv = getStepEnv(stepBlock);
-
-    for (const match of stepBlock.matchAll(
-      /run-with-budget-warning\.sh\s+(\S+)\s+"([^"]+)"/g
-    )) {
-      const raw = match[1];
-      let seconds;
-      let source;
-
-      if (/^\d+$/.test(raw)) {
-        seconds = Number(raw);
-      } else {
-        const variableName = raw.replace(/^["']|["']$/g, '').replace(/^\$/, '');
-        const resolved =
-          stepEnv[variableName] ??
-          jobEnv[variableName] ??
-          workflowEnv[variableName];
-
-        if (resolved !== undefined && /^\d+$/.test(resolved)) {
-          seconds = Number(resolved);
-        } else {
-          seconds = NaN;
-          source = `"${variableName}" does not resolve to an integer in the step, job, or workflow env`;
-        }
-      }
-
-      budgets.push({ label: match[2], seconds, condition, source });
-    }
-
-    const stepTimeout = stepBlock.match(/^ {8}timeout-minutes:\s*(\d+)\s*$/m);
-
-    if (stepTimeout) {
-      budgets.push({
-        label: 'step timeout-minutes',
-        seconds: Number(stepTimeout[1]) * 60,
-        condition,
-      });
-    }
-  }
-
-  return budgets;
-}
-
-// The largest a job can spend is every unconditional budget plus the largest
-// single conditional group. Grouping by the condition text is deliberately
-// conservative: steps guarded by literally the same expression are summed,
-// and steps guarded by distinct expressions are treated as alternatives even
-// when the expressions could both be true -- deciding that would need
-// expression evaluation, and the per-budget check below still bounds each
-// step individually.
-function getConcurrentBudgetSeconds(budgets) {
-  const groups = new Map();
-
-  for (const budget of budgets) {
-    groups.set(
-      budget.condition,
-      (groups.get(budget.condition) ?? 0) + budget.seconds
-    );
-  }
-
-  const unconditional = groups.get('') ?? 0;
-  const conditional = Array.from(groups.entries())
-    .filter(([condition]) => condition !== '')
-    .map(([, seconds]) => seconds);
-
-  return (
-    unconditional + (conditional.length > 0 ? Math.max(...conditional) : 0)
+function getStepBudgetSeconds(source, jobName) {
+  const workflow = parse(source);
+  return getJobBudgets(
+    workflow,
+    workflow.jobs[jobName],
+    readActions(),
+    [],
+    jobName
   );
 }
 
@@ -373,63 +163,64 @@ describe('CI execution budgets', () => {
     }
   });
 
-  it('keeps every declared step budget under the job backstop', () => {
-    const jobsWithBudgets = listWorkflowJobs(releaseWorkflow)
-      .map((jobName) => ({
-        jobName,
-        budgets: getStepBudgetSeconds(releaseWorkflow, jobName),
-        backstop: getTimeoutMinutes(releaseWorkflow, jobName),
-      }))
-      .filter((job) => job.budgets.length > 0);
-
-    expect(jobsWithBudgets.map((job) => job.jobName).sort()).toEqual([
-      'docker-build',
-      'docker-publish-build',
-      'docker-publish-config',
-      'instant-release',
-      'release',
-      'test',
-    ]);
-
+  it('keeps every declared step budget under its caller job backstop', () => {
+    const actions = readActions();
+    const unbudgeted = [];
     const violations = [];
-
-    for (const { jobName, budgets, backstop } of jobsWithBudgets) {
-      expect(typeof backstop).toBe('number');
-
-      const allowedSeconds = Math.floor(
-        (backstop * 60 * MAX_BUDGET_SHARE_PERCENT) / 100
-      );
-
-      for (const budget of budgets) {
-        // A budget the parser cannot read is itself a violation: silently
-        // skipping it would convert every future syntax change into a gap
-        // nobody sees.
-        if (!Number.isFinite(budget.seconds)) {
+    for (const [file, workflow] of readWorkflows()) {
+      for (const [jobName, job] of Object.entries(workflow.jobs)) {
+        const location = `${file}:${jobName}`;
+        const budgets = getJobBudgets(
+          workflow,
+          job,
+          actions,
+          unbudgeted,
+          location
+        );
+        if (!budgets.length) {
+          continue;
+        }
+        const backstop = job['timeout-minutes'];
+        if (!Number.isFinite(backstop) || backstop <= 0) {
           violations.push(
-            `${jobName}: "${budget.label}" declares a budget this check cannot read (${budget.source}); the step is not covered by the invariant`
+            `${location} requires a positive job timeout-minutes`
           );
           continue;
         }
-
-        if (budget.seconds > allowedSeconds) {
+        const allowedSeconds = Math.floor(
+          (backstop * 60 * MAX_BUDGET_SHARE_PERCENT) / 100
+        );
+        const invalid = budgets.filter(
+          ({ seconds }) => !Number.isSafeInteger(seconds) || seconds <= 0
+        );
+        for (const { label, source } of invalid) {
           violations.push(
-            `${jobName}: "${budget.label}" budget ${budget.seconds}s exceeds ${allowedSeconds}s (${MAX_BUDGET_SHARE_PERCENT}% of the ${backstop}min backstop)`
+            `${location}: "${label}" has an invalid budget (${source})`
+          );
+        }
+        const totalSeconds = getConcurrentBudgetSeconds(
+          budgets.filter((budget) => !invalid.includes(budget))
+        );
+        if (totalSeconds > allowedSeconds) {
+          violations.push(
+            `${location}: budgets total ${totalSeconds}s, exceeding ${allowedSeconds}s (${MAX_BUDGET_SHARE_PERCENT}% of the ${backstop}min backstop)`
           );
         }
       }
-
-      const totalSeconds = getConcurrentBudgetSeconds(
-        budgets.filter((budget) => Number.isFinite(budget.seconds))
-      );
-
-      if (totalSeconds > allowedSeconds) {
-        violations.push(
-          `${jobName}: budgets total ${totalSeconds}s, exceeding ${allowedSeconds}s (${MAX_BUDGET_SHARE_PERCENT}% of the ${backstop}min backstop)`
-        );
-      }
     }
 
-    expect(violations).toEqual([]);
+    // Check definitions even if no checked-in workflow uses them yet.
+    for (const [action, manifest] of actions) {
+      getJobBudgets(
+        {},
+        { steps: manifest.runs?.steps },
+        actions,
+        unbudgeted,
+        action
+      );
+    }
+
+    expect([...violations, ...new Set(unbudgeted)]).toEqual([]);
   });
 
   it('warns at the same share of the budget that the invariant allows', () => {
@@ -573,6 +364,104 @@ describe('step budget grouping', () => {
 
     expect(budgets[0].seconds).toBe(900);
     expect(Number.isFinite(budgets[1].seconds)).toBe(false);
-    expect(budgets[1].source).toContain('"NOWHERE_BUDGET"');
+    expect(budgets[1].source).toContain('"$NOWHERE_BUDGET"');
+  });
+});
+
+describe('budget coverage across workflow and composite steps', () => {
+  it('charges nested actions at each call and preserves inherited conditions', () => {
+    const actions = new Map([
+      [
+        '.github/actions/outer',
+        {
+          runs: {
+            steps: [{ uses: './.github/actions/inner', if: 'success()' }],
+          },
+        },
+      ],
+      [
+        '.github/actions/inner',
+        {
+          runs: {
+            steps: [
+              {
+                name: 'Install',
+                run: 'bash "$GITHUB_WORKSPACE/scripts/run-with-budget-warning.sh" "$INSTALL_BUDGET" "Install SDK" npm ci',
+              },
+              { uses: 'example/action@v1', 'timeout-minutes': 1 },
+            ],
+          },
+        },
+      ],
+    ]);
+    const call = {
+      uses: './.github/actions/outer',
+      if: "matrix.runtime == 'node'",
+    };
+    const job = {
+      steps: [
+        { ...call, env: { INSTALL_BUDGET: 30 } },
+        call,
+        {
+          if: "matrix.runtime == 'bun'",
+          run: 'bash scripts/run-with-budget-warning.sh 100 "Bun tests" bun test',
+        },
+      ],
+    };
+    const findings = [];
+    const budgets = getJobBudgets(
+      { env: { INSTALL_BUDGET: 60 } },
+      job,
+      actions,
+      findings,
+      'fixture.yml:test'
+    );
+    expect(findings).toEqual([]);
+    expect(budgets.map(({ seconds }) => seconds)).toEqual([
+      30, 60, 60, 60, 100,
+    ]);
+    expect(budgets[0].conditions).toEqual([
+      "matrix.runtime == 'node'",
+      'success()',
+    ]);
+    expect(getConcurrentBudgetSeconds(budgets)).toBe(210);
+  });
+
+  it('finds an unwrapped install even beside a wrapped command', () => {
+    const job = {
+      steps: [
+        {
+          name: 'Install',
+          run: 'bash "scripts/run-with-budget-warning.sh" \\\n  30 "First install" npm ci; npm ci',
+        },
+        {
+          name: 'Offline',
+          run: 'pip install --no-index sample\nnpm exec --offline -- prettier\n# npm install sample',
+        },
+        { name: 'Python', run: '"$RUNNER_TEMP/venv/bin/pip" install sample' },
+      ],
+    };
+    const findings = [];
+    const [wrapped] = getJobBudgets(
+      {},
+      job,
+      new Map(),
+      findings,
+      'fixture.yml:test'
+    );
+    expect(wrapped.seconds).toBe(30);
+    expect(findings).toEqual([
+      'fixture.yml:test: "Install" runs npm ci',
+      'fixture.yml:test: "Python" runs $RUNNER_TEMP/venv/bin/pip install sample',
+    ]);
+  });
+
+  it('adds budgets with conditions that may be true at the same time', () => {
+    expect(
+      getConcurrentBudgetSeconds([
+        { seconds: 300, conditions: ['success()'] },
+        { seconds: 300, conditions: ['!cancelled()'] },
+      ])
+    ).toBe(600);
   });
 });

@@ -236,8 +236,8 @@ Release scripts load `command-stream` and `lino-arguments` from installed,
 lockfile-pinned development dependencies. Run `npm ci` before invoking them;
 they do not download or install helpers at runtime. Keep both `package-lock.json`
 and `deno.lock` synchronized when updating these dependencies. CI runs its pinned
-secrets scan after Node setup and before installing project dependencies, so the
-scanner and its preset resolve from the same npm execution tree.
+secrets scan after Node setup and before installing project dependencies. The
+pinned Secretlint CLI resolves the recommended preset from its built-in rules.
 
 Shell scripts and Git hooks use LF on every platform through `.gitattributes`.
 The prepare script calls Husky's installed API and verifies `core.hooksPath`.
@@ -254,6 +254,12 @@ otherwise block every contributor. The weekly scheduled run also fails on a
 moderate advisory that `npm audit fix` resolves without `--force`. Fix it with
 `npm update <package>` or an `overrides` entry. When only a breaking upgrade
 would remove an advisory, the run stays green and keeps reporting it.
+
+The same audit matrix looks up each locked package version in the npm registry,
+including optional and development dependencies. Live deprecations produce
+annotations on pull requests and fail the weekly run. Registry lookup failures
+fail every run. Use `DEPRECATED_FAIL=true node scripts/check-deprecated-packages.mjs`
+locally to apply the scheduled policy to the current directory's lock.
 
 ### Dependency install scripts and syntax coverage
 

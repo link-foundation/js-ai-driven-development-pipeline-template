@@ -3,7 +3,7 @@
 /**
  * Lint entry point used by `npm run lint`.
  *
- * All files are linted for errors. Warnings are reported only on lines that
+ * All files are linted for errors. Warnings are reported only in files that
  * the current branch changes relative to its base, keeping each run focused on
  * actionable findings. Every reported error or warning fails the run. Set
  * LINT_ALL_WARNINGS=1 to report every warning, as pushes to main do.
@@ -12,10 +12,10 @@
 import { execFileSync } from 'node:child_process';
 import { ESLint } from 'eslint';
 import {
-  parseChangedLines,
-  filterWarningsToChangedLines,
+  changesLintConfig,
+  filterWarningsToChangedFiles,
   lintExitCode,
-} from './lint-changed-lines.mjs';
+} from './lint-changed-files.mjs';
 
 function git(args) {
   return execFileSync('git', args, {
@@ -42,41 +42,64 @@ function resolveBaseRef() {
   return null;
 }
 
-function collectChangedLines() {
+function collectChangedFiles() {
   const base = resolveBaseRef();
-
   if (!base) {
     return null;
   }
 
   try {
     const mergeBase = git(['merge-base', 'HEAD', base]).trim();
-    const committed = git(['diff', '-U0', mergeBase, '--']);
-    const working = git(['diff', '-U0', 'HEAD', '--']);
-    const untracked = git(['ls-files', '--others', '--exclude-standard'])
-      .split('\n')
-      .filter(Boolean);
-
-    const changed = parseChangedLines(`${committed}\n${working}`);
-
-    for (const file of untracked) {
-      changed.set(file, true);
+    // Include both sides of renames so moving or deleting a local lint rule
+    // still triggers a repository-wide check.
+    const diff = ['diff', '--name-only', '--no-renames', '-z'];
+    const changed = new Set(
+      [
+        git([...diff, mergeBase, 'HEAD', '--']),
+        git([...diff, 'HEAD', '--']),
+        git(['ls-files', '--others', '--exclude-standard', '-z']),
+      ].flatMap((paths) => paths.split('\0').filter(Boolean))
+    );
+    if (process.env.LINT_VERBOSE === '1') {
+      console.log(
+        `ESLint base ${base} (${mergeBase}): ${JSON.stringify([...changed])}`
+      );
     }
-
-    return changed;
-  } catch {
+    return { base, changed };
+  } catch (error) {
+    if (process.env.LINT_VERBOSE === '1') {
+      console.error(error.message);
+    }
     return null;
   }
+}
+
+function warningScope() {
+  if (process.env.LINT_ALL_WARNINGS === '1') {
+    return null;
+  }
+
+  const scope = collectChangedFiles();
+  if (!scope || changesLintConfig(scope.changed)) {
+    return null;
+  }
+
+  console.log(
+    `Reporting warnings in ${scope.changed.size} file(s) changed since ${scope.base}.`
+  );
+  return scope.changed;
 }
 
 async function main() {
   const eslint = new ESLint();
   const results = await eslint.lintFiles(['.']);
-  const changedLines =
-    process.env.LINT_ALL_WARNINGS === '1' ? null : collectChangedLines();
+  const changedFiles = warningScope();
+  if (!changedFiles) {
+    console.log('Reporting warnings in all files.');
+  }
 
-  const reported = changedLines
-    ? filterWarningsToChangedLines(results, changedLines, process.cwd())
+  const reported = changedFiles
+    ? filterWarningsToChangedFiles(results, changedFiles, process.cwd())
     : results;
 
   const formatter = await eslint.loadFormatter('stylish');
@@ -92,7 +115,7 @@ async function main() {
 
   if (hiddenWarnings > 0) {
     console.log(
-      `${hiddenWarnings} warning(s) on unchanged lines were not reported. Run LINT_ALL_WARNINGS=1 npm run lint to see them.`
+      `${hiddenWarnings} warning(s) in unchanged files were not reported. Run LINT_ALL_WARNINGS=1 npm run lint to see them.`
     );
   }
 

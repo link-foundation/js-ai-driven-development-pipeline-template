@@ -74,10 +74,11 @@ describe('issue 299 workflow regressions', () => {
       )
     );
   });
-  it('runs secrets with pinned packages and checks tarball size on PRs', () => {
+  it('runs the pinned Secretlint CLI and checks tarball size on PRs', () => {
     const steps = workflow('release').jobs.lint.steps;
     const scan = steps.find((step) => step.name === 'Check for secrets');
-    assert.match(scan.run, /secretlint@13\.0\.7/);
+    assert.match(scan.run, /secretlint@14\.0\.0/);
+    assert.doesNotMatch(scan.run, /secretlint-rule-preset-recommend@/);
     assert.match(scan.run, /node scripts\/check-secrets.mjs/);
     const gate = steps.find(
       (step) => step.run === 'node scripts/check-npm-tarball-size.mjs'

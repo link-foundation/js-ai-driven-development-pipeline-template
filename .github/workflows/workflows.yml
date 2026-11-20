@@ -86,7 +86,7 @@ jobs:
       - name: Check standalone shell scripts and hooks
         run: |
           python3 -m venv "$RUNNER_TEMP/shellcheck-venv"
-          "$RUNNER_TEMP/shellcheck-venv/bin/pip" install --quiet --disable-pip-version-check shellcheck-py==0.11.0.1
+          bash scripts/run-with-budget-warning.sh 120 "ShellCheck install" "$RUNNER_TEMP/shellcheck-venv/bin/pip" install --quiet --disable-pip-version-check shellcheck-py==0.11.0.1
           git ls-files -z '*.sh' '.husky/*' | xargs -0 "$RUNNER_TEMP/shellcheck-venv/bin/shellcheck"
 
   # The terminal status job of release.yml keys branch protection; its
@@ -164,11 +164,10 @@ jobs:
       # importing the noise. Measured: after the digest pins below it reports
       # nothing, and stays silent until someone reintroduces a mutable image.
       - name: Audit for pedantic-only high-severity findings
-        timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pipx run zizmor==1.30.1 --config .github/zizmor.yml \
+          bash scripts/run-with-budget-warning.sh 360 "Pedantic zizmor audit" pipx run zizmor==1.30.1 --config .github/zizmor.yml \
             --persona pedantic --min-severity high --min-confidence high \
             .
 
@@ -189,7 +188,7 @@ jobs:
           node-version: '24.x'
 
       - name: Install pinned artifact dependencies
-        run: npm ci --prefix .github/actions/artifact-transport --ignore-scripts --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 100 "Artifact SDK fixture install" npm ci --prefix .github/actions/artifact-transport --ignore-scripts --no-audit --no-fund
 
       - name: Exercise actual SDK archive dependencies
         run: node --pending-deprecation --throw-deprecation scripts/check-artifact-archive.mjs

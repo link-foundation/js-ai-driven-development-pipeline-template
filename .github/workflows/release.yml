@@ -196,7 +196,7 @@ jobs:
           node-version: '24.x'
 
       - name: Install dependencies
-        run: npm ci
+        run: bash scripts/run-with-budget-warning.sh 210 "Project dependency install" npm ci
 
       - name: Check for changesets
         env:
@@ -254,10 +254,10 @@ jobs:
           node-version: '24.x'
 
       - name: Check for secrets
-        run: npx --yes -p secretlint@13.0.7 -p @secretlint/secretlint-rule-preset-recommend@13.0.7 node scripts/check-secrets.mjs
+        run: bash scripts/run-with-budget-warning.sh 150 "Secretlint scan" npx --yes -p secretlint@14.0.0 node scripts/check-secrets.mjs
 
       - name: Install dependencies
-        run: npm ci
+        run: bash scripts/run-with-budget-warning.sh 210 "Project dependency install" npm ci
 
       # Exercise versioning without credentials, even if release-preflight fails.
       # Restore consumed changesets and metadata on success or failure so lint
@@ -357,10 +357,10 @@ jobs:
           node-version: '24.x'
 
       - name: Install dependencies (runtime tests and native fixtures)
-        run: npm ci
+        run: bash scripts/run-with-budget-warning.sh 210 "Project dependency install" npm ci
 
       - name: Install native CI adapter dependencies
-        run: npm ci --prefix .github/actions/artifact-transport --ignore-scripts --no-audit --no-fund
+        run: bash scripts/run-with-budget-warning.sh 100 "Artifact SDK install" npm ci --prefix .github/actions/artifact-transport --ignore-scripts --no-audit --no-fund
 
       - name: Run tests (Node.js)
         if: matrix.runtime == 'node'
@@ -394,7 +394,8 @@ jobs:
       # so the 100s suite budget below still measures every acceptance test.
       - name: Prepare Deno test dependencies
         if: matrix.runtime == 'deno'
-        run: deno test -A --parallel --no-run --frozen
+        shell: bash
+        run: bash scripts/run-with-budget-warning.sh 180 "Deno dependency preparation" deno test -A --parallel --no-run --frozen
 
       - name: Run tests (Deno)
         if: matrix.runtime == 'deno'
@@ -600,7 +601,7 @@ jobs:
         run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm ci
 
       - name: Update npm for OIDC trusted publishing
-        run: node scripts/setup-npm.mjs
+        run: bash scripts/run-with-budget-warning.sh 80 "npm publishing tool setup" node scripts/setup-npm.mjs
 
       - name: Check for changesets
         id: check_changesets
@@ -737,10 +738,10 @@ jobs:
         run: node scripts/sanitize-npm-userconfig.mjs
 
       - name: Install dependencies
-        run: npm ci
+        run: bash scripts/run-with-budget-warning.sh 240 "Release dependency install" npm ci
 
       - name: Update npm for OIDC trusted publishing
-        run: node scripts/setup-npm.mjs
+        run: bash scripts/run-with-budget-warning.sh 80 "npm publishing tool setup" node scripts/setup-npm.mjs
 
       - name: Version packages and commit to main
         id: version
@@ -1007,7 +1008,7 @@ jobs:
           node-version: '24.x'
 
       - name: Install dependencies
-        run: npm ci
+        run: bash scripts/run-with-budget-warning.sh 210 "Project dependency install" npm ci
 
       - name: Create changeset file
         env:
@@ -1018,7 +1019,7 @@ jobs:
       - name: Format changeset with Prettier
         run: |
           # Run Prettier on the changeset file to ensure it matches project style
-          npx prettier --write ".changeset/*.md"
+          npm exec --offline -- prettier --write ".changeset/*.md"
 
           echo "Formatted changeset files"
 
