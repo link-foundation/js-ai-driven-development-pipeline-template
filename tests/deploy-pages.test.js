@@ -2,7 +2,7 @@
  * The Pages deployment script, driven by a scripted Pages API: no case waits
  * or reaches GitHub. actions/deploy-pages@v5 created the deployment with one
  * request and failed the job on a single HTTP 500; the script retries
- * transient failures without ever creating a second deployment of a commit.
+ * transient failures and can recover a deployment by its artifact version.
  */
 import { describe, expect, it } from 'test-anywhere';
 
@@ -17,6 +17,11 @@ import {
 } from '../scripts/deploy-pages.mjs';
 
 const SHA = 'abc123';
+// SHA-256 of ["owner/site","42","abc123"] and the corresponding artifact 41 key.
+const version =
+  '3b5540032552f071eba541f22d09084811ca35d5336890624e578594211038a9';
+const previousVersion =
+  '41b5972b55bbff928a5a3897fb924995bdac49844286c5e431bce810e7dc453d';
 const base = '/repos/owner/site/pages';
 const http = (status, text = '', requestId = undefined) =>
   new HttpError(status, text, {
@@ -76,13 +81,15 @@ async function rejection(promise) {
 }
 
 describe('deploy-pages: creating the deployment', () => {
-  it('retries an HTTP 500 and publishes the same artifact once', async () => {
-    const { request, bodies, posts } = api({
+  it('retries a failed creation without adopting an older artifact from the same commit', async () => {
+    const { request, bodies, calls, posts } = api({
       [`POST ${base}/deployments`]: [
         http(500, 'Internal Server Error'),
         created,
       ],
-      [`GET ${base}/deployments/${SHA}`]: [new HttpError(404, 'Not Found')],
+      // A legacy source-SHA lookup would find artifact 41 here.
+      [`GET ${base}/deployments/${SHA}`]: [{ status: 'succeed' }],
+      [`GET ${base}/deployments/${previousVersion}`]: [{ status: 'succeed' }],
       [`GET ${base}/deployments/7`]: [
         { status: 'deployment_queued' },
         { status: 'succeed' },
@@ -94,11 +101,17 @@ describe('deploy-pages: creating the deployment', () => {
       pageUrl: 'https://owner.github.io/site/',
     });
     expect(posts()).toBe(2);
+    expect(calls.slice(0, 3)).toEqual([
+      `POST ${base}/deployments`,
+      `GET ${base}/deployments/${version}`,
+      `POST ${base}/deployments`,
+    ]);
     expect(bodies[0]).toEqual({
       artifact_id: 42,
-      pages_build_version: SHA,
+      pages_build_version: version,
       oidc_token: 'oidc',
     });
+    expect(bodies[2]).toEqual(bodies[0]);
     expect(sleeps[0]).toBe(10000);
   });
 
@@ -146,31 +159,49 @@ describe('deploy-pages: creating the deployment', () => {
   });
 
   it('adopts a deployment whose creation response was lost', async () => {
-    const { request, posts } = api({
+    const { request, calls, bodies, posts } = api({
       [`POST ${base}/deployments`]: [new TypeError('fetch failed')],
-      [`GET ${base}/deployments/${SHA}`]: [
+      [`GET ${base}/deployments/${SHA}`]: [{ status: 'succeed' }],
+      [`GET ${base}/deployments/${version}`]: [
         { status: 'deployment_in_progress' },
         { status: 'succeed' },
       ],
       [`GET ${base}`]: [{ html_url: 'https://owner.github.io/site/' }],
     });
-    const { promise, logs } = run(request);
+    const ids = [];
+    const { promise, logs } = run(request, { onCreated: (id) => ids.push(id) });
     expect(await promise).toEqual({
-      id: SHA,
+      id: version,
       pageUrl: 'https://owner.github.io/site/',
     });
     expect(posts()).toBe(1);
+    expect(bodies[0].artifact_id).toBe(42);
+    expect(calls[1]).toBe(
+      `GET ${base}/deployments/${bodies[0].pages_build_version}`
+    );
+    expect(ids).toEqual([version]);
     expect(logs.some((line) => line.startsWith('Adopted'))).toBe(true);
   });
 
-  it('creates a new deployment when the earlier one of this commit failed', async () => {
+  it('creates a new deployment when the earlier one for this artifact failed', async () => {
     const { request, posts } = api({
       [`POST ${base}/deployments`]: [http(502), created],
-      [`GET ${base}/deployments/${SHA}`]: [{ status: 'deployment_failed' }],
+      [`GET ${base}/deployments/${version}`]: [{ status: 'deployment_failed' }],
       [`GET ${base}/deployments/7`]: [{ status: 'succeed' }],
     });
     expect((await run(request).promise).id).toBe(7);
     expect(posts()).toBe(2);
+  });
+
+  it('refuses an artifact ID that cannot be sent as an exact integer', async () => {
+    const { request, calls } = api({});
+    const error = await rejection(
+      run(request, { artifactId: '9007199254740993' }).promise
+    );
+    expect(error.message).toContain(
+      'Pages artifact ID cannot be represented exactly'
+    );
+    expect(calls).toEqual([]);
   });
 
   it('refuses a missing artifact ID before calling the API', async () => {

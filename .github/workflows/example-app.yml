@@ -165,8 +165,8 @@ jobs:
       # The REST protocol of actions/deploy-pages@v5, which sends one
       # creation request and fails the job on a single transient HTTP 500.
       # The script retries 429/5xx/network failures of that request, adopts a
-      # deployment whose response was lost so one commit is never deployed
-      # twice, fails permanent 4xx at once and cancels what it abandons.
+      # deployment of the requested artifact whose response was lost, fails
+      # permanent 4xx at once and cancels what it abandons.
       - name: Deploy Pages artifact
         id: deployment
         env:

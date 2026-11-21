@@ -9,15 +9,16 @@
  *   retried a bounded number of times with a growing delay.
  * - A permanent refusal (any other 4xx) fails on the first attempt, with the
  *   status and the GitHub request ID.
- * - Before every retry the deployment of this commit is looked up. A lost
+ * - Before every retry the deployment of this artifact is looked up. A lost
  *   response may hide a deployment that was created; it is adopted unless it
- *   already failed, so a retry never races a second deployment of one commit.
+ *   already failed, so a retry can recover the same artifact's deployment.
  * - The deployment is polled until a final state, and cancelled on timeout,
  *   on too many polling errors, or when the job is cancelled.
  *
  * It uses only `fetch` (through ./github-api.mjs), so the deploy job installs
  * no npm dependencies.
  */
+import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
@@ -95,7 +96,7 @@ async function createDeployment(options, attempt) {
     }
   }
   const created = await request('POST', `${base}/deployments`, {
-    artifact_id: Number(artifactId),
+    artifact_id: artifactId,
     pages_build_version: buildVersion,
     oidc_token: await getIdToken(),
   });
@@ -183,13 +184,18 @@ async function pollUntilFinal(options, id, pageUrl) {
   }
 }
 
-function validate({ artifactId, buildVersion, repository }) {
+function validate({ artifactId, sourceSha, repository }) {
   if (!/^\d+$/.test(String(artifactId ?? ''))) {
     throw new Error(
       `Missing Pages artifact ID: "${artifactId ?? ''}". Pass the artifact-id output of the upload step.`
     );
   }
-  if (!buildVersion) {
+  if (!Number.isSafeInteger(Number(artifactId))) {
+    throw new Error(
+      `Pages artifact ID cannot be represented exactly: ${artifactId}.`
+    );
+  }
+  if (!sourceSha) {
     throw new Error('Missing build version (the commit SHA).');
   }
   if (!repository) {
@@ -198,7 +204,7 @@ function validate({ artifactId, buildVersion, repository }) {
 }
 
 /**
- * Create (or adopt) the deployment of one commit and wait for its result.
+ * Create (or adopt) the deployment of one artifact and wait for its result.
  * @returns {Promise<{id: string|number, pageUrl: string}>}
  */
 export async function deployPages({
@@ -206,7 +212,7 @@ export async function deployPages({
   getIdToken,
   repository,
   artifactId,
-  buildVersion,
+  buildVersion: sourceSha,
   attempts = 3,
   retryDelayMs = 10000,
   pollIntervalMs = 5000,
@@ -217,11 +223,19 @@ export async function deployPages({
   log = console.log,
   onCreated = () => {},
 }) {
-  validate({ artifactId, buildVersion, repository });
+  validate({ artifactId, sourceSha, repository });
+  const uploadId = Number(artifactId);
+  // Pages status responses have no artifact ID. Bind the version used for
+  // creation and retry lookup to this upload, even when a rebuild shares its SHA.
+  const buildVersion = createHash('sha256')
+    .update(
+      JSON.stringify([repository.toLowerCase(), String(uploadId), sourceSha])
+    )
+    .digest('hex');
   const options = {
     request,
     getIdToken,
-    artifactId,
+    artifactId: uploadId,
     buildVersion,
     attempts,
     retryDelayMs,
